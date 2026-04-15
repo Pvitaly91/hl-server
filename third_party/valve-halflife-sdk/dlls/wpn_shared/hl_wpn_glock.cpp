@@ -20,6 +20,34 @@
 #include "weapons.h"
 #include "nodes.h"
 #include "player.h"
+#include "future_gameplay_hooks.h"
+
+namespace
+{
+const float kGlockPrimaryBaseSpread = 0.01f;
+const float kGlockGroundMoveSpreadPenalty = 0.08f;
+const float kGlockAirMoveSpreadPenalty = 0.12f;
+const float kGlockDuckPenaltyScale = 0.75f;
+const float kGlockFirstShotAccuracyMaxSpeed = 40.0f;
+const float kGlockFallbackMaxSpeed = 270.0f;
+const float kGlockMinMaxSpeed = 1.0f;
+const float kGlockMaxPrimarySpread = 0.2f;
+
+float ClampFloat(float value, float minValue, float maxValue)
+{
+	if (value < minValue)
+	{
+		return minValue;
+	}
+
+	if (value > maxValue)
+	{
+		return maxValue;
+	}
+
+	return value;
+}
+}
 
 enum glock_e {
 	GLOCK_IDLE1 = 0,
@@ -46,6 +74,7 @@ void CGlock::Spawn( )
 	SET_MODEL(ENT(pev), "models/w_9mmhandgun.mdl");
 
 	m_iDefaultAmmo = GLOCK_DEFAULT_GIVE;
+	m_flLastAcceptedPrimaryShotTime = -1.0f;
 
 	FallInit();// get ready to fall down.
 }
@@ -100,7 +129,20 @@ void CGlock::SecondaryAttack( void )
 
 void CGlock::PrimaryAttack( void )
 {
-	GlockFire( 0.01, 0.3, TRUE );
+	if (ExpPistolTapFireEnabled() && RequiresPrimaryAttackPress() == FALSE)
+	{
+		return;
+	}
+
+	const BOOL fHadAmmo = (m_iClip > 0);
+	const float flSpread = GetPrimaryFireSpread();
+
+	GlockFire( flSpread, 0.3, TRUE );
+
+	if (fHadAmmo)
+	{
+		m_flLastAcceptedPrimaryShotTime = gpGlobals->time;
+	}
 }
 
 void CGlock::GlockFire( float flSpread , float flCycleTime, BOOL fUseAutoAim )
@@ -181,6 +223,69 @@ void CGlock::Reload( void )
 	{
 		m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + UTIL_SharedRandomFloat( m_pPlayer->random_seed, 10, 15 );
 	}
+}
+
+BOOL CGlock::RequiresPrimaryAttackPress( void ) const
+{
+	return (m_pPlayer->m_afButtonPressed & IN_ATTACK) != 0;
+}
+
+BOOL CGlock::QualifiesForFirstShotAccuracy( void ) const
+{
+	if (!ExpFirstShotAccuracyEnabled())
+	{
+		return FALSE;
+	}
+
+	if (!FBitSet(m_pPlayer->pev->flags, FL_ONGROUND))
+	{
+		return FALSE;
+	}
+
+	if (m_pPlayer->pev->velocity.Length2D() > kGlockFirstShotAccuracyMaxSpeed)
+	{
+		return FALSE;
+	}
+
+	const float flRecoverySeconds = ExpSpreadRecoverySeconds();
+	if (flRecoverySeconds <= 0.0f || m_flLastAcceptedPrimaryShotTime < 0.0f)
+	{
+		return TRUE;
+	}
+
+	return (gpGlobals->time - m_flLastAcceptedPrimaryShotTime) >= flRecoverySeconds;
+}
+
+float CGlock::GetPrimaryFireSpread( void ) const
+{
+	if (QualifiesForFirstShotAccuracy())
+	{
+		return 0.0f;
+	}
+
+	const float flMoveSpreadScale = ExpMoveSpreadScale();
+	if (flMoveSpreadScale <= 0.0f)
+	{
+		return kGlockPrimaryBaseSpread;
+	}
+
+	float flMaxSpeed = m_pPlayer->pev->maxspeed;
+	if (flMaxSpeed <= kGlockMinMaxSpeed)
+	{
+		flMaxSpeed = kGlockFallbackMaxSpeed;
+	}
+
+	const float flSpeedRatio = ClampFloat(m_pPlayer->pev->velocity.Length2D() / flMaxSpeed, 0.0f, 1.0f);
+	float flMovementPenalty = FBitSet(m_pPlayer->pev->flags, FL_ONGROUND)
+		? (kGlockGroundMoveSpreadPenalty * flSpeedRatio * flMoveSpreadScale)
+		: (kGlockAirMoveSpreadPenalty * flMoveSpreadScale);
+
+	if ((m_pPlayer->pev->button & IN_DUCK) || FBitSet(m_pPlayer->pev->flags, FL_DUCKING))
+	{
+		flMovementPenalty *= kGlockDuckPenaltyScale;
+	}
+
+	return ClampFloat(kGlockPrimaryBaseSpread + flMovementPenalty, 0.0f, kGlockMaxPrimarySpread);
 }
 
 

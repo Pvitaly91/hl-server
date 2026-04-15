@@ -6,6 +6,8 @@ param(
     [string]$Map = "crossfire",
     [int]$Port = 27015,
     [int]$MaxPlayers = 4,
+    [string[]]$SetCvar = @(),
+    [switch]$EnableExperimentalGlock,
     [string]$TemplateRoot,
     [string]$HldsExe,
     [string]$HlExe,
@@ -18,8 +20,34 @@ $ErrorActionPreference = "Stop"
 Import-HLServerEnv
 
 $configuration = Get-ValidatedConfiguration -Configuration $Configuration
-$expectedPattern = 'Server cvar "sv_exp_pistol_tapfire" = "0"'
 $resolvedPort = Get-AvailableUdpPort -PreferredPort $Port
+
+$effectiveSetCvars = @()
+if ($EnableExperimentalGlock) {
+    $effectiveSetCvars += @(
+        "sv_exp_pistol_tapfire=1",
+        "sv_exp_move_spread_scale=1.0",
+        "sv_exp_first_shot_accuracy=1",
+        "sv_exp_spread_recovery=0.3"
+    )
+}
+$effectiveSetCvars += @($SetCvar)
+
+$expectedCvars = [ordered]@{
+    "sv_exp_pistol_tapfire" = "0"
+    "sv_exp_move_spread_scale" = "0.0"
+    "sv_exp_first_shot_accuracy" = "0"
+    "sv_exp_spread_recovery" = "0.0"
+}
+
+foreach ($assignment in $effectiveSetCvars) {
+    $separatorIndex = $assignment.IndexOf("=")
+    if ($separatorIndex -lt 1 -or $separatorIndex -ge ($assignment.Length - 1)) {
+        throw "Invalid -SetCvar value '$assignment'. Use Name=Value."
+    }
+
+    $expectedCvars[$assignment.Substring(0, $separatorIndex).Trim()] = $assignment.Substring($separatorIndex + 1).Trim()
+}
 
 Write-Step "Building $configuration for smoke test"
 & "$PSScriptRoot\build.ps1" -Configuration $configuration
@@ -40,15 +68,25 @@ try {
         Write-Step "Requested port $Port was busy, using free UDP port $resolvedPort instead"
     }
 
-    $launchInfo = Start-HldsDetached -RuntimeRoot (Join-RepoPath "testbed\runtime") -Map $Map -Port $resolvedPort -MaxPlayers $MaxPlayers
+    $launchInfo = Start-HldsDetached -RuntimeRoot (Join-RepoPath "testbed\runtime") -Map $Map -Port $resolvedPort -MaxPlayers $MaxPlayers -SetCvar $effectiveSetCvars
 
-    $observed = Wait-ForLogPattern -Paths (Get-HldsLogCandidates -LaunchInfo $launchInfo) -Pattern $expectedPattern -TimeoutSeconds 30 -Process $launchInfo.Process
-    if (-not $observed) {
-        throw "Smoke test did not observe '$expectedPattern' in the server logs."
+    $startupObserved = Wait-ForLogPattern -Paths (Get-HldsLogCandidates -LaunchInfo $launchInfo) -Pattern ('Started map "' + $Map + '"') -TimeoutSeconds 30 -Process $launchInfo.Process
+    if (-not $startupObserved) {
+        throw "Smoke test did not observe server startup in the launch logs."
+    }
+
+    foreach ($name in $expectedCvars.Keys) {
+        $expectedPattern = 'Server cvar "{0}" = "{1}"' -f $name, $expectedCvars[$name]
+        $observed = Wait-ForLogPattern -Paths (Get-HldsLogCandidates -LaunchInfo $launchInfo) -Pattern $expectedPattern -TimeoutSeconds 30 -Process $launchInfo.Process
+        if (-not $observed) {
+            throw "Smoke test did not observe '$expectedPattern' in the server logs."
+        }
     }
 
     Write-Step "Smoke test passed"
-    Write-Host "Observed: $expectedPattern"
+    foreach ($name in $expectedCvars.Keys) {
+        Write-Host ('Observed: Server cvar "{0}" = "{1}"' -f $name, $expectedCvars[$name])
+    }
     Write-Host "stdout log: $($launchInfo.StdOutLog)"
 }
 finally {

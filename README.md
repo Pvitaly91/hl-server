@@ -14,7 +14,7 @@ The repository vendors a pinned snapshot of Valve's official Half-Life source ba
 
 - A reproducible VS2022 Win32 build for the vanilla Half-Life server GameDLL.
 - A disposable HLDS test stand that mirrors a user-supplied or SteamCMD-provisioned runtime into `testbed/runtime/`.
-- A small server-only future-hooks stub for later experiments such as pistol tap-fire and CS-like spread behavior.
+- A server-only experimental Glock path for tap-fire, movement-dependent spread, and optional first-shot accuracy without changing the stock client DLL.
 
 It is not yet a gameplay conversion and it does not ship any proprietary game assets, Steam files, or HLDS binaries.
 
@@ -51,6 +51,35 @@ To build Release instead:
 ```powershell
 .\scripts\build.ps1 -Configuration Release
 .\scripts\install-testbed.ps1 -Configuration Release -AllowSteamCmdDownload
+```
+
+## Experimental Glock mode
+
+The current gameplay pass is server-only and limited to Glock primary fire. It keeps the disposable runtime on `-game valve` and stays compatible with the stock Steam Half-Life client, but the altered tap-fire cadence and spread logic can feel slightly different from local client prediction because no client DLL code is changed.
+
+Build and install:
+
+```powershell
+.\scripts\configure.ps1
+.\scripts\build.ps1 -Configuration Debug
+.\scripts\install-testbed.ps1 -Configuration Debug -AllowSteamCmdDownload
+```
+
+Launch HLDS with the experimental Glock cvars enabled:
+
+```powershell
+.\scripts\run-server.ps1 -Configuration Debug -Detached -Cvars @{
+  sv_exp_pistol_tapfire = '1'
+  sv_exp_move_spread_scale = '1.0'
+  sv_exp_first_shot_accuracy = '1'
+  sv_exp_spread_recovery = '0.3'
+}
+```
+
+Run the non-interactive smoke test with the same experimental path:
+
+```powershell
+.\scripts\smoke-test.ps1 -Configuration Debug -AllowSteamCmdDownload -EnableExperimentalGlock
 ```
 
 ## Pointing the scripts at existing installs
@@ -102,9 +131,9 @@ No script writes into the user's real Steam `valve` folder.
 - `scripts/configure.ps1` configures the VS2022 Win32 CMake preset.
 - `scripts/build.ps1` builds Debug or Release and prints the resulting artifact paths.
 - `scripts/install-testbed.ps1` prepares the disposable runtime and installs the built `hl.dll`.
-- `scripts/run-server.ps1` launches HLDS against the disposable runtime with `-game valve` and defaults to `crossfire`.
+- `scripts/run-server.ps1` launches HLDS against the disposable runtime with `-game valve`, defaults to `crossfire`, and accepts launch-time cvar overrides through `-SetCvar @('name=value', ...)` or `-Cvars @{ name = 'value' }`.
 - `scripts/run-client.ps1` optionally launches the stock Half-Life client and connects to `127.0.0.1`.
-- `scripts/smoke-test.ps1` validates the end-to-end bootstrap non-interactively.
+- `scripts/smoke-test.ps1` validates the end-to-end bootstrap non-interactively and can verify experimental cvar values from launch-time overrides.
 - `scripts/clean-testbed.ps1` removes generated build and disposable runtime artifacts.
 
 ## What is intentionally not committed
@@ -118,7 +147,7 @@ No script writes into the user's real Steam `valve` folder.
 
 ## Future direction
 
-This repository is aimed at future server-side gameplay experiments such as pistol tap-fire and CS-like spread tuning. The current bootstrap only establishes the hook path and safe runtime loop; it does not yet change vanilla gameplay.
+This repository is aimed at iterative server-side gameplay experiments that keep the stock Steam Half-Life client compatible. The first pass is Glock-only; future work can extend the same seam to additional weapons without turning the project into a custom client or full conversion.
 
 See:
 

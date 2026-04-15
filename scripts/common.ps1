@@ -592,21 +592,98 @@ function Get-HldsArgumentList {
         [int]$Port,
 
         [Parameter(Mandatory = $true)]
-        [int]$MaxPlayers
+        [int]$MaxPlayers,
+
+        [string]$ServerCfgName
     )
 
-    return @(
+    $arguments = @(
         "-console",
         "-game", "valve",
         "-norestart",
         "-condebug",
         "-port", $Port,
-        "+map", $Map,
         "+maxplayers", $MaxPlayers,
         "+sv_lan", "1",
         "+log", "on",
         "+mp_logecho", "1"
     )
+
+    if (-not [string]::IsNullOrWhiteSpace($ServerCfgName)) {
+        $arguments += @("+servercfgfile", $ServerCfgName)
+    }
+
+    $arguments += @("+map", $Map)
+
+    return $arguments
+}
+
+function Get-HldsLaunchCvars {
+    param(
+        [string[]]$SetCvar = @(),
+        [hashtable]$Cvars
+    )
+
+    $resolved = [ordered]@{}
+
+    foreach ($assignment in $SetCvar) {
+        if ([string]::IsNullOrWhiteSpace($assignment)) {
+            continue
+        }
+
+        $separatorIndex = $assignment.IndexOf("=")
+        if ($separatorIndex -lt 1 -or $separatorIndex -ge ($assignment.Length - 1)) {
+            throw "Invalid -SetCvar value '$assignment'. Use Name=Value."
+        }
+
+        $name = $assignment.Substring(0, $separatorIndex).Trim()
+        $value = $assignment.Substring($separatorIndex + 1).Trim()
+        if ([string]::IsNullOrWhiteSpace($name) -or [string]::IsNullOrWhiteSpace($value)) {
+            throw "Invalid -SetCvar value '$assignment'. Use Name=Value."
+        }
+
+        $resolved[$name] = $value
+    }
+
+    if ($Cvars) {
+        foreach ($name in $Cvars.Keys | Sort-Object) {
+            if ([string]::IsNullOrWhiteSpace([string]$name)) {
+                throw "Cvar names cannot be empty."
+            }
+
+            $resolved[[string]$name] = [string]$Cvars[$name]
+        }
+    }
+
+    return $resolved
+}
+
+function Write-HldsLaunchCvarConfig {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RuntimeRoot,
+
+        [System.Collections.IDictionary]$Cvars
+    )
+
+    if (-not $Cvars -or $Cvars.Count -eq 0) {
+        return $null
+    }
+
+    $modRoot = Join-Path (Get-FullPath -Path $RuntimeRoot) "valve"
+    Ensure-Directory -Path $modRoot
+
+    $configName = "hlserver_launch.cfg"
+    $configPath = Join-Path $modRoot $configName
+    $lines = New-Object System.Collections.Generic.List[string]
+
+    foreach ($name in $Cvars.Keys) {
+        $value = [string]$Cvars[$name]
+        $lines.Add(('{0} "{1}"' -f $name, $value.Replace('"', '\"')))
+    }
+
+    Set-Content -LiteralPath $configPath -Value $lines -Encoding ASCII
+    return $configName
 }
 
 function Test-UdpPortAvailable {
@@ -673,7 +750,10 @@ function Start-HldsDetached {
         [int]$Port,
 
         [Parameter(Mandatory = $true)]
-        [int]$MaxPlayers
+        [int]$MaxPlayers,
+
+        [string[]]$SetCvar = @(),
+        [hashtable]$Cvars
     )
 
     $runtimeRoot = Get-FullPath -Path $RuntimeRoot
@@ -689,8 +769,9 @@ function Start-HldsDetached {
     $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $stdoutLog = Join-Path $logsRoot ("hlds-" + $timestamp + "-stdout.log")
     $stderrLog = Join-Path $logsRoot ("hlds-" + $timestamp + "-stderr.log")
+    $serverCfgName = Write-HldsLaunchCvarConfig -RuntimeRoot $runtimeRoot -Cvars (Get-HldsLaunchCvars -SetCvar $SetCvar -Cvars $Cvars)
 
-    $process = Start-Process -FilePath $hldsExe -WorkingDirectory $runtimeRoot -ArgumentList (Get-HldsArgumentList -Map $Map -Port $Port -MaxPlayers $MaxPlayers) -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -PassThru
+    $process = Start-Process -FilePath $hldsExe -WorkingDirectory $runtimeRoot -ArgumentList (Get-HldsArgumentList -Map $Map -Port $Port -MaxPlayers $MaxPlayers -ServerCfgName $serverCfgName) -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -PassThru
 
     return [PSCustomObject]@{
         Process = $process
@@ -714,7 +795,10 @@ function Invoke-HldsForeground {
         [int]$Port,
 
         [Parameter(Mandatory = $true)]
-        [int]$MaxPlayers
+        [int]$MaxPlayers,
+
+        [string[]]$SetCvar = @(),
+        [hashtable]$Cvars
     )
 
     $runtimeRoot = Get-FullPath -Path $RuntimeRoot
@@ -728,10 +812,11 @@ function Invoke-HldsForeground {
 
     $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $stdoutLog = Join-Path $logsRoot ("hlds-" + $timestamp + "-stdout.log")
+    $serverCfgName = Write-HldsLaunchCvarConfig -RuntimeRoot $runtimeRoot -Cvars (Get-HldsLaunchCvars -SetCvar $SetCvar -Cvars $Cvars)
 
     Push-Location $runtimeRoot
     try {
-        & $hldsExe @(Get-HldsArgumentList -Map $Map -Port $Port -MaxPlayers $MaxPlayers) 2>&1 | Tee-Object -FilePath $stdoutLog
+        & $hldsExe @(Get-HldsArgumentList -Map $Map -Port $Port -MaxPlayers $MaxPlayers -ServerCfgName $serverCfgName) 2>&1 | Tee-Object -FilePath $stdoutLog
         return $stdoutLog
     }
     finally {

@@ -493,7 +493,12 @@ public:
 	}
 
 private:
+	BOOL RequiresPrimaryAttackPress( void ) const;
+	BOOL QualifiesForFirstShotAccuracy( void ) const;
+	float GetPrimaryFireSpread( void ) const;
+
 	int m_iShell;
+	float m_flLastAcceptedPrimaryShotTime;
 	
 
 	unsigned short m_usFireGlock1;

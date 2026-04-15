@@ -6,6 +6,8 @@ param(
     [string]$Map = "crossfire",
     [int]$Port = 27015,
     [int]$MaxPlayers = 4,
+    [string[]]$SetCvar = @(),
+    [hashtable]$Cvars,
     [switch]$Detached,
     [string]$TemplateRoot,
     [string]$HldsExe,
@@ -31,13 +33,13 @@ Assert-UdpPortAvailable -Port $Port
 
 if ($Detached) {
     Write-Step "Launching HLDS in detached mode"
-    $launchInfo = Start-HldsDetached -RuntimeRoot $runtimeRoot -Map $Map -Port $Port -MaxPlayers $MaxPlayers
+    $launchInfo = Start-HldsDetached -RuntimeRoot $runtimeRoot -Map $Map -Port $Port -MaxPlayers $MaxPlayers -SetCvar $SetCvar -Cvars $Cvars
     Write-Host "PID: $($launchInfo.Process.Id)"
     Write-Host "stdout log: $($launchInfo.StdOutLog)"
     Write-Host "stderr log: $($launchInfo.StdErrLog)"
 }
 else {
     Write-Step "Launching HLDS in the foreground"
-    $logPath = Invoke-HldsForeground -RuntimeRoot $runtimeRoot -Map $Map -Port $Port -MaxPlayers $MaxPlayers
+    $logPath = Invoke-HldsForeground -RuntimeRoot $runtimeRoot -Map $Map -Port $Port -MaxPlayers $MaxPlayers -SetCvar $SetCvar -Cvars $Cvars
     Write-Host "Log: $logPath"
 }
