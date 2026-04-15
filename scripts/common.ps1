@@ -618,6 +618,15 @@ function Get-HldsArgumentList {
     return $arguments
 }
 
+function Get-ExperimentalGlockLaunchAssignments {
+    return @(
+        "sv_exp_pistol_tapfire=1",
+        "sv_exp_move_spread_scale=1.0",
+        "sv_exp_first_shot_accuracy=1",
+        "sv_exp_spread_recovery=0.3"
+    )
+}
+
 function Get-HldsLaunchCvars {
     param(
         [string[]]$SetCvar = @(),

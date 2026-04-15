@@ -24,12 +24,7 @@ $resolvedPort = Get-AvailableUdpPort -PreferredPort $Port
 
 $effectiveSetCvars = @()
 if ($EnableExperimentalGlock) {
-    $effectiveSetCvars += @(
-        "sv_exp_pistol_tapfire=1",
-        "sv_exp_move_spread_scale=1.0",
-        "sv_exp_first_shot_accuracy=1",
-        "sv_exp_spread_recovery=0.3"
-    )
+    $effectiveSetCvars += @(Get-ExperimentalGlockLaunchAssignments)
 }
 $effectiveSetCvars += @($SetCvar)
 

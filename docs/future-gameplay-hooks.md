@@ -36,6 +36,14 @@ This pass stays server-only:
 
 Because the client DLL is unchanged, the local predicted feel of tap-fire and spread timing may not perfectly match the server-authoritative result. That caveat is intentional for this pass.
 
+## Disposable launch entry points
+
+- `scripts/run-testbed.bat` is the Windows convenience entry point for the disposable server testbed.
+- `scripts/run-testbed.bat` calls `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-server.ps1 -Detached`.
+- `scripts/run-testbed.bat experimental` maps directly to `scripts/run-server.ps1 -Detached -EnableExperimentalGlock`.
+- `scripts/run-server.ps1` still launches the disposable `testbed/runtime/` HLDS mirror with `-game valve`, so this remains stock-client-compatible, server-authoritative testing with no custom client DLL.
+- The BAT wrapper does not duplicate runtime setup logic; it reuses the existing PowerShell install-and-launch path.
+
 ## Where server-side weapon logic should go
 
 - `third_party/valve-halflife-sdk/dlls/weapons.cpp` for shared weapon state and attack timing glue
@@ -67,6 +75,8 @@ Because the client DLL is unchanged, the local predicted feel of tap-fire and sp
 - custom weapon selection UI or VGUI changes
 
 As long as the experiments stay within authoritative server-side weapon logic and the standard `valve` content, the stock Steam Half-Life client can remain untouched.
+
+Smoke tests can prove that the disposable runtime started and that the launch-time cvars were applied, but manual in-game feel testing is still required to judge tap-fire cadence, movement spread, and prediction mismatch against the stock client.
 
 ## Next logical extension points
 

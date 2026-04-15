@@ -8,6 +8,7 @@ param(
     [int]$MaxPlayers = 4,
     [string[]]$SetCvar = @(),
     [hashtable]$Cvars,
+    [switch]$EnableExperimentalGlock,
     [switch]$Detached,
     [string]$TemplateRoot,
     [string]$HldsExe,
@@ -30,16 +31,23 @@ if ((-not (Test-LeafPath -Path $runtimeHldsExe)) -or (-not (Test-LeafPath -Path 
 
 $runtimeRoot = Join-RepoPath "testbed\runtime"
 Assert-UdpPortAvailable -Port $Port
+$effectiveSetCvars = @()
+
+if ($EnableExperimentalGlock) {
+    $effectiveSetCvars += @(Get-ExperimentalGlockLaunchAssignments)
+}
+
+$effectiveSetCvars += @($SetCvar)
 
 if ($Detached) {
     Write-Step "Launching HLDS in detached mode"
-    $launchInfo = Start-HldsDetached -RuntimeRoot $runtimeRoot -Map $Map -Port $Port -MaxPlayers $MaxPlayers -SetCvar $SetCvar -Cvars $Cvars
+    $launchInfo = Start-HldsDetached -RuntimeRoot $runtimeRoot -Map $Map -Port $Port -MaxPlayers $MaxPlayers -SetCvar $effectiveSetCvars -Cvars $Cvars
     Write-Host "PID: $($launchInfo.Process.Id)"
     Write-Host "stdout log: $($launchInfo.StdOutLog)"
     Write-Host "stderr log: $($launchInfo.StdErrLog)"
 }
 else {
     Write-Step "Launching HLDS in the foreground"
-    $logPath = Invoke-HldsForeground -RuntimeRoot $runtimeRoot -Map $Map -Port $Port -MaxPlayers $MaxPlayers -SetCvar $SetCvar -Cvars $Cvars
+    $logPath = Invoke-HldsForeground -RuntimeRoot $runtimeRoot -Map $Map -Port $Port -MaxPlayers $MaxPlayers -SetCvar $effectiveSetCvars -Cvars $Cvars
     Write-Host "Log: $logPath"
 }

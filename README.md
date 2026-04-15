@@ -37,7 +37,7 @@ It is not yet a gameplay conversion and it does not ship any proprietary game as
 .\scripts\configure.ps1
 .\scripts\build.ps1 -Configuration Debug
 .\scripts\install-testbed.ps1 -Configuration Debug -AllowSteamCmdDownload
-.\scripts\run-server.ps1 -Configuration Debug
+.\scripts\run-server.ps1 -Configuration Debug -Detached
 ```
 
 To smoke-test the whole flow non-interactively:
@@ -65,15 +65,34 @@ Build and install:
 .\scripts\install-testbed.ps1 -Configuration Debug -AllowSteamCmdDownload
 ```
 
-Launch HLDS with the experimental Glock cvars enabled:
+Launch the disposable HLDS runtime in vanilla mode with PowerShell:
 
 ```powershell
-.\scripts\run-server.ps1 -Configuration Debug -Detached -Cvars @{
-  sv_exp_pistol_tapfire = '1'
-  sv_exp_move_spread_scale = '1.0'
-  sv_exp_first_shot_accuracy = '1'
-  sv_exp_spread_recovery = '0.3'
-}
+.\scripts\run-server.ps1 -Configuration Debug -Detached
+```
+
+Launch the disposable HLDS runtime in experimental Glock mode with PowerShell:
+
+```powershell
+.\scripts\run-server.ps1 -Configuration Debug -Detached -EnableExperimentalGlock
+```
+
+Launch the same disposable runtime from `cmd.exe` or Explorer with the BAT wrapper:
+
+```bat
+scripts\run-testbed.bat
+```
+
+Enable the experimental Glock mode from the BAT wrapper:
+
+```bat
+scripts\run-testbed.bat experimental
+```
+
+Forward extra launch arguments through the BAT wrapper when needed:
+
+```bat
+scripts\run-testbed.bat experimental -Port 27016 -Map crossfire
 ```
 
 Run the non-interactive smoke test with the same experimental path:
@@ -131,7 +150,8 @@ No script writes into the user's real Steam `valve` folder.
 - `scripts/configure.ps1` configures the VS2022 Win32 CMake preset.
 - `scripts/build.ps1` builds Debug or Release and prints the resulting artifact paths.
 - `scripts/install-testbed.ps1` prepares the disposable runtime and installs the built `hl.dll`.
-- `scripts/run-server.ps1` launches HLDS against the disposable runtime with `-game valve`, defaults to `crossfire`, and accepts launch-time cvar overrides through `-SetCvar @('name=value', ...)` or `-Cvars @{ name = 'value' }`.
+- `scripts/run-server.ps1` launches HLDS against the disposable runtime with `-game valve`, defaults to `crossfire`, accepts `-EnableExperimentalGlock` for the documented server-only Glock cvar bundle, and still supports launch-time overrides through `-SetCvar @('name=value', ...)` or `-Cvars @{ name = 'value' }`.
+- `scripts/run-testbed.bat` is a thin convenience wrapper over `scripts/run-server.ps1` that defaults to a detached Debug disposable launch and maps `experimental` to `-EnableExperimentalGlock`.
 - `scripts/run-client.ps1` optionally launches the stock Half-Life client and connects to `127.0.0.1`.
 - `scripts/smoke-test.ps1` validates the end-to-end bootstrap non-interactively and can verify experimental cvar values from launch-time overrides.
 - `scripts/clean-testbed.ps1` removes generated build and disposable runtime artifacts.
