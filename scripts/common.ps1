@@ -627,6 +627,30 @@ function Get-ExperimentalGlockLaunchAssignments {
     )
 }
 
+function Get-ExperimentalGlockDebugLaunchAssignments {
+    return @(
+        "sv_exp_debug_weaponlog=1",
+        "sv_exp_debug_weaponlog_rejections=1"
+    )
+}
+
+function Get-WeaponDebugLogsRoot {
+    return (Join-RepoPath "testbed\logs")
+}
+
+function Get-LatestWeaponDebugLog {
+    $logsRoot = Get-WeaponDebugLogsRoot
+    if (-not (Test-Path -LiteralPath $logsRoot -PathType Container)) {
+        return $null
+    }
+
+    return (
+        Get-ChildItem -LiteralPath $logsRoot -File -Filter "weapon-debug-*.log" |
+        Sort-Object LastWriteTimeUtc, Name |
+        Select-Object -Last 1
+    )
+}
+
 function Get-HldsLaunchCvars {
     param(
         [string[]]$SetCvar = @(),

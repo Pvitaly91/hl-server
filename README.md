@@ -89,16 +89,51 @@ Enable the experimental Glock mode from the BAT wrapper:
 scripts\run-testbed.bat experimental
 ```
 
+Enable the experimental Glock mode with debug telemetry and dedicated weapon logging:
+
+```bat
+scripts\run-testbed.bat experimental-debug
+```
+
 Forward extra launch arguments through the BAT wrapper when needed:
 
 ```bat
 scripts\run-testbed.bat experimental -Port 27016 -Map crossfire
 ```
 
+Tail the newest disposable weapon debug log in PowerShell:
+
+```powershell
+.\scripts\tail-weapon-log.ps1
+```
+
+Read the newest disposable weapon debug log once without following it:
+
+```powershell
+.\scripts\tail-weapon-log.ps1 -NoFollow
+```
+
 Run the non-interactive smoke test with the same experimental path:
 
 ```powershell
 .\scripts\smoke-test.ps1 -Configuration Debug -AllowSteamCmdDownload -EnableExperimentalGlock
+```
+
+Telemetry stays fully quiet by default. `scripts\run-testbed.bat experimental-debug` enables:
+
+- `sv_exp_debug_weaponlog 1`
+- `sv_exp_debug_weaponlog_rejections 1`
+
+Accepted Glock primary shots log one grep-friendly server-side line to both the server console and `testbed/logs/weapon-debug-<timestamp>.log`, for example:
+
+```text
+ts=2026-04-16T21:24:55.314 map=crossfire player="Player" entindex=1 userid=2 weapon=glock fire=primary experimental=1 tapfire=1 firstshot=1 spread=0.0000 base=0.0100 move_penalty=0.0000 speed2d=18.4 maxspeed=270.0 grounded=1 ducking=0 delta_prev=0.421 clip=16
+```
+
+Blocked tap-fire hold attempts log only when rejection logging is also enabled, for example:
+
+```text
+ts=2026-04-16T21:24:56.002 map=crossfire player="Player" entindex=1 userid=2 weapon=glock fire=primary reason=tapfire_hold_blocked speed2d=18.4 grounded=1 ducking=0
 ```
 
 ## Pointing the scripts at existing installs
@@ -150,8 +185,9 @@ No script writes into the user's real Steam `valve` folder.
 - `scripts/configure.ps1` configures the VS2022 Win32 CMake preset.
 - `scripts/build.ps1` builds Debug or Release and prints the resulting artifact paths.
 - `scripts/install-testbed.ps1` prepares the disposable runtime and installs the built `hl.dll`.
-- `scripts/run-server.ps1` launches HLDS against the disposable runtime with `-game valve`, defaults to `crossfire`, accepts `-EnableExperimentalGlock` for the documented server-only Glock cvar bundle, and still supports launch-time overrides through `-SetCvar @('name=value', ...)` or `-Cvars @{ name = 'value' }`.
-- `scripts/run-testbed.bat` is a thin convenience wrapper over `scripts/run-server.ps1` that defaults to a detached Debug disposable launch and maps `experimental` to `-EnableExperimentalGlock`.
+- `scripts/run-server.ps1` launches HLDS against the disposable runtime with `-game valve`, defaults to `crossfire`, accepts `-EnableExperimentalGlock` and `-EnableExperimentalGlockDebug` for the documented server-only Glock cvar bundles, and still supports launch-time overrides through `-SetCvar @('name=value', ...)` or `-Cvars @{ name = 'value' }`.
+- `scripts/run-testbed.bat` is a thin convenience wrapper over `scripts/run-server.ps1` that defaults to a detached Debug disposable launch and maps `experimental` and `experimental-debug` to the corresponding PowerShell switches.
+- `scripts/tail-weapon-log.ps1` finds the newest `testbed/logs/weapon-debug-*.log` file, prints a helpful message if none exists, and can either follow the log or dump it once with `-NoFollow`.
 - `scripts/run-client.ps1` optionally launches the stock Half-Life client and connects to `127.0.0.1`.
 - `scripts/smoke-test.ps1` validates the end-to-end bootstrap non-interactively and can verify experimental cvar values from launch-time overrides.
 - `scripts/clean-testbed.ps1` removes generated build and disposable runtime artifacts.

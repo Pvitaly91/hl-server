@@ -21,6 +21,7 @@
 #include "nodes.h"
 #include "player.h"
 #include "future_gameplay_hooks.h"
+#include "weapon_debug_logger.h"
 
 namespace
 {
@@ -75,6 +76,7 @@ void CGlock::Spawn( )
 
 	m_iDefaultAmmo = GLOCK_DEFAULT_GIVE;
 	m_flLastAcceptedPrimaryShotTime = -1.0f;
+	m_fPrimaryHoldBlockLogged = FALSE;
 
 	FallInit();// get ready to fall down.
 }
@@ -131,16 +133,82 @@ void CGlock::PrimaryAttack( void )
 {
 	if (ExpPistolTapFireEnabled() && RequiresPrimaryAttackPress() == FALSE)
 	{
+		if (!m_fPrimaryHoldBlockLogged)
+		{
+			const BOOL fGrounded = FBitSet(m_pPlayer->pev->flags, FL_ONGROUND);
+			const BOOL fDucking = (m_pPlayer->pev->button & IN_DUCK) || FBitSet(m_pPlayer->pev->flags, FL_DUCKING);
+
+			GlockRejectedShotTelemetry rejectedTelemetry = {};
+			rejectedTelemetry.horizontalSpeed = m_pPlayer->pev->velocity.Length2D();
+			rejectedTelemetry.grounded = fGrounded != FALSE;
+			rejectedTelemetry.ducking = fDucking != FALSE;
+
+			LogRejectedGlockPrimaryHold(m_pPlayer, rejectedTelemetry);
+			m_fPrimaryHoldBlockLogged = TRUE;
+		}
+
 		return;
 	}
 
+	m_fPrimaryHoldBlockLogged = FALSE;
+
 	const BOOL fHadAmmo = (m_iClip > 0);
-	const float flSpread = GetPrimaryFireSpread();
+	const BOOL fGrounded = FBitSet(m_pPlayer->pev->flags, FL_ONGROUND);
+	const BOOL fDucking = (m_pPlayer->pev->button & IN_DUCK) || FBitSet(m_pPlayer->pev->flags, FL_DUCKING);
+	const float flHorizontalSpeed = m_pPlayer->pev->velocity.Length2D();
+
+	float flMaxSpeedForNormalization = m_pPlayer->pev->maxspeed;
+	if (flMaxSpeedForNormalization <= kGlockMinMaxSpeed)
+	{
+		flMaxSpeedForNormalization = kGlockFallbackMaxSpeed;
+	}
+
+	const BOOL fFirstShotAccuracyApplied = QualifiesForFirstShotAccuracy();
+	float flMovementPenalty = 0.0f;
+
+	if (!fFirstShotAccuracyApplied)
+	{
+		const float flMoveSpreadScale = ExpMoveSpreadScale();
+		if (flMoveSpreadScale > 0.0f)
+		{
+			const float flSpeedRatio = ClampFloat(flHorizontalSpeed / flMaxSpeedForNormalization, 0.0f, 1.0f);
+			flMovementPenalty = fGrounded
+				? (kGlockGroundMoveSpreadPenalty * flSpeedRatio * flMoveSpreadScale)
+				: (kGlockAirMoveSpreadPenalty * flMoveSpreadScale);
+
+			if (fDucking)
+			{
+				flMovementPenalty *= kGlockDuckPenaltyScale;
+			}
+		}
+	}
+
+	const float flSpread = fFirstShotAccuracyApplied
+		? 0.0f
+		: ClampFloat(kGlockPrimaryBaseSpread + flMovementPenalty, 0.0f, kGlockMaxPrimarySpread);
+	const BOOL fHasPreviousAcceptedShot = m_flLastAcceptedPrimaryShotTime >= 0.0f;
+	const float flTimeSincePreviousAcceptedShot = fHasPreviousAcceptedShot ? (gpGlobals->time - m_flLastAcceptedPrimaryShotTime) : 0.0f;
 
 	GlockFire( flSpread, 0.3, TRUE );
 
 	if (fHadAmmo)
 	{
+		GlockAcceptedShotTelemetry acceptedTelemetry = {};
+		acceptedTelemetry.experimentalModeActive = ExpGlockExperimentalModeEnabled();
+		acceptedTelemetry.tapFireActive = ExpPistolTapFireEnabled();
+		acceptedTelemetry.firstShotAccuracyApplied = fFirstShotAccuracyApplied != FALSE;
+		acceptedTelemetry.spread = flSpread;
+		acceptedTelemetry.baseSpread = kGlockPrimaryBaseSpread;
+		acceptedTelemetry.movementPenalty = flMovementPenalty;
+		acceptedTelemetry.horizontalSpeed = flHorizontalSpeed;
+		acceptedTelemetry.maxSpeedForNormalization = flMaxSpeedForNormalization;
+		acceptedTelemetry.grounded = fGrounded != FALSE;
+		acceptedTelemetry.ducking = fDucking != FALSE;
+		acceptedTelemetry.hasPreviousAcceptedShot = fHasPreviousAcceptedShot != FALSE;
+		acceptedTelemetry.timeSincePreviousAcceptedShot = flTimeSincePreviousAcceptedShot;
+		acceptedTelemetry.clipAfterShot = m_iClip;
+
+		LogAcceptedGlockPrimaryShot(m_pPlayer, acceptedTelemetry);
 		m_flLastAcceptedPrimaryShotTime = gpGlobals->time;
 	}
 }

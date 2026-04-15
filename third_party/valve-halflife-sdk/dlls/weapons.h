@@ -499,6 +499,7 @@ private:
 
 	int m_iShell;
 	float m_flLastAcceptedPrimaryShotTime;
+	BOOL m_fPrimaryHoldBlockLogged;
 	
 
 	unsigned short m_usFireGlock1;

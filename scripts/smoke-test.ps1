@@ -33,6 +33,8 @@ $expectedCvars = [ordered]@{
     "sv_exp_move_spread_scale" = "0.0"
     "sv_exp_first_shot_accuracy" = "0"
     "sv_exp_spread_recovery" = "0.0"
+    "sv_exp_debug_weaponlog" = "0"
+    "sv_exp_debug_weaponlog_rejections" = "0"
 }
 
 foreach ($assignment in $effectiveSetCvars) {

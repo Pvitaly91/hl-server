@@ -9,6 +9,7 @@ param(
     [string[]]$SetCvar = @(),
     [hashtable]$Cvars,
     [switch]$EnableExperimentalGlock,
+    [switch]$EnableExperimentalGlockDebug,
     [switch]$Detached,
     [string]$TemplateRoot,
     [string]$HldsExe,
@@ -33,8 +34,12 @@ $runtimeRoot = Join-RepoPath "testbed\runtime"
 Assert-UdpPortAvailable -Port $Port
 $effectiveSetCvars = @()
 
-if ($EnableExperimentalGlock) {
+if ($EnableExperimentalGlock -or $EnableExperimentalGlockDebug) {
     $effectiveSetCvars += @(Get-ExperimentalGlockLaunchAssignments)
+}
+
+if ($EnableExperimentalGlockDebug) {
+    $effectiveSetCvars += @(Get-ExperimentalGlockDebugLaunchAssignments)
 }
 
 $effectiveSetCvars += @($SetCvar)

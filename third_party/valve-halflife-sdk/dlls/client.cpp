@@ -38,6 +38,7 @@
 #include "weaponinfo.h"
 #include "usercmd.h"
 #include "netadr.h"
+#include "future_gameplay_hooks.h"
 #include "pm_shared.h"
 
 #if !defined ( _WIN32 )
@@ -795,6 +796,8 @@ void StartFrame( void )
 {
 	if ( g_pGameRules )
 		g_pGameRules->Think();
+
+	UpdateFutureGameplayHooksFrame();
 
 	if ( g_fGameOver )
 		return;
