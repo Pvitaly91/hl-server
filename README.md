@@ -149,10 +149,28 @@ Launch the one-player Glock lab session that enables the stock-asset server-side
 .\scripts\run-glock-test-session.ps1 -Configuration Debug -LabDummy
 ```
 
+List the checked-in lab target profiles:
+
+```powershell
+.\scripts\list-glock-lab-targets.ps1
+```
+
+Launch the same lab flow with a checked-in armored target profile:
+
+```powershell
+.\scripts\run-glock-test-session.ps1 -Configuration Debug -LabDummy -LabTargetProfile vest_headprotected
+```
+
 Launch the same lab flow with a checked-in preset:
 
 ```powershell
 .\scripts\run-glock-test-session.ps1 -Configuration Debug -LabDummy -GlockProfile cs_tight
+```
+
+Launch the lab flow with both a weapon preset and a dummy target profile:
+
+```powershell
+.\scripts\run-glock-test-session.ps1 -Configuration Debug -LabDummy -GlockProfile cs_tight -LabTargetProfile vest_headprotected
 ```
 
 Launch the same one-player lab flow from `cmd.exe` or Explorer:
@@ -161,10 +179,28 @@ Launch the same one-player lab flow from `cmd.exe` or Explorer:
 scripts\run-testbed.bat glock-lab
 ```
 
+List the available target profiles from the BAT wrapper:
+
+```bat
+scripts\run-testbed.bat glock-lab-targets
+```
+
+Launch a one-player lab session with a named target profile from the BAT wrapper:
+
+```bat
+scripts\run-testbed.bat glock-lab-target vest_headprotected
+```
+
 Launch the preset-capable lab alias from `cmd.exe` or Explorer:
 
 ```bat
 scripts\run-testbed.bat glock-lab-profile cs_tight
+```
+
+Launch the same preset-capable lab alias and forward a named target profile:
+
+```bat
+scripts\run-testbed.bat glock-lab-profile cs_tight -LabTargetProfile vest
 ```
 
 Launch the same session and analyze the latest Glock telemetry log after you finish the manual firing pass and press Enter in the original console:
@@ -198,7 +234,8 @@ Preset merge order stays predictable:
 
 1. built-in experimental Glock defaults
 2. selected preset from `configs/glock-presets/`
-3. explicit `-SetCvar` or `-Cvars` overrides
+3. selected target profile from `configs/glock-lab-targets/`
+4. explicit `-SetCvar` or `-Cvars` overrides
 
 These presets are experimental tuning helpers for server-side iteration. They are not claims of exact Counter-Strike values or exact Counter-Strike feel.
 
@@ -216,24 +253,32 @@ Analyze the newest dummy session log after a manual lab pass:
 .\scripts\analyze-weapon-log.ps1 -Latest
 ```
 
-Assert that a fixture or live log contains the minimum dummy evidence:
+Assert that a fixture or live log contains the minimum armored-dummy evidence:
 
 ```powershell
-.\scripts\analyze-weapon-log.ps1 -Path .\scripts\fixtures\sample-weapon-debug.log -RequireDummySpawns -RequireDummyHits -RequireDummyHeadshotHits -RequireDummyHeadshotKills
+.\scripts\analyze-weapon-log.ps1 -Path .\scripts\fixtures\sample-weapon-debug.log -RequireArmoredDummyHits -RequireProtectedDummyHeadshotHits -RequireProtectedDummyHeadshotKills -RequireDummyLethalHeadshotEvidence
 ```
 
-The one-player Glock lab uses a stock `monster_generic` with an allowed stock human model (`models/barney.mdl` by default, `models/scientist.mdl` also allowed) so the disposable runtime stays on `-game valve` and the stock Steam client can still connect.
+The one-player Glock lab uses a stock `monster_generic` with an allowed stock human model (`models/barney.mdl` by default, `models/scientist.mdl` also allowed) so the disposable runtime stays on `-game valve` and the stock Steam client can still connect. Checked-in target profiles live under `configs/glock-lab-targets/` as small JSON files:
 
-Example dummy lifecycle and hit telemetry:
+- `unarmored`
+  No dummy armor and no head protection.
+- `vest`
+  Experimental torso armor only. Chest and stomach hits use the dummy-only armor model, but headshots still bypass that armor.
+- `vest_headprotected`
+  Experimental armored target with head protection enabled. Headshots also use the dummy-only armor model.
+
+Example armored dummy lifecycle and hit telemetry:
 
 ```text
-[weaponlog] type=dummy_spawn ts=... map=crossfire dummy="Glock Lab Dummy" entindex=24 dummy_class=glock_lab_dummy dummy_model="models/barney.mdl" health=110.0 autorespawn=1 respawn_delay=1.00 spawn_distance=256.0 anchor="Player" anchor_entindex=1 anchor_userid=3 origin="256.0 0.0 0.0" yaw=180.0 profile="cs_tight"
-[weaponlog] type=kill ts=... map=crossfire attacker="Player" attacker_entindex=1 attacker_userid=3 victim="Glock Lab Dummy" victim_entindex=24 victim_userid=-1 victim_kind=dummy victim_class=glock_lab_dummy victim_model="models/barney.mdl" weapon=glock fire=primary hitgroup=head hitgroup_id=1 headshot=1 experimental=1 profile="cs_tight" trace_damage=110.0000 applied_damage=100.0000 health_before=100.0 health_after=0.0 armor_before=na armor_after=na headshot_lethal_active=1 headshot_lethal_applied=1
+[weaponlog] type=dummy_spawn ts=... map=crossfire dummy="Glock Lab Dummy" entindex=24 dummy_class=glock_lab_dummy dummy_model="models/barney.mdl" health=100.0 autorespawn=1 respawn_delay=1.00 spawn_distance=256.0 anchor="Player" anchor_entindex=1 anchor_userid=3 origin="256.0 0.0 0.0" yaw=180.0 profile="cs_tight" target_profile="vest_headprotected" spawn_health=100.0 spawn_armor=100.0 head_protected=1 armor_health_fraction=0.500 armor_drain_scale=1.000
+[weaponlog] type=hit ts=... map=crossfire attacker="Player" attacker_entindex=1 attacker_userid=3 victim="Glock Lab Dummy" victim_entindex=24 victim_userid=-1 victim_kind=dummy victim_class=glock_lab_dummy victim_model="models/barney.mdl" weapon=glock fire=primary hitgroup=chest hitgroup_id=2 headshot=0 experimental=1 profile="cs_tight" target_profile="vest_headprotected" trace_damage=10.0000 applied_damage=5.0000 armor_before=100.0 armor_after=95.0 damage_raw=10.0000 damage_to_health=5.0000 damage_absorbed=5.0000 armor_drain=5.0000 dummy_armor_before=100.0 dummy_armor_after=95.0 armor_applied=1 head_protected=1 headshot_lethal_active=1 headshot_lethal_applied=0
+[weaponlog] type=kill ts=... map=crossfire attacker="Player" attacker_entindex=1 attacker_userid=3 victim="Glock Lab Dummy" victim_entindex=24 victim_userid=-1 victim_kind=dummy victim_class=glock_lab_dummy victim_model="models/barney.mdl" weapon=glock fire=primary hitgroup=head hitgroup_id=1 headshot=1 experimental=1 profile="cs_tight" target_profile="vest_headprotected" trace_damage=150.0000 applied_damage=75.0000 health_before=75.0 health_after=0.0 armor_before=75.0 armor_after=0.0 damage_raw=150.0000 damage_to_health=75.0000 damage_absorbed=75.0000 armor_drain=75.0000 dummy_armor_after=0.0 armor_applied=1 head_protected=1 headshot_lethal_active=1 headshot_lethal_applied=1
 ```
 
-The Glock lab dummy is a one-player testing aid, not a perfect substitute for real player-vs-player testing. It gives real server-side hitgroup, headshot, kill, and respawn evidence against a stationary stock model, but it does not validate stock-client feel, movement behavior, or exact PvP pacing.
+The Glock lab dummy is a one-player testing aid, not a perfect substitute for real player-vs-player testing. It gives real server-side hitgroup, headshot, kill, respawn, and armor-model telemetry against a stationary stock model, but it does not validate stock-client feel, movement behavior, or exact PvP pacing.
 
-The lab dummy also does not model real player armor. Lethal-headshot evidence against the dummy proves the server-side no-armor dummy path only, and non-head hitgroups still follow monster-side skill multipliers rather than exact player damage behavior.
+The lab dummy armor model is experimental and dummy-only. It is useful for comparing unarmored versus armored or head-protected target states, but it is not guaranteed exact parity with real player armor. Head-protected lethal-headshot evidence against the dummy proves only that the logged dummy armor model ran for that target state.
 
 Tail the newest disposable weapon debug log in PowerShell:
 
@@ -411,11 +456,12 @@ No script writes into the user's real Steam `valve` folder.
 - `scripts/configure.ps1` configures the VS2022 Win32 CMake preset.
 - `scripts/build.ps1` builds Debug or Release and prints the resulting artifact paths.
 - `scripts/install-testbed.ps1` prepares the disposable runtime and installs the built `hl.dll`.
-- `scripts/run-server.ps1` launches HLDS against the disposable runtime with `-game valve`, defaults to `crossfire`, accepts `-EnableExperimentalGlock`, `-EnableExperimentalGlockDebug`, and `-GlockProfile <name>` for server-only Glock tuning, and still supports launch-time overrides through `-SetCvar @('name=value', ...)` or `-Cvars @{ name = 'value' }`.
-- `scripts/run-glock-test-session.ps1` reinstalls the disposable runtime, launches the experimental-debug Glock server, waits for readiness, optionally opens a tail window for the exact weapon log, optionally launches a stock client, prints the manual checklist with the connect address and log paths, accepts `-GlockProfile <name>`, and can hand off to the analyzer with `-AnalyzeLatestOnExit`.
+- `scripts/run-server.ps1` launches HLDS against the disposable runtime with `-game valve`, defaults to `crossfire`, accepts `-EnableExperimentalGlock`, `-EnableExperimentalGlockDebug`, `-GlockProfile <name>`, and `-LabTargetProfile <name>` for server-only Glock tuning plus dummy-target selection, and still supports launch-time overrides through `-SetCvar @('name=value', ...)` or `-Cvars @{ name = 'value' }`.
+- `scripts/run-glock-test-session.ps1` reinstalls the disposable runtime, launches the experimental-debug Glock server, waits for readiness, optionally opens a tail window for the exact weapon log, optionally launches a stock client, prints the manual checklist with the connect address and log paths, accepts `-GlockProfile <name>` and `-LabTargetProfile <name>`, and can hand off to the analyzer with `-AnalyzeLatestOnExit`.
 - `scripts/list-glock-profiles.ps1` lists the checked-in versioned Glock presets from `configs/glock-presets/`.
-- `scripts/analyze-weapon-log.ps1` analyzes the newest or a specific `weapon-debug-*.log`, prints a concise evidence summary including session profile metadata when present, optionally exports JSON and CSV under `testbed/logs/reports/`, and can fail non-zero when required telemetry signals are missing.
-- `scripts/run-testbed.bat` is a thin convenience wrapper over the PowerShell scripts that defaults to a detached Debug disposable launch, maps `experimental` and `experimental-debug` to the corresponding server switches, maps `glock-session` to the one-click manual session helper, maps `glock-report` to `scripts/analyze-weapon-log.ps1`, maps `glock-profiles` to the preset listing helper, and maps `glock-profile <name>` to a detached experimental-debug launch with that preset.
+- `scripts/list-glock-lab-targets.ps1` lists the checked-in lab target profiles from `configs/glock-lab-targets/`.
+- `scripts/analyze-weapon-log.ps1` analyzes the newest or a specific `weapon-debug-*.log`, prints a concise evidence summary including session profile and target-profile metadata when present, optionally exports JSON and CSV under `testbed/logs/reports/`, and can fail non-zero when required armored-dummy telemetry signals are missing.
+- `scripts/run-testbed.bat` is a thin convenience wrapper over the PowerShell scripts that defaults to a detached Debug disposable launch, maps `experimental` and `experimental-debug` to the corresponding server switches, maps `glock-session` to the one-click manual session helper, maps `glock-report` to `scripts/analyze-weapon-log.ps1`, maps `glock-profiles` and `glock-lab-targets` to the listing helpers, maps `glock-profile <name>` to a detached experimental-debug launch with that preset, maps `glock-lab-target <name>` to a one-player dummy session with that target profile, and keeps argument forwarding thin.
 - `scripts/tail-weapon-log.ps1` finds the newest `testbed/logs/weapon-debug-*.log` file, or follows a specific log passed through `-Path`, prints a helpful message if none exists, and can either follow the log or dump it once with `-NoFollow`.
 - `scripts/run-client.ps1` optionally launches a stock Half-Life client on `-game valve` and connects to `127.0.0.1`.
 - `scripts/smoke-test.ps1` validates the end-to-end bootstrap non-interactively and can verify experimental cvar values from launch-time overrides.

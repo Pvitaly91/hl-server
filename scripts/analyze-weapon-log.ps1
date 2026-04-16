@@ -1,11 +1,7 @@
 [CmdletBinding(DefaultParameterSetName = "Latest")]
 param(
-    [Parameter(ParameterSetName = "Path", Mandatory = $true)]
-    [string]$Path,
-
-    [Parameter(ParameterSetName = "Latest")]
-    [switch]$Latest,
-
+    [Parameter(ParameterSetName = "Path", Mandatory = $true)][string]$Path,
+    [Parameter(ParameterSetName = "Latest")][switch]$Latest,
     [switch]$ExportJson,
     [switch]$ExportCsv,
     [string]$OutputDir,
@@ -21,918 +17,298 @@ param(
     [switch]$RequireDummySpawns,
     [switch]$RequireDummyHits,
     [switch]$RequireDummyHeadshotHits,
-    [switch]$RequireDummyHeadshotKills
+    [switch]$RequireDummyHeadshotKills,
+    [switch]$RequireArmoredDummyHits,
+    [switch]$RequireProtectedDummyHeadshotHits,
+    [switch]$RequireProtectedDummyHeadshotKills,
+    [switch]$RequireDummyLethalHeadshotEvidence
 )
-
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\common.ps1"
 Import-HLServerEnv
 
 function Resolve-AnalysisTargetLog {
     if ($PSCmdlet.ParameterSetName -eq "Path") {
-        $resolvedPath = Get-FullPath -Path $Path
-        if (-not (Test-LeafPath -Path $resolvedPath)) {
-            throw "Weapon debug log was not found: $resolvedPath"
-        }
-
-        return (Get-Item -LiteralPath $resolvedPath)
+        $resolved = Get-FullPath -Path $Path
+        if (-not (Test-LeafPath -Path $resolved)) { throw "Weapon debug log was not found: $resolved" }
+        return Get-Item -LiteralPath $resolved
     }
-
     $latestLog = Get-LatestWeaponDebugLog
-    if (-not $latestLog) {
-        throw "No weapon debug log was found under $(Get-WeaponDebugLogsRoot). Generate telemetry first or pass -Path."
-    }
-
+    if (-not $latestLog) { throw "No weapon debug log was found under $(Get-WeaponDebugLogsRoot). Generate telemetry first or pass -Path." }
     return $latestLog
 }
 
-function Get-WeaponLogValue {
-    param(
-        [System.Collections.IDictionary]$Values,
-        [string]$Name
-    )
+function Field { param([System.Collections.IDictionary]$V,[string]$N) if ($V -and $V.Contains($N)) { return [string]$V[$N] } return $null }
+function Fields { param([System.Collections.IDictionary]$V,[string[]]$Names) foreach ($n in $Names) { $x = Field $V $n; if (-not [string]::IsNullOrWhiteSpace($x)) { return $x } } return $null }
+function ToInt([string]$V) { if ([string]::IsNullOrWhiteSpace($V) -or $V -eq "na") { return $null }; return [int]::Parse($V,[System.Globalization.CultureInfo]::InvariantCulture) }
+function ToNum([string]$V) { if ([string]::IsNullOrWhiteSpace($V) -or $V -eq "na") { return $null }; return [double]::Parse($V,[System.Globalization.CultureInfo]::InvariantCulture) }
+function ToBool([string]$V) { if ([string]::IsNullOrWhiteSpace($V) -or $V -eq "na") { return $null }; switch ($V) { "1" { $true; break } "0" { $false; break } default { [bool]::Parse($V) } } }
+function FNum($V,[int]$D) { if ($null -eq $V) { return "n/a" }; return ([double]$V).ToString(("F{0}" -f $D),[System.Globalization.CultureInfo]::InvariantCulture) }
+function FBool($V) { if ($null -eq $V -or [string]::IsNullOrWhiteSpace([string]$V)) { return "n/a" }; if ([bool]$V) { return "1" }; return "0" }
+function Stats([object[]]$Vals) { $f=@($Vals|Where-Object{$null-ne$_}); if($f.Count -eq 0){return $null}; $m=$f|Measure-Object -Minimum -Maximum -Average; [PSCustomObject]@{Count=[int]$m.Count;Min=[double]$m.Minimum;Average=[double]$m.Average;Max=[double]$m.Maximum} }
 
-    if ($Values -and $Values.Contains($Name)) {
-        return [string]$Values[$Name]
+function HitgroupCounts([object[]]$Events) {
+    $counts=[ordered]@{}; if($null -eq $Events -or $Events.Count -eq 0){return $counts}
+    foreach($name in @("head","chest","stomach","leftarm","rightarm","leftleg","rightleg","generic")){
+        $count=@($Events|Where-Object{$_.HitGroup -eq $name}).Count
+        if($count -gt 0){$counts[$name]=$count}
     }
-
-    return $null
-}
-
-function Get-FirstWeaponLogValue {
-    param(
-        [System.Collections.IDictionary]$Values,
-        [string[]]$Names
-    )
-
-    foreach ($name in $Names) {
-        $value = Get-WeaponLogValue -Values $Values -Name $name
-        if (-not [string]::IsNullOrWhiteSpace($value)) {
-            return $value
-        }
+    foreach($g in @($Events|Where-Object{-not [string]::IsNullOrWhiteSpace($_.HitGroup) -and -not $counts.Contains($_.HitGroup)}|Group-Object HitGroup|Sort-Object Name)){
+        $counts[$g.Name]=[int]$g.Count
     }
-
-    return $null
-}
-
-function Convert-WeaponLogNullableInt {
-    param([string]$Value)
-
-    if ([string]::IsNullOrWhiteSpace($Value) -or $Value -eq "na") {
-        return $null
-    }
-
-    return [int]::Parse($Value, [System.Globalization.CultureInfo]::InvariantCulture)
-}
-
-function Convert-WeaponLogNullableDouble {
-    param([string]$Value)
-
-    if ([string]::IsNullOrWhiteSpace($Value) -or $Value -eq "na") {
-        return $null
-    }
-
-    return [double]::Parse($Value, [System.Globalization.CultureInfo]::InvariantCulture)
-}
-
-function Convert-WeaponLogNullableBool {
-    param([string]$Value)
-
-    if ([string]::IsNullOrWhiteSpace($Value) -or $Value -eq "na") {
-        return $null
-    }
-
-    switch ($Value) {
-        "1" { return $true }
-        "0" { return $false }
-        default { return [bool]::Parse($Value) }
-    }
-}
-
-function Format-WeaponLogNumber {
-    param(
-        [AllowNull()]$Value,
-        [int]$Digits
-    )
-
-    if ($null -eq $Value) {
-        return "n/a"
-    }
-
-    return ([double]$Value).ToString(("F{0}" -f $Digits), [System.Globalization.CultureInfo]::InvariantCulture)
-}
-
-function Format-WeaponLogBool {
-    param([AllowNull()][bool]$Value)
-
-    if ($null -eq $Value) {
-        return "n/a"
-    }
-
-    if ($Value) {
-        return "1"
-    }
-
-    return "0"
-}
-
-function Get-NumericStats {
-    param([object[]]$Values)
-
-    $filtered = @($Values | Where-Object { $null -ne $_ })
-    if ($filtered.Count -eq 0) {
-        return $null
-    }
-
-    $measure = $filtered | Measure-Object -Minimum -Maximum -Average
-    return [PSCustomObject]@{
-        Count   = [int]$measure.Count
-        Min     = [double]$measure.Minimum
-        Average = [double]$measure.Average
-        Max     = [double]$measure.Maximum
-    }
-}
-
-function Get-HitgroupCounts {
-    param([object[]]$Events)
-
-    $counts = [ordered]@{}
-    if ($null -eq $Events -or $Events.Count -eq 0) {
-        return $counts
-    }
-
-    $preferredHitgroups = @("head", "chest", "stomach", "leftarm", "rightarm", "leftleg", "rightleg", "generic")
-    foreach ($hitgroup in $preferredHitgroups) {
-        $count = @($Events | Where-Object { $_.HitGroup -eq $hitgroup }).Count
-        if ($count -gt 0) {
-            $counts[$hitgroup] = $count
-        }
-    }
-
-    $otherGroups = @(
-        $Events |
-        Where-Object {
-            -not [string]::IsNullOrWhiteSpace($_.HitGroup) -and
-            ($preferredHitgroups -notcontains $_.HitGroup)
-        } |
-        Group-Object -Property HitGroup |
-        Sort-Object -Property Name
-    )
-
-    foreach ($group in $otherGroups) {
-        if (-not $counts.Contains($group.Name)) {
-            $counts[$group.Name] = [int]$group.Count
-        }
-    }
-
     return $counts
 }
 
-function Format-HitgroupCounts {
-    param([System.Collections.IDictionary]$Counts)
-
-    if ($null -eq $Counts -or $Counts.Count -eq 0) {
-        return "n/a"
-    }
-
-    $parts = @()
-    foreach ($key in $Counts.Keys) {
-        $parts += ("{0}={1}" -f $key, $Counts[$key])
-    }
-
-    return ($parts -join ", ")
+function FHitgroups([System.Collections.IDictionary]$Counts) {
+    if($null -eq $Counts -or $Counts.Count -eq 0){ return "n/a" }
+    return (($Counts.Keys | ForEach-Object { "{0}={1}" -f $_,$Counts[$_] }) -join ", ")
 }
 
 function Parse-WeaponLogLine {
-    param(
-        [string]$Line,
-        [int]$LineNumber
-    )
-
-    $trimmedLine = $Line.Trim()
-    if ([string]::IsNullOrWhiteSpace($trimmedLine)) {
-        return $null
-    }
-
-    $prefix = $null
-    if ($trimmedLine.StartsWith("[")) {
-        $closingIndex = $trimmedLine.IndexOf("]")
-        if ($closingIndex -gt 0) {
-            $prefix = $trimmedLine.Substring(1, $closingIndex - 1)
-            $trimmedLine = $trimmedLine.Substring($closingIndex + 1).TrimStart()
-        }
-    }
-
-    $matches = [System.Text.RegularExpressions.Regex]::Matches(
-        $trimmedLine,
-        '(?<key>[A-Za-z0-9_]+)=(?:"(?<quoted>[^"]*)"|(?<value>\S+))')
-    if ($matches.Count -eq 0) {
-        return $null
-    }
-
-    $values = [ordered]@{}
-    foreach ($match in $matches) {
-        $key = $match.Groups["key"].Value
-        $value = if ($match.Groups["quoted"].Success) { $match.Groups["quoted"].Value } else { $match.Groups["value"].Value }
-        $values[$key] = $value
-    }
-
-    $type = Get-WeaponLogValue -Values $values -Name "type"
-    if ([string]::IsNullOrWhiteSpace($type)) {
-        if ((Get-WeaponLogValue -Values $values -Name "event") -eq "weapon_debug_session") {
-            $type = "session"
-        }
-        elseif (-not [string]::IsNullOrWhiteSpace((Get-WeaponLogValue -Values $values -Name "reason"))) {
-            $type = "rejected"
-        }
-        elseif ((Get-WeaponLogValue -Values $values -Name "weapon") -eq "glock" -and (Get-WeaponLogValue -Values $values -Name "fire") -eq "primary") {
-            $type = "accepted"
-        }
-        else {
-            $type = "unknown"
-        }
-    }
-    else {
-        $type = $type.ToLowerInvariant()
-    }
-
-    $speed = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "speed2d")
-    $maxSpeed = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "maxspeed")
-    $speedRatio = $null
-    if ($null -ne $speed -and $null -ne $maxSpeed -and $maxSpeed -gt 0.0) {
-        $speedRatio = [Math]::Min([Math]::Max(($speed / $maxSpeed), 0.0), 1.0)
-    }
-
-    $movementPenalty = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "move_penalty")
-    $movementPenaltyRate = $null
-    if ($null -ne $movementPenalty -and $null -ne $speedRatio -and $speedRatio -gt 0.0) {
-        $movementPenaltyRate = $movementPenalty / $speedRatio
-    }
-
+    param([string]$Line,[int]$LineNumber)
+    $text=$Line.Trim(); if([string]::IsNullOrWhiteSpace($text)){ return $null }
+    $prefix=$null
+    if($text.StartsWith("[")){ $i=$text.IndexOf("]"); if($i -gt 0){ $prefix=$text.Substring(1,$i-1); $text=$text.Substring($i+1).TrimStart() } }
+    $matches=[System.Text.RegularExpressions.Regex]::Matches($text,'(?<key>[A-Za-z0-9_]+)=(?:"(?<quoted>[^"]*)"|(?<value>\S+))')
+    if($matches.Count -eq 0){ return $null }
+    $values=[ordered]@{}
+    foreach($m in $matches){ $values[$m.Groups["key"].Value] = if($m.Groups["quoted"].Success){$m.Groups["quoted"].Value}else{$m.Groups["value"].Value} }
+    $type=Field $values "type"
+    if([string]::IsNullOrWhiteSpace($type)){
+        if((Field $values "event") -eq "weapon_debug_session"){ $type="session" }
+        elseif(-not [string]::IsNullOrWhiteSpace((Field $values "reason"))){ $type="rejected" }
+        elseif((Field $values "weapon") -eq "glock" -and (Field $values "fire") -eq "primary"){ $type="accepted" }
+        else{ $type="unknown" }
+    } else { $type=$type.ToLowerInvariant() }
+    $speed=ToNum (Field $values "speed2d")
+    $maxSpeed=ToNum (Field $values "maxspeed")
+    $speedRatio=$null
+    if($null -ne $speed -and $null -ne $maxSpeed -and $maxSpeed -gt 0){ $speedRatio=[Math]::Min([Math]::Max(($speed/$maxSpeed),0.0),1.0) }
+    $movePenalty=ToNum (Field $values "move_penalty")
+    $movePenaltyRate=$null
+    if($null -ne $movePenalty -and $null -ne $speedRatio -and $speedRatio -gt 0){ $movePenaltyRate=$movePenalty/$speedRatio }
     return [PSCustomObject]@{
-        LineNumber           = $LineNumber
-        Prefix               = $prefix
-        Type                 = $type
-        Timestamp            = Get-WeaponLogValue -Values $values -Name "ts"
-        Map                  = Get-WeaponLogValue -Values $values -Name "map"
-        Event                = Get-WeaponLogValue -Values $values -Name "event"
-        Status               = Get-WeaponLogValue -Values $values -Name "status"
-        Game                 = Get-WeaponLogValue -Values $values -Name "game"
-        LogFile              = Get-WeaponLogValue -Values $values -Name "file"
-        ProfileName          = Get-WeaponLogValue -Values $values -Name "profile"
-        MoveSpreadScale      = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "move_scale")
-        FirstShotEnabled     = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "firstshot_enabled")
-        SpreadRecovery       = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "recovery")
-        GroundMovePenalty    = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "ground_move_penalty")
-        AirMovePenalty       = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "air_move_penalty")
-        DuckPenaltyScale     = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "duck_penalty_scale")
-        FirstShotSpeedThreshold = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "firstshot_speed")
-        MaxSpread            = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "max_spread")
-        PrimaryDamageSetting = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "sv_exp_glock_primary_damage")
-        HeadshotScaleSetting = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "sv_exp_glock_primary_headshot_scale")
-        HeadshotLethalSetting = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "sv_exp_glock_primary_headshot_lethal")
-        LabDummyEnabled      = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "sv_exp_glock_lab_dummy")
-        LabDummyHealth       = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "sv_exp_glock_lab_dummy_health")
-        LabDummyAutoRespawn  = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "sv_exp_glock_lab_dummy_autorespawn")
-        LabDummyRespawnDelay = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "sv_exp_glock_lab_dummy_respawn_delay")
-        LabDummySpawnDistance = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "sv_exp_glock_lab_dummy_spawn_distance")
-        LabDummyModel        = Get-WeaponLogValue -Values $values -Name "sv_exp_glock_lab_dummy_model"
-        LabDummyFacePlayer   = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "sv_exp_glock_lab_dummy_face_player")
-        LabDummyOffsetRight  = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "sv_exp_glock_lab_dummy_offset_right")
-        LabDummyOffsetUp     = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "sv_exp_glock_lab_dummy_offset_up")
-        Player               = Get-WeaponLogValue -Values $values -Name "player"
-        EntIndex             = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "entindex")
-        UserId               = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "userid")
-        Weapon               = Get-WeaponLogValue -Values $values -Name "weapon"
-        Fire                 = Get-WeaponLogValue -Values $values -Name "fire"
-        Reason               = Get-WeaponLogValue -Values $values -Name "reason"
-        Experimental         = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "experimental")
-        TapFire              = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "tapfire")
-        FirstShot            = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "firstshot")
-        Spread               = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "spread")
-        BaseSpread           = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "base")
-        MovementPenalty      = $movementPenalty
-        HorizontalSpeed      = $speed
-        MaxSpeed             = $maxSpeed
-        SpeedRatio           = $speedRatio
-        MovementPenaltyRate  = $movementPenaltyRate
-        Grounded             = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "grounded")
-        Ducking              = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "ducking")
-        DeltaPrevious        = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "delta_prev")
-        Clip                 = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "clip")
-        Attacker             = Get-WeaponLogValue -Values $values -Name "attacker"
-        AttackerEntIndex     = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "attacker_entindex")
-        AttackerUserId       = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "attacker_userid")
-        Victim               = Get-WeaponLogValue -Values $values -Name "victim"
-        VictimEntIndex       = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "victim_entindex")
-        VictimUserId         = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "victim_userid")
-        VictimKind           = Get-FirstWeaponLogValue -Values $values -Names @("victim_kind", "victimKind")
-        VictimClass          = Get-FirstWeaponLogValue -Values $values -Names @("victim_class", "victimClass")
-        VictimModel          = Get-FirstWeaponLogValue -Values $values -Names @("victim_model", "victimModel")
-        HitGroup             = Get-WeaponLogValue -Values $values -Name "hitgroup"
-        HitGroupId           = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "hitgroup_id")
-        Headshot             = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "headshot")
-        BaseDamage           = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "base_damage")
-        HitgroupScale        = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "hitgroup_scale")
-        TraceDamage          = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "trace_damage")
-        AppliedDamage        = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "applied_damage")
-        HealthBefore         = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "health_before")
-        HealthAfter          = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "health_after")
-        ArmorBefore          = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "armor_before")
-        ArmorAfter           = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "armor_after")
-        ArmorDamage          = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "armor_damage")
-        HeadshotLethalActive = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "headshot_lethal_active")
-        HeadshotLethalApplied = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "headshot_lethal_applied")
-        Dummy                = Get-WeaponLogValue -Values $values -Name "dummy"
-        DummyClass           = Get-FirstWeaponLogValue -Values $values -Names @("dummy_class", "dummyClass")
-        DummyModel           = Get-FirstWeaponLogValue -Values $values -Names @("dummy_model", "dummyModel")
-        DummyHealth          = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "health")
-        DummyAutoRespawn     = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "autorespawn")
-        DummyRespawnDelay    = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "respawn_delay")
-        DummySpawnDistance   = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "spawn_distance")
-        Anchor               = Get-WeaponLogValue -Values $values -Name "anchor"
-        AnchorEntIndex       = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "anchor_entindex")
-        AnchorUserId         = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "anchor_userid")
-        Origin               = Get-WeaponLogValue -Values $values -Name "origin"
-        Yaw                  = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "yaw")
-        RawLine              = $Line
+        LineNumber=$LineNumber; Prefix=$prefix; Type=$type; Timestamp=Field $values "ts"; Map=Field $values "map"; Event=Field $values "event"; Status=Field $values "status"; Game=Field $values "game"; LogFile=Field $values "file";
+        ProfileName=Field $values "profile"; TargetProfileName=Fields $values @("target_profile","targetProfile","sv_exp_glock_lab_target_profile_name");
+        TapFire=ToBool (Field $values "tapfire"); MoveSpreadScale=ToNum (Field $values "move_scale"); FirstShotEnabled=ToBool (Field $values "firstshot_enabled"); SpreadRecovery=ToNum (Field $values "recovery");
+        BaseSpread=ToNum (Field $values "base"); GroundMovePenalty=ToNum (Field $values "ground_move_penalty"); AirMovePenalty=ToNum (Field $values "air_move_penalty"); DuckPenaltyScale=ToNum (Field $values "duck_penalty_scale");
+        FirstShotSpeedThreshold=ToNum (Field $values "firstshot_speed"); MaxSpread=ToNum (Field $values "max_spread"); PrimaryDamageSetting=ToNum (Field $values "sv_exp_glock_primary_damage"); HeadshotScaleSetting=ToNum (Field $values "sv_exp_glock_primary_headshot_scale"); HeadshotLethalSetting=ToBool (Field $values "sv_exp_glock_primary_headshot_lethal");
+        LabDummyEnabled=ToBool (Field $values "sv_exp_glock_lab_dummy"); LabDummyHealth=ToNum (Field $values "sv_exp_glock_lab_dummy_health"); LabDummyArmorSetting=ToNum (Field $values "sv_exp_glock_lab_dummy_armor"); LabDummyHeadProtectedSetting=ToBool (Field $values "sv_exp_glock_lab_dummy_head_protected"); LabDummyArmorHealthFraction=ToNum (Field $values "sv_exp_glock_lab_dummy_armor_health_fraction"); LabDummyArmorDrainScale=ToNum (Field $values "sv_exp_glock_lab_dummy_armor_drain_scale");
+        LabDummyAutoRespawn=ToBool (Field $values "sv_exp_glock_lab_dummy_autorespawn"); LabDummyRespawnDelay=ToNum (Field $values "sv_exp_glock_lab_dummy_respawn_delay"); LabDummySpawnDistance=ToNum (Field $values "sv_exp_glock_lab_dummy_spawn_distance"); LabDummyModel=Field $values "sv_exp_glock_lab_dummy_model";
+        Player=Field $values "player"; EntIndex=ToInt (Field $values "entindex"); UserId=ToInt (Field $values "userid"); Weapon=Field $values "weapon"; Fire=Field $values "fire"; Reason=Field $values "reason"; Experimental=ToBool (Field $values "experimental"); FirstShot=ToBool (Field $values "firstshot"); Spread=ToNum (Field $values "spread"); MovementPenalty=$movePenalty; HorizontalSpeed=$speed; MaxSpeed=$maxSpeed; SpeedRatio=$speedRatio; MovementPenaltyRate=$movePenaltyRate; Grounded=ToBool (Field $values "grounded"); Ducking=ToBool (Field $values "ducking"); DeltaPrevious=ToNum (Field $values "delta_prev"); Clip=ToInt (Field $values "clip");
+        Attacker=Field $values "attacker"; AttackerEntIndex=ToInt (Field $values "attacker_entindex"); AttackerUserId=ToInt (Field $values "attacker_userid"); Victim=Field $values "victim"; VictimEntIndex=ToInt (Field $values "victim_entindex"); VictimUserId=ToInt (Field $values "victim_userid"); VictimKind=Fields $values @("victim_kind","victimKind"); VictimClass=Fields $values @("victim_class","victimClass"); VictimModel=Fields $values @("victim_model","victimModel");
+        HitGroup=Field $values "hitgroup"; HitGroupId=ToInt (Field $values "hitgroup_id"); Headshot=ToBool (Field $values "headshot"); BaseDamage=ToNum (Field $values "base_damage"); HitgroupScale=ToNum (Field $values "hitgroup_scale"); TraceDamage=ToNum (Field $values "trace_damage"); AppliedDamage=ToNum (Field $values "applied_damage"); HealthBefore=ToNum (Field $values "health_before"); HealthAfter=ToNum (Field $values "health_after"); ArmorBefore=ToNum (Field $values "armor_before"); ArmorAfter=ToNum (Field $values "armor_after"); ArmorDamage=ToNum (Field $values "armor_damage");
+        DamageRaw=ToNum (Fields $values @("damage_raw","damageRaw")); DamageToHealth=ToNum (Fields $values @("damage_to_health","damageToHealth")); DamageAbsorbed=ToNum (Fields $values @("damage_absorbed","damageAbsorbed")); ArmorDrain=ToNum (Fields $values @("armor_drain","armorDrain")); DummyArmorBefore=ToNum (Fields $values @("dummy_armor_before","dummyArmorBefore")); DummyArmorAfter=ToNum (Fields $values @("dummy_armor_after","dummyArmorAfter")); ArmorApplied=ToBool (Fields $values @("armor_applied","armorApplied")); HeadProtected=ToBool (Fields $values @("head_protected","headProtected")); HeadshotLethalActive=ToBool (Field $values "headshot_lethal_active"); HeadshotLethalApplied=ToBool (Field $values "headshot_lethal_applied");
+        Dummy=Field $values "dummy"; DummyClass=Fields $values @("dummy_class","dummyClass"); DummyModel=Fields $values @("dummy_model","dummyModel"); DummySpawnHealth=ToNum (Fields $values @("spawn_health","spawnHealth","health")); DummySpawnArmor=ToNum (Fields $values @("spawn_armor","spawnArmor")); DummyAutoRespawn=ToBool (Field $values "autorespawn"); DummyRespawnDelay=ToNum (Field $values "respawn_delay"); DummySpawnDistance=ToNum (Field $values "spawn_distance"); DummyArmorHealthFractionEvent=ToNum (Fields $values @("armor_health_fraction","armorHealthFraction")); DummyArmorDrainScaleEvent=ToNum (Fields $values @("armor_drain_scale","armorDrainScale")); Anchor=Field $values "anchor"; AnchorEntIndex=ToInt (Field $values "anchor_entindex"); AnchorUserId=ToInt (Field $values "anchor_userid"); Origin=Field $values "origin"; Yaw=ToNum (Field $values "yaw");
+        RawLine=$Line
     }
 }
 
-function Test-WeaponLogEventIsDummyVictim {
-    param($Event)
-
-    if ($null -eq $Event) {
-        return $false
-    }
-
-    if ($Event.VictimKind -eq "dummy") {
-        return $true
-    }
-
-    return $Event.VictimClass -eq "glock_lab_dummy"
+function IsDummyVictim($Event) {
+    if ($null -eq $Event) { return $false }
+    return $Event.VictimKind -eq "dummy" -or $Event.VictimClass -eq "glock_lab_dummy"
 }
 
-$targetLog = Resolve-AnalysisTargetLog
-$parsedEvents = @()
+function IsArmoredDummy($Event) {
+    if (-not (IsDummyVictim $Event)) { return $false }
+    return $Event.ArmorApplied -eq $true -or (($null -ne $Event.DummyArmorBefore) -and $Event.DummyArmorBefore -gt 0.0) -or (($null -ne $Event.DummySpawnArmor) -and $Event.DummySpawnArmor -gt 0.0)
+}
+
+function FirstTargetProfile($Session,[object[]]$Spawn,[object[]]$Hit,[object[]]$Kill) {
+    if ($Session -and -not [string]::IsNullOrWhiteSpace($Session.TargetProfileName)) { return $Session.TargetProfileName }
+    foreach ($set in @($Spawn,$Hit,$Kill)) {
+        $m = @($set | Where-Object { -not [string]::IsNullOrWhiteSpace($_.TargetProfileName) } | Select-Object -First 1)
+        if ($m.Count -gt 0) { return $m[0].TargetProfileName }
+    }
+    return $null
+}
+
+$log = Resolve-AnalysisTargetLog
+$events = @()
 $warnings = New-Object System.Collections.ArrayList
 $observations = New-Object System.Collections.ArrayList
-$assertionFailures = New-Object System.Collections.ArrayList
-
-$lineNumber = 0
-foreach ($line in (Get-Content -LiteralPath $targetLog.FullName)) {
-    $lineNumber += 1
-    $parsedEvent = Parse-WeaponLogLine -Line $line -LineNumber $lineNumber
-    if ($parsedEvent -and $parsedEvent.Type -ne "unknown") {
-        $parsedEvents += $parsedEvent
-    }
-    elseif (-not [string]::IsNullOrWhiteSpace($line)) {
-        [void]$warnings.Add("Skipped non-telemetry line $lineNumber because it did not match the expected single-line key=value format.")
-    }
+$assertions = New-Object System.Collections.ArrayList
+$n = 0
+foreach ($line in (Get-Content -LiteralPath $log.FullName)) {
+    $n += 1
+    $evt = Parse-WeaponLogLine -Line $line -LineNumber $n
+    if ($evt -and $evt.Type -ne "unknown") { $events += $evt }
+    elseif (-not [string]::IsNullOrWhiteSpace($line)) { [void]$warnings.Add("Skipped non-telemetry line $n because it did not match the expected single-line key=value format.") }
 }
 
-$sessionEvent = @($parsedEvents | Where-Object { $_.Type -eq "session" } | Select-Object -First 1)
-$session = if ($sessionEvent.Count -gt 0) { $sessionEvent[0] } else { $null }
-$acceptedEvents = @($parsedEvents | Where-Object { $_.Type -eq "accepted" })
-$rejectedEvents = @($parsedEvents | Where-Object { $_.Type -eq "rejected" })
-$hitEvents = @($parsedEvents | Where-Object { $_.Type -eq "hit" })
-$killEvents = @($parsedEvents | Where-Object { $_.Type -eq "kill" })
-$dummySpawnEvents = @($parsedEvents | Where-Object { $_.Type -eq "dummy_spawn" })
-$dummyRespawnEvents = @($parsedEvents | Where-Object { $_.Type -eq "dummy_respawn" })
-$dummyClearEvents = @($parsedEvents | Where-Object { $_.Type -eq "dummy_clear" })
-
-$firstShotAccepted = @($acceptedEvents | Where-Object { $_.FirstShot -eq $true })
-$movePenaltyAccepted = @($acceptedEvents | Where-Object { $null -ne $_.MovementPenalty -and $_.MovementPenalty -gt 0.0 })
-$groundedAccepted = @($acceptedEvents | Where-Object { $_.Grounded -eq $true })
-$airborneAccepted = @($acceptedEvents | Where-Object { $_.Grounded -eq $false })
-$duckingAccepted = @($acceptedEvents | Where-Object { $_.Ducking -eq $true })
-$standingMoveAccepted = @(
-    $acceptedEvents |
-    Where-Object {
-        $_.Grounded -eq $true -and
-        $_.Ducking -eq $false -and
-        $null -ne $_.MovementPenalty -and $_.MovementPenalty -gt 0.0 -and
-        $null -ne $_.MovementPenaltyRate
-    }
-)
-$crouchMoveAccepted = @(
-    $acceptedEvents |
-    Where-Object {
-        $_.Grounded -eq $true -and
-        $_.Ducking -eq $true -and
-        $null -ne $_.MovementPenalty -and $_.MovementPenalty -gt 0.0 -and
-        $null -ne $_.MovementPenaltyRate
-    }
-)
-
-$headshotHitEvents = @($hitEvents | Where-Object { $_.Headshot -eq $true })
-$headshotKillEvents = @($killEvents | Where-Object { $_.Headshot -eq $true })
-$lethalHeadshotEvidenceEvents = @($hitEvents | Where-Object { $_.HeadshotLethalApplied -eq $true })
-if ($lethalHeadshotEvidenceEvents.Count -eq 0 -and $hitEvents.Count -eq 0) {
-    $lethalHeadshotEvidenceEvents = @($killEvents | Where-Object { $_.HeadshotLethalApplied -eq $true })
-}
-$dummyHitEvents = @($hitEvents | Where-Object { Test-WeaponLogEventIsDummyVictim -Event $_ })
-$dummyKillEvents = @($killEvents | Where-Object { Test-WeaponLogEventIsDummyVictim -Event $_ })
-$dummyHeadshotHitEvents = @($dummyHitEvents | Where-Object { $_.Headshot -eq $true })
-$dummyHeadshotKillEvents = @($dummyKillEvents | Where-Object { $_.Headshot -eq $true })
-$dummyLethalHeadshotEvidenceEvents = @($dummyHitEvents | Where-Object { $_.HeadshotLethalApplied -eq $true })
-if ($dummyLethalHeadshotEvidenceEvents.Count -eq 0 -and $dummyHitEvents.Count -eq 0) {
-    $dummyLethalHeadshotEvidenceEvents = @($dummyKillEvents | Where-Object { $_.HeadshotLethalApplied -eq $true })
-}
-
-$spreadStats = Get-NumericStats -Values ($acceptedEvents | Select-Object -ExpandProperty Spread)
-$movementPenaltyStats = Get-NumericStats -Values ($acceptedEvents | Select-Object -ExpandProperty MovementPenalty)
-$speedStats = Get-NumericStats -Values ($acceptedEvents | Select-Object -ExpandProperty HorizontalSpeed)
-$standingPenaltyRateStats = Get-NumericStats -Values ($standingMoveAccepted | Select-Object -ExpandProperty MovementPenaltyRate)
-$crouchPenaltyRateStats = Get-NumericStats -Values ($crouchMoveAccepted | Select-Object -ExpandProperty MovementPenaltyRate)
-$appliedDamageStats = Get-NumericStats -Values ($hitEvents | Select-Object -ExpandProperty AppliedDamage)
-$hitgroupCounts = Get-HitgroupCounts -Events $hitEvents
-$dummyAppliedDamageStats = Get-NumericStats -Values ($dummyHitEvents | Select-Object -ExpandProperty AppliedDamage)
-$dummyHitgroupCounts = Get-HitgroupCounts -Events $dummyHitEvents
-
+$session = @($events | Where-Object { $_.Type -eq "session" } | Select-Object -First 1)
+$session = if ($session.Count -gt 0) { $session[0] } else { $null }
+$accepted = @($events | Where-Object { $_.Type -eq "accepted" })
+$rejected = @($events | Where-Object { $_.Type -eq "rejected" })
+$hits = @($events | Where-Object { $_.Type -eq "hit" })
+$kills = @($events | Where-Object { $_.Type -eq "kill" })
+$dummySpawns = @($events | Where-Object { $_.Type -eq "dummy_spawn" })
+$dummyRespawns = @($events | Where-Object { $_.Type -eq "dummy_respawn" })
+$dummyClears = @($events | Where-Object { $_.Type -eq "dummy_clear" })
+$headshotHits = @($hits | Where-Object { $_.Headshot -eq $true })
+$headshotKills = @($kills | Where-Object { $_.Headshot -eq $true })
+$lethalEvents = @($hits | Where-Object { $_.HeadshotLethalApplied -eq $true })
+if ($lethalEvents.Count -eq 0) { $lethalEvents = @($kills | Where-Object { $_.HeadshotLethalApplied -eq $true }) }
+$dummyHits = @($hits | Where-Object { IsDummyVictim $_ })
+$dummyKills = @($kills | Where-Object { IsDummyVictim $_ })
+$dummyHeadshotHits = @($dummyHits | Where-Object { $_.Headshot -eq $true })
+$dummyHeadshotKills = @($dummyKills | Where-Object { $_.Headshot -eq $true })
+$dummyLethal = @($dummyHits | Where-Object { $_.HeadshotLethalApplied -eq $true })
+if ($dummyLethal.Count -eq 0) { $dummyLethal = @($dummyKills | Where-Object { $_.HeadshotLethalApplied -eq $true }) }
+$armoredDummyHits = @($dummyHits | Where-Object { IsArmoredDummy $_ })
+$protectedDummyHeadshotHits = @($dummyHits | Where-Object { $_.Headshot -eq $true -and $_.HeadProtected -eq $true })
+$protectedDummyHeadshotKills = @($dummyKills | Where-Object { $_.Headshot -eq $true -and $_.HeadProtected -eq $true })
+$dummyEvidence = @($dummyHits) + @($dummyKills)
+$unarmoredEvidence = @($dummyEvidence | Where-Object { $_.TargetProfileName -eq "unarmored" -or ((($null -eq $_.DummyArmorBefore) -or $_.DummyArmorBefore -le 0.0) -and $_.ArmorApplied -ne $true) })
+$armoredEvidence = @($dummyEvidence | Where-Object { $_.ArmorApplied -eq $true -or (($null -ne $_.DummyArmorBefore) -and $_.DummyArmorBefore -gt 0.0) })
+$firstShotAccepted = @($accepted | Where-Object { $_.FirstShot -eq $true })
+$movePenaltyAccepted = @($accepted | Where-Object { $null -ne $_.MovementPenalty -and $_.MovementPenalty -gt 0.0 })
+$groundedAccepted = @($accepted | Where-Object { $_.Grounded -eq $true })
+$airborneAccepted = @($accepted | Where-Object { $_.Grounded -eq $false })
+$duckingAccepted = @($accepted | Where-Object { $_.Ducking -eq $true })
+$standingMoveAccepted = @($accepted | Where-Object { $_.Grounded -eq $true -and $_.Ducking -eq $false -and $null -ne $_.MovementPenaltyRate })
+$crouchMoveAccepted = @($accepted | Where-Object { $_.Grounded -eq $true -and $_.Ducking -eq $true -and $null -ne $_.MovementPenaltyRate })
+$spreadStats = Stats ($accepted | ForEach-Object { $_.Spread })
+$moveStats = Stats ($accepted | ForEach-Object { $_.MovementPenalty })
+$speedStats = Stats ($accepted | ForEach-Object { $_.HorizontalSpeed })
+$standingRateStats = Stats ($standingMoveAccepted | ForEach-Object { $_.MovementPenaltyRate })
+$crouchRateStats = Stats ($crouchMoveAccepted | ForEach-Object { $_.MovementPenaltyRate })
+$appliedDamageStats = Stats ($hits | ForEach-Object { $_.AppliedDamage })
+$dummyAppliedDamageStats = Stats ($dummyHits | ForEach-Object { $_.AppliedDamage })
+$rawDamageStats = Stats ($dummyHits | ForEach-Object { if ($null -ne $_.DamageRaw) { $_.DamageRaw } else { $_.TraceDamage } })
+$damageToHealthStats = Stats ($dummyHits | ForEach-Object { if ($null -ne $_.DamageToHealth) { $_.DamageToHealth } else { $_.AppliedDamage } })
+$damageAbsorbedStats = Stats ($dummyHits | ForEach-Object { $_.DamageAbsorbed })
+$armorDrainStats = Stats ($dummyHits | ForEach-Object { $_.ArmorDrain })
+$hitgroupCounts = HitgroupCounts $hits
+$dummyHitgroupCounts = HitgroupCounts $dummyHits
 $recoveryReturnedFirstShot = $false
 $recoveryEvent = $null
-$seenNonFirstShotAccepted = $false
-foreach ($acceptedEvent in $acceptedEvents) {
-    if ($acceptedEvent.FirstShot -eq $false) {
-        $seenNonFirstShotAccepted = $true
-        continue
-    }
-
-    if ($acceptedEvent.FirstShot -eq $true -and $seenNonFirstShotAccepted) {
-        $recoveryReturnedFirstShot = $true
-        $recoveryEvent = $acceptedEvent
-        break
-    }
+$sawNonFirst = $false
+foreach ($a in $accepted) {
+    if ($a.FirstShot -eq $false) { $sawNonFirst = $true; continue }
+    if ($sawNonFirst -and $a.FirstShot -eq $true) { $recoveryReturnedFirstShot = $true; $recoveryEvent = $a; break }
 }
-
 $crouchMoveEvidence = $false
-foreach ($crouchEvent in $crouchMoveAccepted) {
-    foreach ($standingEvent in $standingMoveAccepted) {
-        if ($null -eq $crouchEvent.SpeedRatio -or $null -eq $standingEvent.SpeedRatio) {
-            continue
-        }
+if ($standingRateStats -and $crouchRateStats) { $crouchMoveEvidence = $crouchRateStats.Average -lt $standingRateStats.Average }
+$dummyDriven = ($dummySpawns.Count -gt 0) -and ($dummyHits.Count -gt 0)
+$targetProfile = FirstTargetProfile $session $dummySpawns $dummyHits $dummyKills
 
-        if ($crouchEvent.SpeedRatio -ge $standingEvent.SpeedRatio -and $crouchEvent.MovementPenalty -lt $standingEvent.MovementPenalty) {
-            $crouchMoveEvidence = $true
-            break
-        }
-    }
-
-    if ($crouchMoveEvidence) {
-        break
-    }
-}
-
-if (-not $crouchMoveEvidence -and $standingPenaltyRateStats -and $crouchPenaltyRateStats -and $crouchPenaltyRateStats.Average -lt $standingPenaltyRateStats.Average) {
-    $crouchMoveEvidence = $true
-}
-
-$headshotPathEvidence = ($headshotHitEvents.Count -gt 0)
-$headshotPathEvidenceSufficient = ($headshotHitEvents.Count -gt 0 -and ($headshotKillEvents.Count -gt 0 -or $lethalHeadshotEvidenceEvents.Count -gt 0))
-$labDummySession = (($session -and $session.LabDummyEnabled -eq $true) -or $dummySpawnEvents.Count -gt 0 -or $dummyRespawnEvents.Count -gt 0 -or $dummyHitEvents.Count -gt 0 -or $dummyKillEvents.Count -gt 0)
-$dummyDrivenLiveFiringEvidence = ($dummyHitEvents.Count -gt 0 -or $dummyKillEvents.Count -gt 0)
-
-if ($acceptedEvents.Count -gt 0) {
-    [void]$observations.Add(("Accepted Glock primary shots were present ({0})." -f $acceptedEvents.Count))
-}
-else {
-    [void]$warnings.Add("No accepted Glock primary shots were found in the analyzed log.")
-}
-
-if ($rejectedEvents.Count -gt 0) {
-    [void]$observations.Add(("Tap-fire hold rejection lines were present ({0}); that is evidence the rejection path was exercised." -f $rejectedEvents.Count))
-}
-else {
-    [void]$warnings.Add("No rejection lines were found, so this log does not show tap-fire hold blocking evidence.")
-}
-
-if ($hitEvents.Count -gt 0) {
-    [void]$observations.Add(("Glock hit telemetry lines were present ({0})." -f $hitEvents.Count))
-}
-else {
-    [void]$warnings.Add("No Glock hit telemetry lines were found.")
-}
-
-if ($killEvents.Count -gt 0) {
-    [void]$observations.Add(("Glock kill telemetry lines were present ({0})." -f $killEvents.Count))
-}
-else {
-    [void]$warnings.Add("No Glock kill telemetry lines were found.")
-}
-
-if ($dummySpawnEvents.Count -gt 0) {
-    [void]$observations.Add(("Lab dummy spawn lifecycle lines were present ({0})." -f $dummySpawnEvents.Count))
-}
-elseif ($labDummySession) {
-    [void]$warnings.Add("The log looks like a lab-dummy session, but no dummy_spawn lifecycle line was found.")
-}
-
-if ($dummyRespawnEvents.Count -gt 0) {
-    [void]$observations.Add(("Lab dummy respawn lifecycle lines were present ({0})." -f $dummyRespawnEvents.Count))
-}
-
-if ($dummyDrivenLiveFiringEvidence) {
-    [void]$observations.Add(("The log contains real dummy-driven live firing evidence ({0} dummy hits, {1} dummy kills)." -f $dummyHitEvents.Count, $dummyKillEvents.Count))
-}
-elseif ($labDummySession) {
-    [void]$warnings.Add("The log contains lab-dummy session markers, but no dummy hit or kill telemetry lines were found.")
-}
-
-if ($firstShotAccepted.Count -gt 0) {
-    [void]$observations.Add(("First-shot accepted events were present ({0})." -f $firstShotAccepted.Count))
-}
-else {
-    [void]$warnings.Add("No accepted events with firstshot=1 were found.")
-}
-
-if ($movePenaltyAccepted.Count -gt 0) {
-    [void]$observations.Add(("Accepted movement-penalty events were present ({0}) with move_penalty > 0." -f $movePenaltyAccepted.Count))
-}
-else {
-    [void]$warnings.Add("No accepted events with move_penalty > 0 were found.")
-}
-
-if ($headshotHitEvents.Count -gt 0) {
-    [void]$observations.Add(("Headshot hit telemetry was present ({0})." -f $headshotHitEvents.Count))
-}
-else {
-    [void]$warnings.Add("No Glock headshot hit lines were found.")
-}
-
-if ($headshotKillEvents.Count -gt 0) {
-    [void]$observations.Add(("Headshot kill telemetry was present ({0})." -f $headshotKillEvents.Count))
-}
-else {
-    [void]$warnings.Add("No Glock headshot kill lines were found.")
-}
-
-if ($dummyHeadshotHitEvents.Count -gt 0) {
-    [void]$observations.Add(("Dummy headshot hit telemetry was present ({0})." -f $dummyHeadshotHitEvents.Count))
-}
-elseif ($labDummySession) {
-    [void]$warnings.Add("No dummy headshot hit telemetry lines were found.")
-}
-
-if ($dummyHeadshotKillEvents.Count -gt 0) {
-    [void]$observations.Add(("Dummy headshot kill telemetry was present ({0})." -f $dummyHeadshotKillEvents.Count))
-}
-elseif ($labDummySession) {
-    [void]$warnings.Add("No dummy headshot kill telemetry lines were found.")
-}
-
-if ($lethalHeadshotEvidenceEvents.Count -gt 0) {
-    [void]$observations.Add(("Explicit lethal-headshot evidence was present ({0}) via headshot_lethal_applied=1." -f $lethalHeadshotEvidenceEvents.Count))
-}
-elseif ($session -and $session.HeadshotLethalSetting -eq $true) {
-    [void]$warnings.Add("The session metadata enabled headshot-lethal tuning, but no hit recorded headshot_lethal_applied=1.")
-}
-else {
-    [void]$warnings.Add("No explicit lethal-headshot evidence was found. Kills alone are not treated as proof that the lethal-headshot path ran.")
-}
-
-if ($dummyLethalHeadshotEvidenceEvents.Count -gt 0) {
-    [void]$observations.Add(("Explicit lethal-headshot evidence against the dummy was present ({0})." -f $dummyLethalHeadshotEvidenceEvents.Count))
-}
-elseif ($labDummySession -and $session -and $session.HeadshotLethalSetting -eq $true) {
-    [void]$warnings.Add("The lab-dummy session enabled headshot-lethal tuning, but no dummy hit recorded headshot_lethal_applied=1.")
-}
-
-if ($recoveryReturnedFirstShot) {
-    $deltaText = if ($null -ne $recoveryEvent.DeltaPrevious) { (" after delta_prev={0}s" -f (Format-WeaponLogNumber -Value $recoveryEvent.DeltaPrevious -Digits 3)) } else { "" }
-    [void]$observations.Add(("Later accepted events returned to firstshot=1 after earlier non-firstshot accepted shots{0}, which is evidence that recovery restored the first-shot gate." -f $deltaText))
-}
-elseif ($firstShotAccepted.Count -gt 0 -and $acceptedEvents.Count -gt 1) {
-    [void]$warnings.Add("The log shows first-shot accepted events, but it does not clearly show a later return to firstshot=1 after a non-firstshot accepted event.")
-}
-
+if (-not $session) { [void]$warnings.Add("No session header line was parsed. The analyzer can still summarize event telemetry, but launch metadata is missing.") }
+if ($dummySpawns.Count -gt 0) { [void]$observations.Add(("Dummy lifecycle telemetry was present ({0} spawn, {1} respawn)." -f $dummySpawns.Count,$dummyRespawns.Count)) }
+elseif ($dummyHits.Count -gt 0 -or $dummyKills.Count -gt 0) { [void]$warnings.Add("Dummy hit or kill evidence was present without an explicit dummy_spawn line in this log slice.") }
+if (-not [string]::IsNullOrWhiteSpace($targetProfile)) { [void]$observations.Add(("Target profile metadata was present for this analysis pass: {0}." -f $targetProfile)) }
+elseif ($dummySpawns.Count -gt 0 -or $dummyHits.Count -gt 0) { [void]$warnings.Add("No lab target profile metadata was found. This reduces confidence when comparing armored versus unarmored sessions.") }
+if ($dummyDriven) { [void]$observations.Add("The log contains real dummy-driven live firing evidence: a dummy spawned and later received Glock hit telemetry.") }
+elseif ($dummySpawns.Count -gt 0) { [void]$warnings.Add("The log shows dummy lifecycle telemetry, but no Glock hit telemetry against the dummy yet.") }
+if ($unarmoredEvidence.Count -gt 0) { [void]$observations.Add(("The log contains dummy evidence against unarmored targets ({0} hit or kill events)." -f $unarmoredEvidence.Count)) } else { [void]$warnings.Add("No dummy hit or kill evidence was clearly classified as unarmored.") }
+if ($armoredEvidence.Count -gt 0) { [void]$observations.Add(("The log contains dummy evidence against armored targets ({0} hit or kill events)." -f $armoredEvidence.Count)) } else { [void]$warnings.Add("No armored dummy hit or kill evidence was found.") }
+if ($protectedDummyHeadshotHits.Count -gt 0) { [void]$observations.Add(("The log contains protected-head dummy headshot hit evidence ({0})." -f $protectedDummyHeadshotHits.Count)) } elseif ($armoredDummyHits.Count -gt 0) { [void]$warnings.Add("Armored dummy hits were present, but none were protected-head dummy headshots.") }
+if ($protectedDummyHeadshotKills.Count -gt 0) { [void]$observations.Add(("Protected-head dummy headshot kill evidence exists ({0})." -f $protectedDummyHeadshotKills.Count)) } elseif ($protectedDummyHeadshotHits.Count -gt 0) { [void]$warnings.Add("Protected-head dummy headshot hits were logged, but none of them were kills.") }
+if ($dummyLethal.Count -gt 0) { [void]$observations.Add(("Explicit lethal-headshot evidence against the dummy was present ({0})." -f $dummyLethal.Count)) } elseif ($dummyHeadshotHits.Count -gt 0) { [void]$warnings.Add("Dummy headshot hits were logged, but no line explicitly recorded headshot_lethal_applied=1 against the dummy.") }
+if ($firstShotAccepted.Count -gt 0) { [void]$observations.Add(("Accepted Glock primary shots included firstshot=1 evidence ({0})." -f $firstShotAccepted.Count)) }
+if ($movePenaltyAccepted.Count -gt 0) { [void]$observations.Add(("Accepted Glock primary shots with move_penalty > 0 were present ({0})." -f $movePenaltyAccepted.Count)) }
+if ($recoveryReturnedFirstShot) { $delta = if ($recoveryEvent -and $null -ne $recoveryEvent.DeltaPrevious) { " after delta_prev=$(FNum $recoveryEvent.DeltaPrevious 3)s" } else { "" }; [void]$observations.Add(("Later accepted events returned to firstshot=1 after earlier non-firstshot accepted shots{0}, which is evidence that recovery restored the first-shot gate." -f $delta)) }
+elseif ($firstShotAccepted.Count -gt 0 -and $accepted.Count -gt 1) { [void]$warnings.Add("The log shows first-shot accepted events, but it does not clearly show a later return to firstshot=1 after a non-firstshot accepted event.") }
 if ($standingMoveAccepted.Count -gt 0 -and $crouchMoveAccepted.Count -gt 0) {
-    $standingRateText = Format-WeaponLogNumber -Value $standingPenaltyRateStats.Average -Digits 4
-    $crouchRateText = Format-WeaponLogNumber -Value $crouchPenaltyRateStats.Average -Digits 4
-
-    if ($crouchMoveEvidence) {
-        [void]$observations.Add(("Grounded crouch-moving accepted shots showed lower normalized movement-penalty candidates than grounded standing moving shots (avg penalty-rate {0} vs {1}). This is evidence, not proof, of crouch-move penalty reduction." -f $crouchRateText, $standingRateText))
-    }
-    else {
-        [void]$warnings.Add(("Grounded crouch-moving accepted shots were present, but this log did not show lower crouch normalized movement-penalty candidates than grounded standing movement (avg penalty-rate {0} vs {1})." -f $crouchRateText, $standingRateText))
-    }
-}
-elseif ($crouchMoveAccepted.Count -eq 0) {
-    [void]$warnings.Add("No grounded crouch-moving accepted shots with move_penalty > 0 were found, so crouch-move reduction cannot be evaluated from this log.")
-}
-else {
-    [void]$warnings.Add("No comparable grounded standing moving accepted shots were found, so crouch-move reduction cannot be evaluated from this log.")
-}
-
-if (-not $session) {
-    [void]$warnings.Add("No session header line was parsed. The analyzer can still summarize event telemetry, but launch metadata is missing.")
-}
-
-if ($headshotPathEvidenceSufficient) {
-    [void]$observations.Add("The log contains enough evidence to say the session exercised the intended Glock headshot path: at least one headshot hit was recorded and the log also shows a headshot kill or an explicit lethal-headshot flag.")
-}
-elseif ($headshotPathEvidence) {
-    [void]$warnings.Add("Headshot hits were logged, but the evidence stops short of a headshot kill or explicit lethal-headshot flag.")
-}
-else {
-    [void]$warnings.Add("The log does not contain enough evidence to say the session exercised the intended Glock headshot path.")
-}
-
-if ($dummyHeadshotKillEvents.Count -gt 0) {
-    [void]$observations.Add("Headshot kill evidence exists against the lab dummy.")
-}
-elseif ($labDummySession -and $dummyHeadshotHitEvents.Count -gt 0) {
-    [void]$warnings.Add("Dummy headshot hits were logged, but the log does not yet show a dummy headshot kill.")
-}
-
-if ($dummyLethalHeadshotEvidenceEvents.Count -gt 0) {
-    [void]$observations.Add("Lethal-headshot evidence exists against the lab dummy.")
-}
-elseif ($labDummySession -and $dummyHeadshotHitEvents.Count -gt 0) {
-    [void]$warnings.Add("Dummy headshot hits were logged, but the log does not yet prove the lethal-headshot path ran against the dummy.")
-}
+    if ($crouchMoveEvidence) { [void]$observations.Add(("Grounded crouch-moving accepted shots showed lower normalized movement-penalty candidates than grounded standing moving shots (avg penalty-rate {0} vs {1}). This is evidence, not proof, of crouch-move penalty reduction." -f (FNum $crouchRateStats.Average 4),(FNum $standingRateStats.Average 4))) }
+    else { [void]$warnings.Add(("Grounded crouch-moving accepted shots were present, but this log did not show lower crouch normalized movement-penalty candidates than grounded standing movement (avg penalty-rate {0} vs {1})." -f (FNum $crouchRateStats.Average 4),(FNum $standingRateStats.Average 4))) }
+} elseif ($crouchMoveAccepted.Count -eq 0) { [void]$warnings.Add("No grounded crouch-moving accepted shots with move_penalty > 0 were found, so crouch-move reduction cannot be evaluated from this log.") }
+else { [void]$warnings.Add("No comparable grounded standing moving accepted shots were found, so crouch-move reduction cannot be evaluated from this log.") }
 
 $signals = [ordered]@{
-    acceptedShots                        = ($acceptedEvents.Count -gt 0)
-    tapFireHoldRejections                = ($rejectedEvents.Count -gt 0)
-    firstShotAccepted                    = ($firstShotAccepted.Count -gt 0)
-    movementPenaltyPositive              = ($movePenaltyAccepted.Count -gt 0)
-    recoveryReturnedFirstShot            = $recoveryReturnedFirstShot
-    crouchMovePenaltyReductionCandidate  = $crouchMoveEvidence
-    hitsPresent                          = ($hitEvents.Count -gt 0)
-    killsPresent                         = ($killEvents.Count -gt 0)
-    headshotHitsPresent                  = ($headshotHitEvents.Count -gt 0)
-    headshotKillsPresent                 = ($headshotKillEvents.Count -gt 0)
-    lethalHeadshotEvidencePresent        = ($lethalHeadshotEvidenceEvents.Count -gt 0)
-    headshotPathObserved                 = $headshotPathEvidence
-    headshotPathEvidenceSufficient       = $headshotPathEvidenceSufficient
-    dummySpawnsPresent                   = ($dummySpawnEvents.Count -gt 0)
-    dummyRespawnsPresent                 = ($dummyRespawnEvents.Count -gt 0)
-    dummyHitsPresent                     = ($dummyHitEvents.Count -gt 0)
-    dummyKillsPresent                    = ($dummyKillEvents.Count -gt 0)
-    dummyHeadshotHitsPresent             = ($dummyHeadshotHitEvents.Count -gt 0)
-    dummyHeadshotKillsPresent            = ($dummyHeadshotKillEvents.Count -gt 0)
-    dummyLethalHeadshotEvidencePresent   = ($dummyLethalHeadshotEvidenceEvents.Count -gt 0)
-    dummyDrivenLiveFiringEvidencePresent = $dummyDrivenLiveFiringEvidence
+    acceptedShots = ($accepted.Count -gt 0); tapFireHoldRejections = ($rejected.Count -gt 0); firstShotAccepted = ($firstShotAccepted.Count -gt 0); movementPenaltyPositive = ($movePenaltyAccepted.Count -gt 0); recoveryReturnedFirstShot = $recoveryReturnedFirstShot; crouchMovePenaltyReductionCandidate = $crouchMoveEvidence;
+    hitsPresent = ($hits.Count -gt 0); killsPresent = ($kills.Count -gt 0); headshotHitsPresent = ($headshotHits.Count -gt 0); headshotKillsPresent = ($headshotKills.Count -gt 0); lethalHeadshotEvidencePresent = ($lethalEvents.Count -gt 0);
+    dummySpawnsPresent = ($dummySpawns.Count -gt 0); dummyRespawnsPresent = ($dummyRespawns.Count -gt 0); dummyHitsPresent = ($dummyHits.Count -gt 0); dummyKillsPresent = ($dummyKills.Count -gt 0); dummyHeadshotHitsPresent = ($dummyHeadshotHits.Count -gt 0); dummyHeadshotKillsPresent = ($dummyHeadshotKills.Count -gt 0);
+    armoredDummyHitsPresent = ($armoredDummyHits.Count -gt 0); protectedDummyHeadshotHitsPresent = ($protectedDummyHeadshotHits.Count -gt 0); protectedDummyHeadshotKillsPresent = ($protectedDummyHeadshotKills.Count -gt 0); dummyLethalHeadshotEvidencePresent = ($dummyLethal.Count -gt 0); dummyDrivenLiveFiringEvidencePresent = $dummyDriven; dummyUnarmoredEvidencePresent = ($unarmoredEvidence.Count -gt 0); dummyArmoredEvidencePresent = ($armoredEvidence.Count -gt 0)
 }
 
-if ($RequireAccepted -and -not $signals.acceptedShots) {
-    [void]$assertionFailures.Add("Required signal missing: accepted Glock primary shots.")
-}
-
-if ($RequireRejections -and -not $signals.tapFireHoldRejections) {
-    [void]$assertionFailures.Add("Required signal missing: tap-fire hold rejection lines.")
-}
-
-if ($RequireFirstShot -and -not $signals.firstShotAccepted) {
-    [void]$assertionFailures.Add("Required signal missing: accepted events with firstshot=1.")
-}
-
-if ($RequireMovePenalty -and -not $signals.movementPenaltyPositive) {
-    [void]$assertionFailures.Add("Required signal missing: accepted events with move_penalty > 0.")
-}
-
-if ($RequireCrouchMoveEvidence -and -not $signals.crouchMovePenaltyReductionCandidate) {
-    [void]$assertionFailures.Add("Required signal missing: crouch-moving accepted shots that suggest lower movement penalty than standing movement.")
-}
-
-if ($RequireHits -and -not $signals.hitsPresent) {
-    [void]$assertionFailures.Add("Required signal missing: Glock hit telemetry lines.")
-}
-
-if ($RequireKills -and -not $signals.killsPresent) {
-    [void]$assertionFailures.Add("Required signal missing: Glock kill telemetry lines.")
-}
-
-if ($RequireHeadshotKills -and -not $signals.headshotKillsPresent) {
-    [void]$assertionFailures.Add("Required signal missing: Glock headshot kill telemetry lines.")
-}
-
-if ($RequireLethalHeadshotEvidence -and -not $signals.lethalHeadshotEvidencePresent) {
-    [void]$assertionFailures.Add("Required signal missing: explicit lethal-headshot evidence via headshot_lethal_applied=1.")
-}
-
-if ($RequireDummySpawns -and -not $signals.dummySpawnsPresent) {
-    [void]$assertionFailures.Add("Required signal missing: lab dummy spawn lifecycle lines.")
-}
-
-if ($RequireDummyHits -and -not $signals.dummyHitsPresent) {
-    [void]$assertionFailures.Add("Required signal missing: Glock hit telemetry against the lab dummy.")
-}
-
-if ($RequireDummyHeadshotHits -and -not $signals.dummyHeadshotHitsPresent) {
-    [void]$assertionFailures.Add("Required signal missing: dummy headshot hit telemetry.")
-}
-
-if ($RequireDummyHeadshotKills -and -not $signals.dummyHeadshotKillsPresent) {
-    [void]$assertionFailures.Add("Required signal missing: dummy headshot kill telemetry.")
-}
+if ($RequireAccepted -and -not $signals.acceptedShots) { [void]$assertions.Add("Required signal missing: accepted Glock primary shots.") }
+if ($RequireRejections -and -not $signals.tapFireHoldRejections) { [void]$assertions.Add("Required signal missing: tap-fire hold rejection lines.") }
+if ($RequireFirstShot -and -not $signals.firstShotAccepted) { [void]$assertions.Add("Required signal missing: accepted events with firstshot=1.") }
+if ($RequireMovePenalty -and -not $signals.movementPenaltyPositive) { [void]$assertions.Add("Required signal missing: accepted events with move_penalty > 0.") }
+if ($RequireCrouchMoveEvidence -and -not $signals.crouchMovePenaltyReductionCandidate) { [void]$assertions.Add("Required signal missing: crouch-moving accepted shots that suggest lower movement penalty than standing movement.") }
+if ($RequireHits -and -not $signals.hitsPresent) { [void]$assertions.Add("Required signal missing: Glock hit telemetry lines.") }
+if ($RequireKills -and -not $signals.killsPresent) { [void]$assertions.Add("Required signal missing: Glock kill telemetry lines.") }
+if ($RequireHeadshotKills -and -not $signals.headshotKillsPresent) { [void]$assertions.Add("Required signal missing: Glock headshot kill telemetry lines.") }
+if ($RequireLethalHeadshotEvidence -and -not $signals.lethalHeadshotEvidencePresent) { [void]$assertions.Add("Required signal missing: explicit lethal-headshot evidence via headshot_lethal_applied=1.") }
+if ($RequireDummySpawns -and -not $signals.dummySpawnsPresent) { [void]$assertions.Add("Required signal missing: lab dummy spawn lifecycle lines.") }
+if ($RequireDummyHits -and -not $signals.dummyHitsPresent) { [void]$assertions.Add("Required signal missing: Glock hit telemetry against the lab dummy.") }
+if ($RequireDummyHeadshotHits -and -not $signals.dummyHeadshotHitsPresent) { [void]$assertions.Add("Required signal missing: dummy headshot hit telemetry.") }
+if ($RequireDummyHeadshotKills -and -not $signals.dummyHeadshotKillsPresent) { [void]$assertions.Add("Required signal missing: dummy headshot kill telemetry.") }
+if ($RequireArmoredDummyHits -and -not $signals.armoredDummyHitsPresent) { [void]$assertions.Add("Required signal missing: armored dummy hit telemetry.") }
+if ($RequireProtectedDummyHeadshotHits -and -not $signals.protectedDummyHeadshotHitsPresent) { [void]$assertions.Add("Required signal missing: protected-head dummy headshot hit telemetry.") }
+if ($RequireProtectedDummyHeadshotKills -and -not $signals.protectedDummyHeadshotKillsPresent) { [void]$assertions.Add("Required signal missing: protected-head dummy headshot kill telemetry.") }
+if ($RequireDummyLethalHeadshotEvidence -and -not $signals.dummyLethalHeadshotEvidencePresent) { [void]$assertions.Add("Required signal missing: explicit lethal-headshot evidence against the dummy via headshot_lethal_applied=1.") }
 
 $report = [ordered]@{
-    analyzedLogPath = $targetLog.FullName
-    session = if ($session) {
-        [ordered]@{
-            timestamp = $session.Timestamp
-            map = $session.Map
-            game = $session.Game
-            event = $session.Event
-            status = $session.Status
-            file = $session.LogFile
-            profileName = $session.ProfileName
-            featureFlags = [ordered]@{
-                tapFire = $session.TapFire
-                moveSpreadScale = $session.MoveSpreadScale
-                firstShotAccuracy = $session.FirstShotEnabled
-                spreadRecovery = $session.SpreadRecovery
-            }
-            tuning = [ordered]@{
-                baseSpread = $session.BaseSpread
-                groundMovePenalty = $session.GroundMovePenalty
-                airMovePenalty = $session.AirMovePenalty
-                duckPenaltyScale = $session.DuckPenaltyScale
-                firstShotSpeedThreshold = $session.FirstShotSpeedThreshold
-                maxSpread = $session.MaxSpread
-                primaryDamage = $session.PrimaryDamageSetting
-                headshotScale = $session.HeadshotScaleSetting
-                headshotLethal = $session.HeadshotLethalSetting
-            }
-            labDummy = [ordered]@{
-                enabled = $session.LabDummyEnabled
-                health = $session.LabDummyHealth
-                autorespawn = $session.LabDummyAutoRespawn
-                respawnDelay = $session.LabDummyRespawnDelay
-                spawnDistance = $session.LabDummySpawnDistance
-                model = $session.LabDummyModel
-                facePlayer = $session.LabDummyFacePlayer
-                offsetRight = $session.LabDummyOffsetRight
-                offsetUp = $session.LabDummyOffsetUp
-            }
-        }
-    }
-    else {
-        $null
-    }
-    counters = [ordered]@{
-        parsedEventCount = $parsedEvents.Count
-        acceptedShots = $acceptedEvents.Count
-        rejectedShots = $rejectedEvents.Count
-        hitEvents = $hitEvents.Count
-        killEvents = $killEvents.Count
-        headshotHits = $headshotHitEvents.Count
-        headshotKills = $headshotKillEvents.Count
-        lethalHeadshotEvidence = $lethalHeadshotEvidenceEvents.Count
-        dummySpawns = $dummySpawnEvents.Count
-        dummyRespawns = $dummyRespawnEvents.Count
-        dummyClears = $dummyClearEvents.Count
-        dummyHits = $dummyHitEvents.Count
-        dummyKills = $dummyKillEvents.Count
-        dummyHeadshotHits = $dummyHeadshotHitEvents.Count
-        dummyHeadshotKills = $dummyHeadshotKillEvents.Count
-        dummyLethalHeadshotEvidence = $dummyLethalHeadshotEvidenceEvents.Count
-        firstShotAccepted = $firstShotAccepted.Count
-        acceptedMovePenaltyPositive = $movePenaltyAccepted.Count
-        acceptedGrounded = $groundedAccepted.Count
-        acceptedAirborne = $airborneAccepted.Count
-        acceptedDucking = $duckingAccepted.Count
-        acceptedStandingMoving = $standingMoveAccepted.Count
-        acceptedCrouchMoving = $crouchMoveAccepted.Count
-    }
-    stats = [ordered]@{
-        spread = $spreadStats
-        movementPenalty = $movementPenaltyStats
-        horizontalSpeed = $speedStats
-        standingMovePenaltyRate = $standingPenaltyRateStats
-        crouchMovePenaltyRate = $crouchPenaltyRateStats
-        appliedDamage = $appliedDamageStats
-        hitgroupCounts = $hitgroupCounts
-        dummyAppliedDamage = $dummyAppliedDamageStats
-        dummyHitgroupCounts = $dummyHitgroupCounts
-    }
+    analyzedLogPath = $log.FullName
+    session = if ($session) { [ordered]@{ timestamp = $session.Timestamp; map = $session.Map; game = $session.Game; status = $session.Status; file = $session.LogFile; profileName = $session.ProfileName; targetProfileName = $targetProfile; featureFlags = [ordered]@{ tapFire = $session.TapFire; moveSpreadScale = $session.MoveSpreadScale; firstShotAccuracy = $session.FirstShotEnabled; spreadRecovery = $session.SpreadRecovery }; tuning = [ordered]@{ baseSpread = $session.BaseSpread; groundMovePenalty = $session.GroundMovePenalty; airMovePenalty = $session.AirMovePenalty; duckPenaltyScale = $session.DuckPenaltyScale; firstShotSpeedThreshold = $session.FirstShotSpeedThreshold; maxSpread = $session.MaxSpread; primaryDamage = $session.PrimaryDamageSetting; headshotScale = $session.HeadshotScaleSetting; headshotLethal = $session.HeadshotLethalSetting }; labDummy = [ordered]@{ enabled = $session.LabDummyEnabled; health = $session.LabDummyHealth; armor = $session.LabDummyArmorSetting; headProtected = $session.LabDummyHeadProtectedSetting; armorHealthFraction = $session.LabDummyArmorHealthFraction; armorDrainScale = $session.LabDummyArmorDrainScale; autorespawn = $session.LabDummyAutoRespawn; respawnDelay = $session.LabDummyRespawnDelay; spawnDistance = $session.LabDummySpawnDistance; model = $session.LabDummyModel } } } else { $null }
+    counters = [ordered]@{ parsedEventCount = $events.Count; acceptedShots = $accepted.Count; rejectedShots = $rejected.Count; hitEvents = $hits.Count; killEvents = $kills.Count; headshotHits = $headshotHits.Count; headshotKills = $headshotKills.Count; lethalHeadshotEvidence = $lethalEvents.Count; dummySpawns = $dummySpawns.Count; dummyRespawns = $dummyRespawns.Count; dummyClears = $dummyClears.Count; dummyHits = $dummyHits.Count; dummyKills = $dummyKills.Count; dummyHeadshotHits = $dummyHeadshotHits.Count; dummyHeadshotKills = $dummyHeadshotKills.Count; armoredDummyHits = $armoredDummyHits.Count; protectedDummyHeadshotHits = $protectedDummyHeadshotHits.Count; protectedDummyHeadshotKills = $protectedDummyHeadshotKills.Count; dummyLethalHeadshotEvidence = $dummyLethal.Count; firstShotAccepted = $firstShotAccepted.Count; acceptedMovePenaltyPositive = $movePenaltyAccepted.Count; acceptedGrounded = $groundedAccepted.Count; acceptedAirborne = $airborneAccepted.Count; acceptedDucking = $duckingAccepted.Count }
+    stats = [ordered]@{ spread = $spreadStats; movementPenalty = $moveStats; horizontalSpeed = $speedStats; standingMovePenaltyRate = $standingRateStats; crouchMovePenaltyRate = $crouchRateStats; appliedDamage = $appliedDamageStats; hitgroupCounts = $hitgroupCounts; dummyAppliedDamage = $dummyAppliedDamageStats; dummyHitgroupCounts = $dummyHitgroupCounts; dummyRawDamage = $rawDamageStats; dummyDamageToHealth = $damageToHealthStats; dummyDamageAbsorbed = $damageAbsorbedStats; dummyArmorDrain = $armorDrainStats }
     signals = $signals
     observations = @($observations)
     warnings = @($warnings)
 }
 
-$exportedFiles = [ordered]@{}
+$exports = [ordered]@{}
 if ($ExportJson -or $ExportCsv) {
-    $resolvedOutputDir = if ([string]::IsNullOrWhiteSpace($OutputDir)) {
-        Get-WeaponDebugReportsRoot
-    }
-    else {
-        Get-FullPath -Path $OutputDir
-    }
-
-    Ensure-Directory -Path $resolvedOutputDir
-    $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-
-    if ($ExportJson) {
-        $jsonPath = Join-Path $resolvedOutputDir ("weapon-report-" + $timestamp + ".json")
-        $report | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $jsonPath -Encoding UTF8
-        $exportedFiles.json = $jsonPath
-    }
-
-    if ($ExportCsv) {
-        $csvPath = Join-Path $resolvedOutputDir ("weapon-events-" + $timestamp + ".csv")
-        $parsedEvents | Export-Csv -LiteralPath $csvPath -NoTypeInformation -Encoding UTF8
-        $exportedFiles.csv = $csvPath
-    }
+    $outDir = if ([string]::IsNullOrWhiteSpace($OutputDir)) { Get-WeaponDebugReportsRoot } else { Get-FullPath -Path $OutputDir }
+    Ensure-Directory -Path $outDir
+    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    if ($ExportJson) { $json = Join-Path $outDir ("weapon-report-" + $stamp + ".json"); $report | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $json -Encoding UTF8; $exports.json = $json }
+    if ($ExportCsv) { $csv = Join-Path $outDir ("weapon-events-" + $stamp + ".csv"); $events | Export-Csv -LiteralPath $csv -NoTypeInformation -Encoding UTF8; $exports.csv = $csv }
 }
 
 Write-Host "Weapon log analysis"
-Write-Host "  log path                 : $($targetLog.FullName)"
-
+Write-Host "  log path                 : $($log.FullName)"
 if ($session) {
     Write-Host "  session                  : ts=$($session.Timestamp) map=$($session.Map) game=$($session.Game) status=$($session.Status)"
-    if (-not [string]::IsNullOrWhiteSpace($session.ProfileName)) {
-        Write-Host "  profile                  : $($session.ProfileName)"
-    }
-
-    if ($null -ne $session.BaseSpread -or $null -ne $session.GroundMovePenalty -or $null -ne $session.AirMovePenalty -or $null -ne $session.DuckPenaltyScale -or $null -ne $session.FirstShotSpeedThreshold -or $null -ne $session.MaxSpread) {
-        Write-Host "  tuning                   : base=$(Format-WeaponLogNumber -Value $session.BaseSpread -Digits 4) ground=$(Format-WeaponLogNumber -Value $session.GroundMovePenalty -Digits 4) air=$(Format-WeaponLogNumber -Value $session.AirMovePenalty -Digits 4) duck=$(Format-WeaponLogNumber -Value $session.DuckPenaltyScale -Digits 4) firstshot_speed=$(Format-WeaponLogNumber -Value $session.FirstShotSpeedThreshold -Digits 1) max_spread=$(Format-WeaponLogNumber -Value $session.MaxSpread -Digits 4)"
-    }
-
-    if ($null -ne $session.PrimaryDamageSetting -or $null -ne $session.HeadshotScaleSetting -or $null -ne $session.HeadshotLethalSetting) {
-        Write-Host "  damage tuning            : damage=$(Format-WeaponLogNumber -Value $session.PrimaryDamageSetting -Digits 4) headshot_scale=$(Format-WeaponLogNumber -Value $session.HeadshotScaleSetting -Digits 4) headshot_lethal=$(Format-WeaponLogBool -Value $session.HeadshotLethalSetting)"
-    }
-
-    if ($null -ne $session.TapFire -or $null -ne $session.MoveSpreadScale -or $null -ne $session.FirstShotEnabled -or $null -ne $session.SpreadRecovery) {
-        Write-Host "  feature flags            : tapfire=$(Format-WeaponLogBool -Value $session.TapFire) move_scale=$(Format-WeaponLogNumber -Value $session.MoveSpreadScale -Digits 4) firstshot=$(Format-WeaponLogBool -Value $session.FirstShotEnabled) recovery=$(Format-WeaponLogNumber -Value $session.SpreadRecovery -Digits 3)"
-    }
-
-    if ($null -ne $session.LabDummyEnabled -or $null -ne $session.LabDummyHealth -or $null -ne $session.LabDummyAutoRespawn -or $null -ne $session.LabDummyRespawnDelay -or $null -ne $session.LabDummySpawnDistance -or -not [string]::IsNullOrWhiteSpace($session.LabDummyModel)) {
-        Write-Host "  lab dummy                : enabled=$(Format-WeaponLogBool -Value $session.LabDummyEnabled) health=$(Format-WeaponLogNumber -Value $session.LabDummyHealth -Digits 1) autorespawn=$(Format-WeaponLogBool -Value $session.LabDummyAutoRespawn) respawn_delay=$(Format-WeaponLogNumber -Value $session.LabDummyRespawnDelay -Digits 2) spawn_distance=$(Format-WeaponLogNumber -Value $session.LabDummySpawnDistance -Digits 1) model=$(if ([string]::IsNullOrWhiteSpace($session.LabDummyModel)) { 'n/a' } else { $session.LabDummyModel })"
-    }
-}
-else {
+    if (-not [string]::IsNullOrWhiteSpace($session.ProfileName)) { Write-Host "  profile                  : $($session.ProfileName)" }
+    Write-Host "  target profile           : $(if ([string]::IsNullOrWhiteSpace($targetProfile)) { 'n/a' } else { $targetProfile })"
+    if ($null -ne $session.BaseSpread -or $null -ne $session.GroundMovePenalty -or $null -ne $session.AirMovePenalty -or $null -ne $session.DuckPenaltyScale -or $null -ne $session.FirstShotSpeedThreshold -or $null -ne $session.MaxSpread) { Write-Host "  tuning                   : base=$(FNum $session.BaseSpread 4) ground=$(FNum $session.GroundMovePenalty 4) air=$(FNum $session.AirMovePenalty 4) duck=$(FNum $session.DuckPenaltyScale 4) firstshot_speed=$(FNum $session.FirstShotSpeedThreshold 1) max_spread=$(FNum $session.MaxSpread 4)" }
+    if ($null -ne $session.PrimaryDamageSetting -or $null -ne $session.HeadshotScaleSetting -or $null -ne $session.HeadshotLethalSetting) { Write-Host "  damage tuning            : damage=$(FNum $session.PrimaryDamageSetting 4) headshot_scale=$(FNum $session.HeadshotScaleSetting 4) headshot_lethal=$(FBool $session.HeadshotLethalSetting)" }
+    if ($null -ne $session.TapFire -or $null -ne $session.MoveSpreadScale -or $null -ne $session.FirstShotEnabled -or $null -ne $session.SpreadRecovery) { Write-Host "  feature flags            : tapfire=$(FBool $session.TapFire) move_scale=$(FNum $session.MoveSpreadScale 4) firstshot=$(FBool $session.FirstShotEnabled) recovery=$(FNum $session.SpreadRecovery 3)" }
+    if ($null -ne $session.LabDummyEnabled -or $null -ne $session.LabDummyArmorSetting -or $null -ne $session.LabDummyHeadProtectedSetting) { Write-Host "  lab dummy                : enabled=$(FBool $session.LabDummyEnabled) health=$(FNum $session.LabDummyHealth 1) armor=$(FNum $session.LabDummyArmorSetting 1) head_protected=$(FBool $session.LabDummyHeadProtectedSetting) armor_health_fraction=$(FNum $session.LabDummyArmorHealthFraction 3) armor_drain_scale=$(FNum $session.LabDummyArmorDrainScale 3)" }
+} else {
     Write-Host "  session                  : missing"
+    Write-Host "  target profile           : $(if ([string]::IsNullOrWhiteSpace($targetProfile)) { 'n/a' } else { $targetProfile })"
 }
-
-Write-Host "  accepted shots           : $($acceptedEvents.Count)"
-Write-Host "  rejected shots           : $($rejectedEvents.Count)"
-Write-Host "  hit events               : $($hitEvents.Count)"
-Write-Host "  kill events              : $($killEvents.Count)"
-Write-Host "  headshot hits            : $($headshotHitEvents.Count)"
-Write-Host "  headshot kills           : $($headshotKillEvents.Count)"
-Write-Host "  lethal hs evidence       : $($lethalHeadshotEvidenceEvents.Count)"
-Write-Host "  dummy spawns             : $($dummySpawnEvents.Count)"
-Write-Host "  dummy respawns           : $($dummyRespawnEvents.Count)"
-Write-Host "  dummy hits               : $($dummyHitEvents.Count)"
-Write-Host "  dummy kills              : $($dummyKillEvents.Count)"
-Write-Host "  dummy headshot hits      : $($dummyHeadshotHitEvents.Count)"
-Write-Host "  dummy headshot kills     : $($dummyHeadshotKillEvents.Count)"
-Write-Host "  dummy lethal hs evidence : $($dummyLethalHeadshotEvidenceEvents.Count)"
+Write-Host "  accepted shots           : $($accepted.Count)"
+Write-Host "  rejected shots           : $($rejected.Count)"
+Write-Host "  hit events               : $($hits.Count)"
+Write-Host "  kill events              : $($kills.Count)"
+Write-Host "  headshot hits            : $($headshotHits.Count)"
+Write-Host "  headshot kills           : $($headshotKills.Count)"
+Write-Host "  lethal hs evidence       : $($lethalEvents.Count)"
+Write-Host "  dummy spawns             : $($dummySpawns.Count)"
+Write-Host "  dummy respawns           : $($dummyRespawns.Count)"
+Write-Host "  dummy hits               : $($dummyHits.Count)"
+Write-Host "  dummy kills              : $($dummyKills.Count)"
+Write-Host "  armored dummy hits       : $($armoredDummyHits.Count)"
+Write-Host "  protected hs hits        : $($protectedDummyHeadshotHits.Count)"
+Write-Host "  protected hs kills       : $($protectedDummyHeadshotKills.Count)"
+Write-Host "  dummy lethal hs evidence : $($dummyLethal.Count)"
 Write-Host "  first-shot accepted      : $($firstShotAccepted.Count)"
 Write-Host "  accepted move_penalty>0  : $($movePenaltyAccepted.Count)"
-Write-Host "  applied dmg min/avg/max  : $(Format-WeaponLogNumber -Value $(if ($appliedDamageStats) { $appliedDamageStats.Min } else { $null }) -Digits 4) / $(Format-WeaponLogNumber -Value $(if ($appliedDamageStats) { $appliedDamageStats.Average } else { $null }) -Digits 4) / $(Format-WeaponLogNumber -Value $(if ($appliedDamageStats) { $appliedDamageStats.Max } else { $null }) -Digits 4)"
-Write-Host "  dummy dmg min/avg/max    : $(Format-WeaponLogNumber -Value $(if ($dummyAppliedDamageStats) { $dummyAppliedDamageStats.Min } else { $null }) -Digits 4) / $(Format-WeaponLogNumber -Value $(if ($dummyAppliedDamageStats) { $dummyAppliedDamageStats.Average } else { $null }) -Digits 4) / $(Format-WeaponLogNumber -Value $(if ($dummyAppliedDamageStats) { $dummyAppliedDamageStats.Max } else { $null }) -Digits 4)"
-Write-Host "  hitgroups                : $(Format-HitgroupCounts -Counts $hitgroupCounts)"
-Write-Host "  dummy hitgroups          : $(Format-HitgroupCounts -Counts $dummyHitgroupCounts)"
+Write-Host "  applied dmg min/avg/max  : $(FNum $(if ($appliedDamageStats) { $appliedDamageStats.Min } else { $null }) 4) / $(FNum $(if ($appliedDamageStats) { $appliedDamageStats.Average } else { $null }) 4) / $(FNum $(if ($appliedDamageStats) { $appliedDamageStats.Max } else { $null }) 4)"
+Write-Host "  dummy dmg min/avg/max    : $(FNum $(if ($dummyAppliedDamageStats) { $dummyAppliedDamageStats.Min } else { $null }) 4) / $(FNum $(if ($dummyAppliedDamageStats) { $dummyAppliedDamageStats.Average } else { $null }) 4) / $(FNum $(if ($dummyAppliedDamageStats) { $dummyAppliedDamageStats.Max } else { $null }) 4)"
+Write-Host "  raw dmg min/avg/max      : $(FNum $(if ($rawDamageStats) { $rawDamageStats.Min } else { $null }) 4) / $(FNum $(if ($rawDamageStats) { $rawDamageStats.Average } else { $null }) 4) / $(FNum $(if ($rawDamageStats) { $rawDamageStats.Max } else { $null }) 4)"
+Write-Host "  to-health min/avg/max    : $(FNum $(if ($damageToHealthStats) { $damageToHealthStats.Min } else { $null }) 4) / $(FNum $(if ($damageToHealthStats) { $damageToHealthStats.Average } else { $null }) 4) / $(FNum $(if ($damageToHealthStats) { $damageToHealthStats.Max } else { $null }) 4)"
+Write-Host "  absorbed min/avg/max     : $(FNum $(if ($damageAbsorbedStats) { $damageAbsorbedStats.Min } else { $null }) 4) / $(FNum $(if ($damageAbsorbedStats) { $damageAbsorbedStats.Average } else { $null }) 4) / $(FNum $(if ($damageAbsorbedStats) { $damageAbsorbedStats.Max } else { $null }) 4)"
+Write-Host "  armor drain min/avg/max  : $(FNum $(if ($armorDrainStats) { $armorDrainStats.Min } else { $null }) 4) / $(FNum $(if ($armorDrainStats) { $armorDrainStats.Average } else { $null }) 4) / $(FNum $(if ($armorDrainStats) { $armorDrainStats.Max } else { $null }) 4)"
+Write-Host "  hitgroups                : $(FHitgroups $hitgroupCounts)"
+Write-Host "  dummy hitgroups          : $(FHitgroups $dummyHitgroupCounts)"
 Write-Host "  accepted grounded        : $($groundedAccepted.Count)"
 Write-Host "  accepted airborne        : $($airborneAccepted.Count)"
 Write-Host "  accepted ducking         : $($duckingAccepted.Count)"
-Write-Host "  spread min/avg/max       : $(Format-WeaponLogNumber -Value $(if ($spreadStats) { $spreadStats.Min } else { $null }) -Digits 4) / $(Format-WeaponLogNumber -Value $(if ($spreadStats) { $spreadStats.Average } else { $null }) -Digits 4) / $(Format-WeaponLogNumber -Value $(if ($spreadStats) { $spreadStats.Max } else { $null }) -Digits 4)"
-Write-Host "  move penalty min/avg/max : $(Format-WeaponLogNumber -Value $(if ($movementPenaltyStats) { $movementPenaltyStats.Min } else { $null }) -Digits 4) / $(Format-WeaponLogNumber -Value $(if ($movementPenaltyStats) { $movementPenaltyStats.Average } else { $null }) -Digits 4) / $(Format-WeaponLogNumber -Value $(if ($movementPenaltyStats) { $movementPenaltyStats.Max } else { $null }) -Digits 4)"
-Write-Host "  speed2d min/avg/max      : $(Format-WeaponLogNumber -Value $(if ($speedStats) { $speedStats.Min } else { $null }) -Digits 1) / $(Format-WeaponLogNumber -Value $(if ($speedStats) { $speedStats.Average } else { $null }) -Digits 1) / $(Format-WeaponLogNumber -Value $(if ($speedStats) { $speedStats.Max } else { $null }) -Digits 1)"
+Write-Host "  spread min/avg/max       : $(FNum $(if ($spreadStats) { $spreadStats.Min } else { $null }) 4) / $(FNum $(if ($spreadStats) { $spreadStats.Average } else { $null }) 4) / $(FNum $(if ($spreadStats) { $spreadStats.Max } else { $null }) 4)"
+Write-Host "  move penalty min/avg/max : $(FNum $(if ($moveStats) { $moveStats.Min } else { $null }) 4) / $(FNum $(if ($moveStats) { $moveStats.Average } else { $null }) 4) / $(FNum $(if ($moveStats) { $moveStats.Max } else { $null }) 4)"
+Write-Host "  speed2d min/avg/max      : $(FNum $(if ($speedStats) { $speedStats.Min } else { $null }) 1) / $(FNum $(if ($speedStats) { $speedStats.Average } else { $null }) 1) / $(FNum $(if ($speedStats) { $speedStats.Max } else { $null }) 1)"
 
-Write-Host ""
-Write-Host "Observations"
-if ($observations.Count -eq 0) {
-    Write-Host "  - No notable observations were derived from the parsed telemetry."
-}
-else {
-    foreach ($observation in $observations) {
-        Write-Host "  - $observation"
-    }
-}
-
-Write-Host ""
-Write-Host "Warnings"
-if ($warnings.Count -eq 0) {
-    Write-Host "  - none"
-}
-else {
-    foreach ($warning in $warnings) {
-        Write-Host "  - $warning"
-    }
-}
-
-if ($exportedFiles.Count -gt 0) {
-    Write-Host ""
-    Write-Host "Exports"
-    foreach ($exportType in $exportedFiles.Keys) {
-        Write-Host "  $exportType : $($exportedFiles[$exportType])"
-    }
-}
-
-Write-Host ""
-Write-Host "Evidence only: this summarizes logged server-authoritative telemetry, not subjective stock-client feel."
-
-if ($assertionFailures.Count -gt 0) {
-    Write-Host ""
-    Write-Host "Assertion failures"
-    foreach ($failure in $assertionFailures) {
-        Write-Host "  - $failure"
-    }
-
-    exit 2
-}
+Write-Host ""; Write-Host "Observations"
+if ($observations.Count -eq 0) { Write-Host "  - No notable observations were derived from the parsed telemetry." } else { foreach ($o in $observations) { Write-Host "  - $o" } }
+Write-Host ""; Write-Host "Warnings"
+if ($warnings.Count -eq 0) { Write-Host "  - none" } else { foreach ($w in $warnings) { Write-Host "  - $w" } }
+if ($exports.Count -gt 0) { Write-Host ""; Write-Host "Exports"; foreach ($k in $exports.Keys) { Write-Host "  $k : $($exports[$k])" } }
+Write-Host ""; Write-Host "Evidence only: this summarizes logged server-authoritative telemetry. Armored-dummy evidence is not proof of exact PvP or exact player-armor parity."
+if ($assertions.Count -gt 0) { Write-Host ""; Write-Host "Assertion failures"; foreach ($a in $assertions) { Write-Host "  - $a" }; exit 2 }

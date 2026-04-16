@@ -11,6 +11,7 @@
 
 namespace
 {
+const char *kDefaultGlockLabTargetProfileName = "default";
 const float kDefaultGlockLabDummyHealth = 100.0f;
 const float kDefaultGlockLabDummyRespawnDelay = 1.0f;
 const float kDefaultGlockLabDummySpawnDistance = 256.0f;
@@ -39,7 +40,12 @@ cvar_t sv_exp_glock_primary_headshot_lethal = {"sv_exp_glock_primary_headshot_le
 cvar_t sv_exp_debug_weaponlog = {"sv_exp_debug_weaponlog", "0", FCVAR_SERVER};
 cvar_t sv_exp_debug_weaponlog_rejections = {"sv_exp_debug_weaponlog_rejections", "0", FCVAR_SERVER};
 cvar_t sv_exp_glock_lab_dummy = {"sv_exp_glock_lab_dummy", "0", FCVAR_SERVER};
+cvar_t sv_exp_glock_lab_target_profile_name = {"sv_exp_glock_lab_target_profile_name", "default", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
 cvar_t sv_exp_glock_lab_dummy_health = {"sv_exp_glock_lab_dummy_health", "100.0", FCVAR_SERVER};
+cvar_t sv_exp_glock_lab_dummy_armor = {"sv_exp_glock_lab_dummy_armor", "0.0", FCVAR_SERVER};
+cvar_t sv_exp_glock_lab_dummy_head_protected = {"sv_exp_glock_lab_dummy_head_protected", "0", FCVAR_SERVER};
+cvar_t sv_exp_glock_lab_dummy_armor_health_fraction = {"sv_exp_glock_lab_dummy_armor_health_fraction", "0.5", FCVAR_SERVER};
+cvar_t sv_exp_glock_lab_dummy_armor_drain_scale = {"sv_exp_glock_lab_dummy_armor_drain_scale", "1.0", FCVAR_SERVER};
 cvar_t sv_exp_glock_lab_dummy_autorespawn = {"sv_exp_glock_lab_dummy_autorespawn", "1", FCVAR_SERVER};
 cvar_t sv_exp_glock_lab_dummy_respawn_delay = {"sv_exp_glock_lab_dummy_respawn_delay", "1.0", FCVAR_SERVER};
 cvar_t sv_exp_glock_lab_dummy_spawn_distance = {"sv_exp_glock_lab_dummy_spawn_distance", "256.0", FCVAR_SERVER};
@@ -67,6 +73,21 @@ float GetNonNegativeCvarValue(const cvar_t &cvar)
 float GetPositiveOrDefaultCvarValue(const cvar_t &cvar, float fallback)
 {
     return cvar.value > 0.0f ? cvar.value : fallback;
+}
+
+float ClampFloat(float value, float minimum, float maximum)
+{
+    if (value < minimum)
+    {
+        return minimum;
+    }
+
+    if (value > maximum)
+    {
+        return maximum;
+    }
+
+    return value;
 }
 
 const char *GetNonEmptyCvarString(const cvar_t &cvar, const char *fallback)
@@ -348,12 +369,14 @@ CBaseEntity *SpawnGlockLabDummy(CBasePlayer *pAnchorPlayer, bool respawn)
 
     entvars_t *pevDummy = VARS(pent);
     const float dummyHealth = ExpGlockLabDummyHealth();
+    const float dummyArmor = ExpGlockLabDummyArmor();
 
     pevDummy->origin = spawnOrigin;
     pevDummy->angles = spawnAngles;
     pevDummy->model = ALLOC_STRING(ExpGlockLabDummyModel());
     pevDummy->health = dummyHealth;
     pevDummy->max_health = dummyHealth;
+    pevDummy->armorvalue = dummyArmor;
     SetBits(pevDummy->spawnflags, SF_MONSTER_GAG | SF_MONSTER_PRISONER);
 
     DispatchSpawn(pent);
@@ -369,6 +392,7 @@ CBaseEntity *SpawnGlockLabDummy(CBasePlayer *pAnchorPlayer, bool respawn)
     pDummy->pev->targetname = MAKE_STRING("exp_glock_lab_dummy");
     pDummy->pev->health = dummyHealth;
     pDummy->pev->max_health = dummyHealth;
+    pDummy->pev->armorvalue = dummyArmor;
     pDummy->pev->ideal_yaw = spawnAngles.y;
     pDummy->pev->yaw_speed = 0;
     pDummy->pev->velocity = g_vecZero;
@@ -505,7 +529,12 @@ void RegisterFutureGameplayCvars()
     CVAR_REGISTER(&sv_exp_debug_weaponlog);
     CVAR_REGISTER(&sv_exp_debug_weaponlog_rejections);
     CVAR_REGISTER(&sv_exp_glock_lab_dummy);
+    CVAR_REGISTER(&sv_exp_glock_lab_target_profile_name);
     CVAR_REGISTER(&sv_exp_glock_lab_dummy_health);
+    CVAR_REGISTER(&sv_exp_glock_lab_dummy_armor);
+    CVAR_REGISTER(&sv_exp_glock_lab_dummy_head_protected);
+    CVAR_REGISTER(&sv_exp_glock_lab_dummy_armor_health_fraction);
+    CVAR_REGISTER(&sv_exp_glock_lab_dummy_armor_drain_scale);
     CVAR_REGISTER(&sv_exp_glock_lab_dummy_autorespawn);
     CVAR_REGISTER(&sv_exp_glock_lab_dummy_respawn_delay);
     CVAR_REGISTER(&sv_exp_glock_lab_dummy_spawn_distance);
@@ -614,9 +643,34 @@ bool ExpGlockLabDummyEnabled()
     return sv_exp_glock_lab_dummy.value != 0.0f;
 }
 
+const char *ExpGlockLabTargetProfileName()
+{
+    return GetNonEmptyCvarString(sv_exp_glock_lab_target_profile_name, kDefaultGlockLabTargetProfileName);
+}
+
 float ExpGlockLabDummyHealth()
 {
     return GetPositiveOrDefaultCvarValue(sv_exp_glock_lab_dummy_health, kDefaultGlockLabDummyHealth);
+}
+
+float ExpGlockLabDummyArmor()
+{
+    return GetNonNegativeCvarValue(sv_exp_glock_lab_dummy_armor);
+}
+
+bool ExpGlockLabDummyHeadProtected()
+{
+    return sv_exp_glock_lab_dummy_head_protected.value != 0.0f;
+}
+
+float ExpGlockLabDummyArmorHealthFraction()
+{
+    return ClampFloat(sv_exp_glock_lab_dummy_armor_health_fraction.value, 0.0f, 1.0f);
+}
+
+float ExpGlockLabDummyArmorDrainScale()
+{
+    return GetNonNegativeCvarValue(sv_exp_glock_lab_dummy_armor_drain_scale);
 }
 
 bool ExpGlockLabDummyAutoRespawnEnabled()

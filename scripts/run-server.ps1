@@ -8,6 +8,7 @@ param(
     [int]$MaxPlayers = 4,
     [string[]]$SetCvar = @(),
     [string]$GlockProfile,
+    [string]$LabTargetProfile,
     [hashtable]$Cvars,
     [switch]$EnableExperimentalGlock,
     [switch]$EnableExperimentalGlockDebug,
@@ -37,6 +38,7 @@ if ((-not (Test-LeafPath -Path $runtimeHldsExe)) -or (-not (Test-LeafPath -Path 
 Assert-UdpPortAvailable -Port $Port
 $effectiveSetCvars = @()
 $useGlockProfile = -not [string]::IsNullOrWhiteSpace($GlockProfile)
+$useLabTargetProfile = -not [string]::IsNullOrWhiteSpace($LabTargetProfile)
 
 if ($EnableExperimentalGlock -or $EnableExperimentalGlockDebug -or $useGlockProfile) {
     $effectiveSetCvars += @(Get-ExperimentalGlockLaunchAssignments)
@@ -52,6 +54,10 @@ if ($EnableGlockLabDummy) {
 
 if ($useGlockProfile) {
     $effectiveSetCvars += @(Get-GlockProfileLaunchAssignments -Name $GlockProfile)
+}
+
+if ($useLabTargetProfile) {
+    $effectiveSetCvars += @(Get-GlockLabTargetLaunchAssignments -Name $LabTargetProfile)
 }
 
 $effectiveSetCvars += @($SetCvar)

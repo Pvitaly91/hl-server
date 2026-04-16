@@ -653,6 +653,31 @@ function Get-GlockLabDummyLaunchAssignments {
     )
 }
 
+function ConvertTo-LaunchAssignments {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Cvars,
+
+        [Parameter(Mandatory = $true)]
+        [string]$SourceLabel
+    )
+
+    $assignments = New-Object System.Collections.Generic.List[string]
+
+    foreach ($property in $Cvars.PSObject.Properties) {
+        $name = [string]$property.Name
+        $value = [string]$property.Value
+
+        if ([string]::IsNullOrWhiteSpace($name) -or [string]::IsNullOrWhiteSpace($value)) {
+            throw "$SourceLabel cvar names and values must be non-empty."
+        }
+
+        $assignments.Add(('{0}={1}' -f $name, $value))
+    }
+
+    return $assignments.ToArray()
+}
+
 function Get-GlockProfilesRoot {
     return (Join-RepoPath "configs\glock-presets")
 }
@@ -663,20 +688,7 @@ function ConvertTo-GlockProfileAssignments {
         $Cvars
     )
 
-    $assignments = New-Object System.Collections.Generic.List[string]
-
-    foreach ($property in $Cvars.PSObject.Properties) {
-        $name = [string]$property.Name
-        $value = [string]$property.Value
-
-        if ([string]::IsNullOrWhiteSpace($name) -or [string]::IsNullOrWhiteSpace($value)) {
-            throw "Glock preset cvar names and values must be non-empty."
-        }
-
-        $assignments.Add(('{0}={1}' -f $name, $value))
-    }
-
-    return $assignments.ToArray()
+    return @(ConvertTo-LaunchAssignments -Cvars $Cvars -SourceLabel "Glock preset")
 }
 
 function Get-GlockProfiles {
@@ -754,6 +766,87 @@ function Get-GlockProfileLaunchAssignments {
 
     $profile = Get-GlockProfile -Name $Name
     return @("sv_exp_glock_profile_name=$($profile.Name)") + @($profile.Assignments)
+}
+
+function Get-GlockLabTargetsRoot {
+    return (Join-RepoPath "configs\glock-lab-targets")
+}
+
+function Get-GlockLabTargets {
+    $targetsRoot = Get-GlockLabTargetsRoot
+    if (-not (Test-Path -LiteralPath $targetsRoot -PathType Container)) {
+        throw "Glock lab target profiles directory was not found: $targetsRoot"
+    }
+
+    $targets = New-Object System.Collections.Generic.List[object]
+
+    foreach ($targetFile in (Get-ChildItem -LiteralPath $targetsRoot -File -Filter "*.json" | Sort-Object BaseName, Name)) {
+        try {
+            $rawJson = Get-Content -LiteralPath $targetFile.FullName -Raw
+            $targetData = $rawJson | ConvertFrom-Json
+        }
+        catch {
+            throw "Failed to parse Glock lab target profile '$($targetFile.FullName)': $($_.Exception.Message)"
+        }
+
+        $targetName = [string]$targetData.name
+        $description = [string]$targetData.description
+
+        if ([string]::IsNullOrWhiteSpace($targetName)) {
+            throw "Glock lab target profile '$($targetFile.FullName)' must define a non-empty 'name'."
+        }
+
+        if ([string]::IsNullOrWhiteSpace($description)) {
+            throw "Glock lab target profile '$($targetFile.FullName)' must define a non-empty 'description'."
+        }
+
+        if ($targetFile.BaseName -ne $targetName) {
+            throw "Glock lab target profile filename '$($targetFile.Name)' must match target name '$targetName'."
+        }
+
+        if ($null -eq $targetData.cvars) {
+            throw "Glock lab target profile '$($targetFile.FullName)' must define a 'cvars' object."
+        }
+
+        $assignments = @(ConvertTo-LaunchAssignments -Cvars $targetData.cvars -SourceLabel "Glock lab target profile")
+
+        $targets.Add([PSCustomObject]@{
+            Name = $targetName
+            Description = $description
+            Path = $targetFile.FullName
+            Assignments = $assignments
+            Cvars = $targetData.cvars
+        })
+    }
+
+    return $targets.ToArray()
+}
+
+function Get-GlockLabTarget {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    $targets = @(Get-GlockLabTargets)
+    $match = $targets | Where-Object { $_.Name.Equals($Name, [System.StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1
+    if ($match) {
+        return $match
+    }
+
+    $available = $targets | Select-Object -ExpandProperty Name
+    $availableText = if ($available.Count -gt 0) { ($available -join ", ") } else { "none" }
+    throw "Unknown Glock lab target profile '$Name'. Available profiles: $availableText"
+}
+
+function Get-GlockLabTargetLaunchAssignments {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    $target = Get-GlockLabTarget -Name $Name
+    return @("sv_exp_glock_lab_target_profile_name=$($target.Name)") + @($target.Assignments)
 }
 
 function Get-WeaponDebugLogsRoot {

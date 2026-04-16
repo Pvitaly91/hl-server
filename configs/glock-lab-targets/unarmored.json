@@ -1,0 +1,10 @@
+{
+  "name": "unarmored",
+  "description": "Experimental no-armor dummy target. Headshots and body shots use the current unarmored dummy path.",
+  "cvars": {
+    "sv_exp_glock_lab_dummy_armor": "0",
+    "sv_exp_glock_lab_dummy_head_protected": "0",
+    "sv_exp_glock_lab_dummy_armor_health_fraction": "0.5",
+    "sv_exp_glock_lab_dummy_armor_drain_scale": "1.0"
+  }
+}

@@ -11,6 +11,8 @@ set "DEFAULT_ARGS=-Detached"
 if /I "%MODE%"=="glock-session" goto mode_glock_session
 if /I "%MODE%"=="glock-session-profile" goto mode_glock_session_profile
 if /I "%MODE%"=="glock-lab" goto mode_glock_lab
+if /I "%MODE%"=="glock-lab-targets" goto mode_glock_lab_targets
+if /I "%MODE%"=="glock-lab-target" goto mode_glock_lab_target
 if /I "%MODE%"=="glock-lab-profile" goto mode_glock_lab_profile
 if /I "%MODE%"=="glock-profiles" goto mode_glock_profiles
 if /I "%MODE%"=="glock-profile" goto mode_glock_profile
@@ -36,6 +38,19 @@ goto collect_args
 :mode_glock_lab
 set "TARGET_SCRIPT=%SCRIPT_DIR%run-glock-test-session.ps1"
 set "RUN_SWITCHES=-LabDummy"
+set "DEFAULT_ARGS="
+shift
+goto collect_args
+
+:mode_glock_lab_targets
+set "TARGET_SCRIPT=%SCRIPT_DIR%list-glock-lab-targets.ps1"
+set "DEFAULT_ARGS="
+shift
+goto collect_args
+
+:mode_glock_lab_target
+set "TARGET_SCRIPT=%SCRIPT_DIR%run-glock-test-session.ps1"
+set "RUN_SWITCHES=-LabDummy -LabTargetProfile"
 set "DEFAULT_ARGS="
 shift
 goto collect_args

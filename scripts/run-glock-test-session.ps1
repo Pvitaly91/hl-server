@@ -6,6 +6,7 @@ param(
     [int]$Port = 27015,
     [string]$Map = "crossfire",
     [string]$GlockProfile,
+    [string]$LabTargetProfile,
     [switch]$LabDummy,
     [switch]$NoClient,
     [switch]$NoTail,
@@ -102,6 +103,7 @@ function Write-Checklist {
         [Parameter(Mandatory = $true)]
         [string]$ServerLogPath,
         [string]$GlockProfile,
+        [string]$LabTargetProfile,
         [string]$WeaponLogPath,
         [bool]$TailWindowRequested,
         [string]$ClientLaunchStatus,
@@ -118,6 +120,9 @@ function Write-Checklist {
     Write-Host "  runtime root  : $RuntimeRoot"
     Write-Host "  server log    : $ServerLogPath"
     Write-Host "  glock profile : $(if ([string]::IsNullOrWhiteSpace($GlockProfile)) { 'default' } else { $GlockProfile })"
+    if ($LabDummy) {
+        Write-Host "  target profile: $(if ([string]::IsNullOrWhiteSpace($LabTargetProfile)) { 'default' } else { $LabTargetProfile })"
+    }
 
     if ([string]::IsNullOrWhiteSpace($WeaponLogPath)) {
         Write-Host "  weapon log    : pending; run .\\scripts\\tail-weapon-log.ps1 once the first telemetry session line is created"
@@ -141,19 +146,22 @@ function Write-Checklist {
         Write-Host "1. Confirm the stock client connected to the disposable server at $ConnectAddress."
         Write-Host "2. Confirm one stationary Glock lab dummy appeared in front of the player."
         Write-Host "   Expected: a stock human model (default Barney) and one dummy_spawn line in the weapon log."
-        Write-Host "3. Stand still, wait for recovery, then fire one careful single Glock primary shot at the dummy."
+        Write-Host "3. Confirm which lab target profile is active."
+        Write-Host "   Expected: target profile $(if ([string]::IsNullOrWhiteSpace($LabTargetProfile)) { 'default' } else { $LabTargetProfile }) is shown above and echoed in the session and dummy_spawn telemetry."
+        Write-Host "4. Stand still, wait for recovery, then fire one careful single Glock primary shot at the dummy."
         Write-Host "   Expected: one accepted line and firstshot=1 once the recovery gate is satisfied."
-        Write-Host "4. Land at least one dummy headshot and one dummy kill."
-        Write-Host "   Expected: victim_kind=dummy hit or kill lines, plus headshot=1 evidence for the headshot attempt."
-        Write-Host "5. Hold primary without releasing."
+        Write-Host "5. Land at least one dummy headshot and one dummy kill."
+        Write-Host "   Expected: victim_kind=dummy hit or kill lines, plus headshot=1 and target-profile-aware armor fields for the headshot attempt."
+        Write-Host "6. Hold primary without releasing."
         Write-Host "   Expected: no repeated accepted shots and tapfire_hold_blocked rejection lines when rejection logging is enabled."
-        Write-Host "6. Move continuously and fire primary at the dummy."
+        Write-Host "7. Move continuously and fire primary at the dummy."
         Write-Host "   Expected: accepted lines with move_penalty > 0."
-        Write-Host "7. Confirm dummy kill and respawn behavior if autorespawn is enabled."
+        Write-Host "8. Confirm dummy kill and respawn behavior if autorespawn is enabled."
         Write-Host "   Expected: a dummy_respawn line shortly after the kill and another dummy target at the same test lane."
-        Write-Host "8. Analyze the latest log afterward with .\\scripts\\analyze-weapon-log.ps1 -Latest."
+        Write-Host "9. Analyze the latest log afterward with .\\scripts\\analyze-weapon-log.ps1 -Latest."
+        Write-Host "   Compare unarmored versus armored/head-protected sessions before drawing any balance conclusions."
         Write-Host ""
-        Write-Host "The Glock lab dummy is a one-player server-side target. It does not validate stock-client feel, player armor behavior, or exact PvP equivalence."
+        Write-Host "The Glock lab dummy is a one-player server-side target. Its armor model is experimental and does not prove exact real-player armor or exact PvP equivalence."
     }
     else {
         Write-Host "1. Confirm the stock client connected to the disposable server at $ConnectAddress."
@@ -211,17 +219,18 @@ if ($resolvedPort -ne $Port) {
 
 $runtimeRoot = Get-TestbedRuntimeRoot
 $previousWeaponLog = Get-LatestWeaponDebugLog
-$maxPlayers = if ($LabDummy) { 1 } else { 4 }
+$useLabDummy = $LabDummy -or (-not [string]::IsNullOrWhiteSpace($LabTargetProfile))
+$maxPlayers = if ($useLabDummy) { 1 } else { 4 }
 
-Write-Step $(if ($LabDummy) { "Installing disposable runtime for the Glock lab session" } else { "Installing disposable runtime for the Glock manual session" })
+Write-Step $(if ($useLabDummy) { "Installing disposable runtime for the Glock lab session" } else { "Installing disposable runtime for the Glock manual session" })
 & "$PSScriptRoot\install-testbed.ps1" -Configuration $configuration
 
-Write-Step $(if ($LabDummy) { "Launching disposable HLDS in experimental-debug lab mode" } else { "Launching disposable HLDS in experimental-debug mode" })
+Write-Step $(if ($useLabDummy) { "Launching disposable HLDS in experimental-debug lab mode" } else { "Launching disposable HLDS in experimental-debug mode" })
 if ([string]::IsNullOrWhiteSpace($GlockProfile)) {
-    $launchInfo = & "$PSScriptRoot\run-server.ps1" -Configuration $configuration -Map $Map -Port $resolvedPort -MaxPlayers $maxPlayers -Detached -EnableExperimentalGlock -EnableExperimentalGlockDebug -EnableGlockLabDummy:$LabDummy -PassThru
+    $launchInfo = & "$PSScriptRoot\run-server.ps1" -Configuration $configuration -Map $Map -Port $resolvedPort -MaxPlayers $maxPlayers -Detached -EnableExperimentalGlock -EnableExperimentalGlockDebug -EnableGlockLabDummy:$useLabDummy -LabTargetProfile $LabTargetProfile -PassThru
 }
 else {
-    $launchInfo = & "$PSScriptRoot\run-server.ps1" -Configuration $configuration -Map $Map -Port $resolvedPort -MaxPlayers $maxPlayers -Detached -EnableExperimentalGlock -EnableExperimentalGlockDebug -EnableGlockLabDummy:$LabDummy -GlockProfile $GlockProfile -PassThru
+    $launchInfo = & "$PSScriptRoot\run-server.ps1" -Configuration $configuration -Map $Map -Port $resolvedPort -MaxPlayers $maxPlayers -Detached -EnableExperimentalGlock -EnableExperimentalGlockDebug -EnableGlockLabDummy:$useLabDummy -GlockProfile $GlockProfile -LabTargetProfile $LabTargetProfile -PassThru
 }
 
 $weaponLog = Wait-ForSessionWeaponDebugLog -PreviousLatestLog $previousWeaponLog -TimeoutSeconds $TimeoutSeconds -Process $launchInfo.Process
@@ -266,7 +275,7 @@ if (-not $NoClient) {
     }
 }
 
-Write-Checklist -Configuration $configuration -Port $resolvedPort -Map $Map -ConnectAddress $connectAddress -RuntimeRoot $runtimeRoot -ServerLogPath $launchInfo.StdOutLog -GlockProfile $GlockProfile -WeaponLogPath $(if ($weaponLog) { $weaponLog.FullName } else { $null }) -TailWindowRequested $tailWindowRequested -ClientLaunchStatus $clientLaunchStatus -LabDummy:$LabDummy
+Write-Checklist -Configuration $configuration -Port $resolvedPort -Map $Map -ConnectAddress $connectAddress -RuntimeRoot $runtimeRoot -ServerLogPath $launchInfo.StdOutLog -GlockProfile $GlockProfile -LabTargetProfile $LabTargetProfile -WeaponLogPath $(if ($weaponLog) { $weaponLog.FullName } else { $null }) -TailWindowRequested $tailWindowRequested -ClientLaunchStatus $clientLaunchStatus -LabDummy:$useLabDummy
 
 if ($AnalyzeLatestOnExit) {
     Invoke-AnalyzeLatestWeaponLog -WeaponLogPath $(if ($weaponLog) { $weaponLog.FullName } else { $null })

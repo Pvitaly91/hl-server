@@ -1,0 +1,10 @@
+{
+  "name": "vest",
+  "description": "Experimental torso-armored dummy target. Chest and stomach hits use the dummy-only armor model; headshots stay unarmored.",
+  "cvars": {
+    "sv_exp_glock_lab_dummy_armor": "100",
+    "sv_exp_glock_lab_dummy_head_protected": "0",
+    "sv_exp_glock_lab_dummy_armor_health_fraction": "0.5",
+    "sv_exp_glock_lab_dummy_armor_drain_scale": "1.0"
+  }
+}

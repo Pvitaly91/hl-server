@@ -1,0 +1,10 @@
+{
+  "name": "vest_headprotected",
+  "description": "Experimental armored dummy target with head protection enabled. Headshots use the same dummy-only armor model and are not exact player armor parity.",
+  "cvars": {
+    "sv_exp_glock_lab_dummy_armor": "100",
+    "sv_exp_glock_lab_dummy_head_protected": "1",
+    "sv_exp_glock_lab_dummy_armor_health_fraction": "0.5",
+    "sv_exp_glock_lab_dummy_armor_drain_scale": "1.0"
+  }
+}
