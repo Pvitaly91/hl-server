@@ -6,6 +6,7 @@ param(
     [int]$Port = 27015,
     [string]$Map = "crossfire",
     [string]$GlockProfile,
+    [switch]$LabDummy,
     [switch]$NoClient,
     [switch]$NoTail,
     [switch]$AnalyzeLatestOnExit,
@@ -103,11 +104,12 @@ function Write-Checklist {
         [string]$GlockProfile,
         [string]$WeaponLogPath,
         [bool]$TailWindowRequested,
-        [string]$ClientLaunchStatus
+        [string]$ClientLaunchStatus,
+        [bool]$LabDummy
     )
 
     Write-Host ""
-    Write-Host "Manual Glock session ready"
+    Write-Host $(if ($LabDummy) { "Manual Glock lab session ready" } else { "Manual Glock session ready" })
     Write-Host "  configuration : $Configuration"
     Write-Host "  map           : $Map"
     Write-Host "  port          : $Port"
@@ -133,20 +135,41 @@ function Write-Checklist {
 
     Write-Host "  client        : $ClientLaunchStatus"
     Write-Host ""
-    Write-Host "Manual validation checklist"
-    Write-Host "1. Confirm the stock client connected to the disposable server at $ConnectAddress."
-    Write-Host "2. Stand still, wait a brief moment, then fire one single Glock primary shot."
-    Write-Host "   Expected: one accepted telemetry line and firstshot=1 once the recovery gate is satisfied."
-    Write-Host "3. Hold primary without releasing."
-    Write-Host "   Expected: no repeated accepted shots and tapfire_hold_blocked rejection lines when rejection logging is enabled."
-    Write-Host "4. Move continuously and fire primary."
-    Write-Host "   Expected: accepted lines with move_penalty > 0."
-    Write-Host "5. Stop, wait past recovery, and fire again."
-    Write-Host "   Expected: the first-shot bonus can return."
-    Write-Host "6. Crouch-move and compare against uncrouched movement at a similar speed."
-    Write-Host "   Expected: reduced movement penalty relative to standing movement."
-    Write-Host ""
-    Write-Host "Telemetry proves the server-authoritative decision path, not client prediction or weapon feel."
+    Write-Host $(if ($LabDummy) { "Manual Glock lab checklist" } else { "Manual validation checklist" })
+
+    if ($LabDummy) {
+        Write-Host "1. Confirm the stock client connected to the disposable server at $ConnectAddress."
+        Write-Host "2. Confirm one stationary Glock lab dummy appeared in front of the player."
+        Write-Host "   Expected: a stock human model (default Barney) and one dummy_spawn line in the weapon log."
+        Write-Host "3. Stand still, wait for recovery, then fire one careful single Glock primary shot at the dummy."
+        Write-Host "   Expected: one accepted line and firstshot=1 once the recovery gate is satisfied."
+        Write-Host "4. Land at least one dummy headshot and one dummy kill."
+        Write-Host "   Expected: victim_kind=dummy hit or kill lines, plus headshot=1 evidence for the headshot attempt."
+        Write-Host "5. Hold primary without releasing."
+        Write-Host "   Expected: no repeated accepted shots and tapfire_hold_blocked rejection lines when rejection logging is enabled."
+        Write-Host "6. Move continuously and fire primary at the dummy."
+        Write-Host "   Expected: accepted lines with move_penalty > 0."
+        Write-Host "7. Confirm dummy kill and respawn behavior if autorespawn is enabled."
+        Write-Host "   Expected: a dummy_respawn line shortly after the kill and another dummy target at the same test lane."
+        Write-Host "8. Analyze the latest log afterward with .\\scripts\\analyze-weapon-log.ps1 -Latest."
+        Write-Host ""
+        Write-Host "The Glock lab dummy is a one-player server-side target. It does not validate stock-client feel, player armor behavior, or exact PvP equivalence."
+    }
+    else {
+        Write-Host "1. Confirm the stock client connected to the disposable server at $ConnectAddress."
+        Write-Host "2. Stand still, wait a brief moment, then fire one single Glock primary shot."
+        Write-Host "   Expected: one accepted telemetry line and firstshot=1 once the recovery gate is satisfied."
+        Write-Host "3. Hold primary without releasing."
+        Write-Host "   Expected: no repeated accepted shots and tapfire_hold_blocked rejection lines when rejection logging is enabled."
+        Write-Host "4. Move continuously and fire primary."
+        Write-Host "   Expected: accepted lines with move_penalty > 0."
+        Write-Host "5. Stop, wait past recovery, and fire again."
+        Write-Host "   Expected: the first-shot bonus can return."
+        Write-Host "6. Crouch-move and compare against uncrouched movement at a similar speed."
+        Write-Host "   Expected: reduced movement penalty relative to standing movement."
+        Write-Host ""
+        Write-Host "Telemetry proves the server-authoritative decision path, not client prediction or weapon feel."
+    }
 }
 
 function Invoke-AnalyzeLatestWeaponLog {
@@ -188,24 +211,29 @@ if ($resolvedPort -ne $Port) {
 
 $runtimeRoot = Get-TestbedRuntimeRoot
 $previousWeaponLog = Get-LatestWeaponDebugLog
+$maxPlayers = if ($LabDummy) { 1 } else { 4 }
 
-Write-Step "Installing disposable runtime for the Glock manual session"
+Write-Step $(if ($LabDummy) { "Installing disposable runtime for the Glock lab session" } else { "Installing disposable runtime for the Glock manual session" })
 & "$PSScriptRoot\install-testbed.ps1" -Configuration $configuration
 
-Write-Step "Launching disposable HLDS in experimental-debug mode"
+Write-Step $(if ($LabDummy) { "Launching disposable HLDS in experimental-debug lab mode" } else { "Launching disposable HLDS in experimental-debug mode" })
 if ([string]::IsNullOrWhiteSpace($GlockProfile)) {
-    $launchInfo = & "$PSScriptRoot\run-server.ps1" -Configuration $configuration -Map $Map -Port $resolvedPort -Detached -EnableExperimentalGlock -EnableExperimentalGlockDebug -PassThru
+    $launchInfo = & "$PSScriptRoot\run-server.ps1" -Configuration $configuration -Map $Map -Port $resolvedPort -MaxPlayers $maxPlayers -Detached -EnableExperimentalGlock -EnableExperimentalGlockDebug -EnableGlockLabDummy:$LabDummy -PassThru
 }
 else {
-    $launchInfo = & "$PSScriptRoot\run-server.ps1" -Configuration $configuration -Map $Map -Port $resolvedPort -Detached -EnableExperimentalGlock -EnableExperimentalGlockDebug -GlockProfile $GlockProfile -PassThru
+    $launchInfo = & "$PSScriptRoot\run-server.ps1" -Configuration $configuration -Map $Map -Port $resolvedPort -MaxPlayers $maxPlayers -Detached -EnableExperimentalGlock -EnableExperimentalGlockDebug -EnableGlockLabDummy:$LabDummy -GlockProfile $GlockProfile -PassThru
 }
 
-$serverReady = Wait-ForHldsReady -LaunchInfo $launchInfo -Map $Map -TimeoutSeconds $TimeoutSeconds
-if (-not $serverReady) {
-    throw "Timed out waiting for HLDS to start map '$Map'. Check $($launchInfo.StdOutLog) and $($launchInfo.StdErrLog)."
+$weaponLog = Wait-ForSessionWeaponDebugLog -PreviousLatestLog $previousWeaponLog -TimeoutSeconds $TimeoutSeconds -Process $launchInfo.Process
+$serverReady = $true
+
+if (-not $weaponLog) {
+    $serverReady = Wait-ForHldsReady -LaunchInfo $launchInfo -Map $Map -TimeoutSeconds $TimeoutSeconds
+    if (-not $serverReady) {
+        throw "Timed out waiting for either the Glock session-ready weapon log or the HLDS map-start marker for '$Map'. Check $($launchInfo.StdOutLog) and $($launchInfo.StdErrLog)."
+    }
 }
 
-$weaponLog = Wait-ForSessionWeaponDebugLog -PreviousLatestLog $previousWeaponLog -TimeoutSeconds ([Math]::Min($TimeoutSeconds, 15)) -Process $launchInfo.Process
 $tailWindowRequested = $false
 
 if (-not $NoTail) {
@@ -238,7 +266,7 @@ if (-not $NoClient) {
     }
 }
 
-Write-Checklist -Configuration $configuration -Port $resolvedPort -Map $Map -ConnectAddress $connectAddress -RuntimeRoot $runtimeRoot -ServerLogPath $launchInfo.StdOutLog -GlockProfile $GlockProfile -WeaponLogPath $(if ($weaponLog) { $weaponLog.FullName } else { $null }) -TailWindowRequested $tailWindowRequested -ClientLaunchStatus $clientLaunchStatus
+Write-Checklist -Configuration $configuration -Port $resolvedPort -Map $Map -ConnectAddress $connectAddress -RuntimeRoot $runtimeRoot -ServerLogPath $launchInfo.StdOutLog -GlockProfile $GlockProfile -WeaponLogPath $(if ($weaponLog) { $weaponLog.FullName } else { $null }) -TailWindowRequested $tailWindowRequested -ClientLaunchStatus $clientLaunchStatus -LabDummy:$LabDummy
 
 if ($AnalyzeLatestOnExit) {
     Invoke-AnalyzeLatestWeaponLog -WeaponLogPath $(if ($weaponLog) { $weaponLog.FullName } else { $null })

@@ -143,6 +143,30 @@ Launch the same named-profile one-click session from `cmd.exe` or Explorer with 
 scripts\run-testbed.bat glock-session-profile cs_tight
 ```
 
+Launch the one-player Glock lab session that enables the stock-asset server-side dummy:
+
+```powershell
+.\scripts\run-glock-test-session.ps1 -Configuration Debug -LabDummy
+```
+
+Launch the same lab flow with a checked-in preset:
+
+```powershell
+.\scripts\run-glock-test-session.ps1 -Configuration Debug -LabDummy -GlockProfile cs_tight
+```
+
+Launch the same one-player lab flow from `cmd.exe` or Explorer:
+
+```bat
+scripts\run-testbed.bat glock-lab
+```
+
+Launch the preset-capable lab alias from `cmd.exe` or Explorer:
+
+```bat
+scripts\run-testbed.bat glock-lab-profile cs_tight
+```
+
 Launch the same session and analyze the latest Glock telemetry log after you finish the manual firing pass and press Enter in the original console:
 
 ```powershell
@@ -165,7 +189,7 @@ The one-click Glock session always:
 
 - reinstalls the selected disposable runtime into `testbed/runtime/`
 - launches HLDS in experimental-debug mode on `-game valve`
-- waits until the server actually reports `Started map "<map>"`
+- waits for either the session-ready weapon log header or the traditional `Started map "<map>"` marker before printing the checklist
 - opens `scripts/tail-weapon-log.ps1` in a second PowerShell window when the session weapon log is ready, if possible
 - launches a stock `hl.exe` and auto-connects to `127.0.0.1:<port>` unless `-NoClient` is set
 - prints a compact in-terminal checklist for the manual firing pass
@@ -185,6 +209,31 @@ Run a server-only one-click session when you only want readiness and telemetry v
 ```powershell
 .\scripts\run-glock-test-session.ps1 -Configuration Debug -NoClient
 ```
+
+Analyze the newest dummy session log after a manual lab pass:
+
+```powershell
+.\scripts\analyze-weapon-log.ps1 -Latest
+```
+
+Assert that a fixture or live log contains the minimum dummy evidence:
+
+```powershell
+.\scripts\analyze-weapon-log.ps1 -Path .\scripts\fixtures\sample-weapon-debug.log -RequireDummySpawns -RequireDummyHits -RequireDummyHeadshotHits -RequireDummyHeadshotKills
+```
+
+The one-player Glock lab uses a stock `monster_generic` with an allowed stock human model (`models/barney.mdl` by default, `models/scientist.mdl` also allowed) so the disposable runtime stays on `-game valve` and the stock Steam client can still connect.
+
+Example dummy lifecycle and hit telemetry:
+
+```text
+[weaponlog] type=dummy_spawn ts=... map=crossfire dummy="Glock Lab Dummy" entindex=24 dummy_class=glock_lab_dummy dummy_model="models/barney.mdl" health=110.0 autorespawn=1 respawn_delay=1.00 spawn_distance=256.0 anchor="Player" anchor_entindex=1 anchor_userid=3 origin="256.0 0.0 0.0" yaw=180.0 profile="cs_tight"
+[weaponlog] type=kill ts=... map=crossfire attacker="Player" attacker_entindex=1 attacker_userid=3 victim="Glock Lab Dummy" victim_entindex=24 victim_userid=-1 victim_kind=dummy victim_class=glock_lab_dummy victim_model="models/barney.mdl" weapon=glock fire=primary hitgroup=head hitgroup_id=1 headshot=1 experimental=1 profile="cs_tight" trace_damage=110.0000 applied_damage=100.0000 health_before=100.0 health_after=0.0 armor_before=na armor_after=na headshot_lethal_active=1 headshot_lethal_applied=1
+```
+
+The Glock lab dummy is a one-player testing aid, not a perfect substitute for real player-vs-player testing. It gives real server-side hitgroup, headshot, kill, and respawn evidence against a stationary stock model, but it does not validate stock-client feel, movement behavior, or exact PvP pacing.
+
+The lab dummy also does not model real player armor. Lethal-headshot evidence against the dummy proves the server-side no-armor dummy path only, and non-head hitgroups still follow monster-side skill multipliers rather than exact player damage behavior.
 
 Tail the newest disposable weapon debug log in PowerShell:
 

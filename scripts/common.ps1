@@ -647,6 +647,12 @@ function Get-ExperimentalGlockDebugLaunchAssignments {
     )
 }
 
+function Get-GlockLabDummyLaunchAssignments {
+    return @(
+        "sv_exp_glock_lab_dummy=1"
+    )
+}
+
 function Get-GlockProfilesRoot {
     return (Join-RepoPath "configs\glock-presets")
 }

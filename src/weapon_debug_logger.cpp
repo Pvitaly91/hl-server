@@ -460,6 +460,11 @@ std::string GetSafeEntityName(CBaseEntity *pEntity)
         return "unknown";
     }
 
+    if (IsExpGlockLabDummyEntity(pEntity))
+    {
+        return "Glock Lab Dummy";
+    }
+
     if (pEntity->IsPlayer())
     {
         return GetSafePlayerName((CBasePlayer *)pEntity);
@@ -471,6 +476,51 @@ std::string GetSafeEntityName(CBaseEntity *pEntity)
     }
 
     return SanitizeLogValue(STRING(pEntity->pev->classname));
+}
+
+std::string GetSafeEntityClassname(CBaseEntity *pEntity)
+{
+    if (pEntity == NULL || pEntity->pev == NULL || pEntity->pev->classname == 0)
+    {
+        return "unknown";
+    }
+
+    return SanitizeLogValue(STRING(pEntity->pev->classname));
+}
+
+std::string GetSafeEntityModel(CBaseEntity *pEntity)
+{
+    if (pEntity == NULL || pEntity->pev == NULL || pEntity->pev->model == 0)
+    {
+        return "unknown";
+    }
+
+    return SanitizeLogValue(STRING(pEntity->pev->model));
+}
+
+const char *GetEntityKind(CBaseEntity *pEntity)
+{
+    if (pEntity == NULL)
+    {
+        return "unknown";
+    }
+
+    if (IsExpGlockLabDummyEntity(pEntity))
+    {
+        return "dummy";
+    }
+
+    if (pEntity->IsPlayer())
+    {
+        return "player";
+    }
+
+    if (pEntity->pev != NULL && (pEntity->pev->flags & FL_MONSTER))
+    {
+        return "npc";
+    }
+
+    return "entity";
 }
 
 int GetEntityIndex(CBaseEntity *pEntity)
@@ -502,6 +552,11 @@ void FormatOptionalFloat(char *buffer, size_t bufferSize, bool available, float 
     }
 
     _snprintf_s(buffer, bufferSize, _TRUNCATE, "%.*f", digits, value);
+}
+
+void FormatVector3(char *buffer, size_t bufferSize, const Vector &value)
+{
+    _snprintf_s(buffer, bufferSize, _TRUNCATE, "%.1f %.1f %.1f", value.x, value.y, value.z);
 }
 
 void EnsureWeaponDebugLogOpen()
@@ -567,6 +622,77 @@ void EnsureWeaponDebugLogReady()
     }
 
     EnsureWeaponDebugLogOpen();
+}
+
+void LogGlockLabDummySpawn(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, bool respawn, const Vector &origin, const Vector &angles)
+{
+    if (!ExpDebugWeaponLogEnabled())
+    {
+        return;
+    }
+
+    EnsureWeaponDebugLogOpen();
+
+    char timestamp[64];
+    char originValue[64];
+    char line[2048];
+    FormatTimestamp(timestamp, sizeof(timestamp));
+    FormatVector3(originValue, sizeof(originValue), origin);
+
+    _snprintf_s(
+        line,
+        sizeof(line),
+        _TRUNCATE,
+        "[weaponlog] type=%s ts=%s map=%s dummy=\"%s\" entindex=%d dummy_class=%s dummy_model=\"%s\" health=%.1f autorespawn=%d respawn_delay=%.2f spawn_distance=%.1f anchor=\"%s\" anchor_entindex=%d anchor_userid=%d origin=\"%s\" yaw=%.1f profile=\"%s\"",
+        respawn ? "dummy_respawn" : "dummy_spawn",
+        timestamp,
+        SanitizeLogValue(GetSafeMapName()).c_str(),
+        GetSafeEntityName(pDummy).c_str(),
+        GetEntityIndex(pDummy),
+        GetSafeEntityClassname(pDummy).c_str(),
+        GetSafeEntityModel(pDummy).c_str(),
+        ExpGlockLabDummyHealth(),
+        ExpGlockLabDummyAutoRespawnEnabled() ? 1 : 0,
+        ExpGlockLabDummyRespawnDelaySeconds(),
+        ExpGlockLabDummySpawnDistance(),
+        GetSafePlayerName(pAnchorPlayer).c_str(),
+        GetPlayerEntityIndex(pAnchorPlayer),
+        GetPlayerUserId(pAnchorPlayer),
+        originValue,
+        angles.y,
+        SanitizeLogValue(ExpGlockProfileName()).c_str());
+
+    WriteTelemetryLine(line);
+}
+
+void LogGlockLabDummyClear(CBaseEntity *pDummy, const char *reason)
+{
+    if (!ExpDebugWeaponLogEnabled())
+    {
+        return;
+    }
+
+    EnsureWeaponDebugLogOpen();
+
+    char timestamp[64];
+    char line[1536];
+    FormatTimestamp(timestamp, sizeof(timestamp));
+
+    _snprintf_s(
+        line,
+        sizeof(line),
+        _TRUNCATE,
+        "[weaponlog] type=dummy_clear ts=%s map=%s dummy=\"%s\" entindex=%d dummy_class=%s dummy_model=\"%s\" reason=\"%s\" profile=\"%s\"",
+        timestamp,
+        SanitizeLogValue(GetSafeMapName()).c_str(),
+        GetSafeEntityName(pDummy).c_str(),
+        GetEntityIndex(pDummy),
+        GetSafeEntityClassname(pDummy).c_str(),
+        GetSafeEntityModel(pDummy).c_str(),
+        SanitizeLogValue(reason).c_str(),
+        SanitizeLogValue(ExpGlockProfileName()).c_str());
+
+    WriteTelemetryLine(line);
 }
 
 void LogAcceptedGlockPrimaryShot(CBasePlayer *pPlayer, const GlockAcceptedShotTelemetry &telemetry)
@@ -748,7 +874,7 @@ void FinalizeActiveGlockPrimaryHitTelemetry()
         char armorBefore[32];
         char armorAfter[32];
         char armorDamage[32];
-        char line[2048];
+        char line[3072];
 
         FormatTimestamp(timestamp, sizeof(timestamp));
         FormatOptionalFloat(armorBefore, sizeof(armorBefore), fArmorKnown, g_glockPrimaryShotContext.victimArmorBefore, 1);
@@ -759,7 +885,7 @@ void FinalizeActiveGlockPrimaryHitTelemetry()
             line,
             sizeof(line),
             _TRUNCATE,
-            "[weaponlog] type=hit ts=%s map=%s attacker=\"%s\" attacker_entindex=%d attacker_userid=%d victim=\"%s\" victim_entindex=%d victim_userid=%d weapon=glock fire=primary hitgroup=%s hitgroup_id=%d headshot=%d experimental=%d profile=\"%s\" base_damage=%.4f hitgroup_scale=%.4f trace_damage=%.4f applied_damage=%.4f health_before=%.1f health_after=%.1f armor_before=%s armor_after=%s armor_damage=%s headshot_lethal_active=%d headshot_lethal_applied=%d",
+            "[weaponlog] type=hit ts=%s map=%s attacker=\"%s\" attacker_entindex=%d attacker_userid=%d victim=\"%s\" victim_entindex=%d victim_userid=%d victim_kind=%s victim_class=%s victim_model=\"%s\" weapon=glock fire=primary hitgroup=%s hitgroup_id=%d headshot=%d experimental=%d profile=\"%s\" base_damage=%.4f hitgroup_scale=%.4f trace_damage=%.4f applied_damage=%.4f health_before=%.1f health_after=%.1f armor_before=%s armor_after=%s armor_damage=%s headshot_lethal_active=%d headshot_lethal_applied=%d",
             timestamp,
             SanitizeLogValue(GetSafeMapName()).c_str(),
             GetSafePlayerName(g_glockPrimaryShotContext.attackerPlayer).c_str(),
@@ -768,6 +894,9 @@ void FinalizeActiveGlockPrimaryHitTelemetry()
             GetSafeEntityName(pVictim).c_str(),
             GetEntityIndex(pVictim),
             GetEntityUserId(pVictim),
+            GetEntityKind(pVictim),
+            GetSafeEntityClassname(pVictim).c_str(),
+            GetSafeEntityModel(pVictim).c_str(),
             GetHitgroupName(g_glockPrimaryShotContext.hitgroup),
             g_glockPrimaryShotContext.hitgroup,
             g_glockPrimaryShotContext.headshot ? 1 : 0,
@@ -788,12 +917,12 @@ void FinalizeActiveGlockPrimaryHitTelemetry()
 
         if (!pVictim->IsAlive())
         {
-            char killLine[2048];
+            char killLine[3072];
             _snprintf_s(
                 killLine,
                 sizeof(killLine),
                 _TRUNCATE,
-                "[weaponlog] type=kill ts=%s map=%s attacker=\"%s\" attacker_entindex=%d attacker_userid=%d victim=\"%s\" victim_entindex=%d victim_userid=%d weapon=glock fire=primary hitgroup=%s hitgroup_id=%d headshot=%d experimental=%d profile=\"%s\" trace_damage=%.4f applied_damage=%.4f health_before=%.1f health_after=%.1f armor_before=%s armor_after=%s headshot_lethal_active=%d headshot_lethal_applied=%d",
+                "[weaponlog] type=kill ts=%s map=%s attacker=\"%s\" attacker_entindex=%d attacker_userid=%d victim=\"%s\" victim_entindex=%d victim_userid=%d victim_kind=%s victim_class=%s victim_model=\"%s\" weapon=glock fire=primary hitgroup=%s hitgroup_id=%d headshot=%d experimental=%d profile=\"%s\" trace_damage=%.4f applied_damage=%.4f health_before=%.1f health_after=%.1f armor_before=%s armor_after=%s headshot_lethal_active=%d headshot_lethal_applied=%d",
                 timestamp,
                 SanitizeLogValue(GetSafeMapName()).c_str(),
                 GetSafePlayerName(g_glockPrimaryShotContext.attackerPlayer).c_str(),
@@ -802,6 +931,9 @@ void FinalizeActiveGlockPrimaryHitTelemetry()
                 GetSafeEntityName(pVictim).c_str(),
                 GetEntityIndex(pVictim),
                 GetEntityUserId(pVictim),
+                GetEntityKind(pVictim),
+                GetSafeEntityClassname(pVictim).c_str(),
+                GetSafeEntityModel(pVictim).c_str(),
                 GetHitgroupName(g_glockPrimaryShotContext.hitgroup),
                 g_glockPrimaryShotContext.hitgroup,
                 g_glockPrimaryShotContext.headshot ? 1 : 0,

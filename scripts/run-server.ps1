@@ -11,6 +11,7 @@ param(
     [hashtable]$Cvars,
     [switch]$EnableExperimentalGlock,
     [switch]$EnableExperimentalGlockDebug,
+    [switch]$EnableGlockLabDummy,
     [switch]$Detached,
     [switch]$PassThru,
     [string]$TemplateRoot,
@@ -43,6 +44,10 @@ if ($EnableExperimentalGlock -or $EnableExperimentalGlockDebug -or $useGlockProf
 
 if ($EnableExperimentalGlockDebug) {
     $effectiveSetCvars += @(Get-ExperimentalGlockDebugLaunchAssignments)
+}
+
+if ($EnableGlockLabDummy) {
+    $effectiveSetCvars += @(Get-GlockLabDummyLaunchAssignments)
 }
 
 if ($useGlockProfile) {

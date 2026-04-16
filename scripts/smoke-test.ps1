@@ -8,6 +8,7 @@ param(
     [int]$MaxPlayers = 4,
     [string[]]$SetCvar = @(),
     [switch]$EnableExperimentalGlock,
+    [switch]$EnableGlockLabDummy,
     [string]$TemplateRoot,
     [string]$HldsExe,
     [string]$HlExe,
@@ -26,6 +27,9 @@ $effectiveSetCvars = @()
 if ($EnableExperimentalGlock) {
     $effectiveSetCvars += @(Get-ExperimentalGlockLaunchAssignments)
 }
+if ($EnableGlockLabDummy) {
+    $effectiveSetCvars += @(Get-GlockLabDummyLaunchAssignments)
+}
 $effectiveSetCvars += @($SetCvar)
 
 $expectedCvars = [ordered]@{
@@ -35,6 +39,15 @@ $expectedCvars = [ordered]@{
     "sv_exp_spread_recovery" = "0.0"
     "sv_exp_debug_weaponlog" = "0"
     "sv_exp_debug_weaponlog_rejections" = "0"
+    "sv_exp_glock_lab_dummy" = "0"
+    "sv_exp_glock_lab_dummy_health" = "100.0"
+    "sv_exp_glock_lab_dummy_autorespawn" = "1"
+    "sv_exp_glock_lab_dummy_respawn_delay" = "1.0"
+    "sv_exp_glock_lab_dummy_spawn_distance" = "256.0"
+    "sv_exp_glock_lab_dummy_model" = "models/barney.mdl"
+    "sv_exp_glock_lab_dummy_face_player" = "1"
+    "sv_exp_glock_lab_dummy_offset_right" = "0.0"
+    "sv_exp_glock_lab_dummy_offset_up" = "0.0"
 }
 
 foreach ($assignment in $effectiveSetCvars) {

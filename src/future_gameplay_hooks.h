@@ -1,5 +1,7 @@
 #pragma once
 
+class CBaseEntity;
+
 void RegisterFutureGameplayCvars();
 void UpdateFutureGameplayHooksFrame();
 bool ExpPistolTapFireEnabled();
@@ -19,3 +21,13 @@ bool ExpGlockPrimaryHeadshotLethal();
 bool ExpDebugWeaponLogEnabled();
 bool ExpDebugWeaponLogRejectionsEnabled();
 bool ExpGlockExperimentalModeEnabled();
+bool ExpGlockLabDummyEnabled();
+float ExpGlockLabDummyHealth();
+bool ExpGlockLabDummyAutoRespawnEnabled();
+float ExpGlockLabDummyRespawnDelaySeconds();
+float ExpGlockLabDummySpawnDistance();
+const char *ExpGlockLabDummyModel();
+bool ExpGlockLabDummyFacePlayer();
+float ExpGlockLabDummyOffsetRight();
+float ExpGlockLabDummyOffsetUp();
+bool IsExpGlockLabDummyEntity(CBaseEntity *pEntity);
