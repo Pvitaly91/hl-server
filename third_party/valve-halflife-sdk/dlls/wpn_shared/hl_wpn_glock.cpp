@@ -25,14 +25,8 @@
 
 namespace
 {
-const float kGlockPrimaryBaseSpread = 0.01f;
-const float kGlockGroundMoveSpreadPenalty = 0.08f;
-const float kGlockAirMoveSpreadPenalty = 0.12f;
-const float kGlockDuckPenaltyScale = 0.75f;
-const float kGlockFirstShotAccuracyMaxSpeed = 40.0f;
 const float kGlockFallbackMaxSpeed = 270.0f;
 const float kGlockMinMaxSpeed = 1.0f;
-const float kGlockMaxPrimarySpread = 0.2f;
 
 float ClampFloat(float value, float minValue, float maxValue)
 {
@@ -173,19 +167,19 @@ void CGlock::PrimaryAttack( void )
 		{
 			const float flSpeedRatio = ClampFloat(flHorizontalSpeed / flMaxSpeedForNormalization, 0.0f, 1.0f);
 			flMovementPenalty = fGrounded
-				? (kGlockGroundMoveSpreadPenalty * flSpeedRatio * flMoveSpreadScale)
-				: (kGlockAirMoveSpreadPenalty * flMoveSpreadScale);
+				? (ExpGlockPrimaryGroundMovePenalty() * flSpeedRatio * flMoveSpreadScale)
+				: (ExpGlockPrimaryAirMovePenalty() * flMoveSpreadScale);
 
 			if (fDucking)
 			{
-				flMovementPenalty *= kGlockDuckPenaltyScale;
+				flMovementPenalty *= ExpGlockPrimaryDuckPenaltyScale();
 			}
 		}
 	}
 
 	const float flSpread = fFirstShotAccuracyApplied
 		? 0.0f
-		: ClampFloat(kGlockPrimaryBaseSpread + flMovementPenalty, 0.0f, kGlockMaxPrimarySpread);
+		: ClampFloat(ExpGlockPrimaryBaseSpread() + flMovementPenalty, 0.0f, ExpGlockPrimaryMaxSpread());
 	const BOOL fHasPreviousAcceptedShot = m_flLastAcceptedPrimaryShotTime >= 0.0f;
 	const float flTimeSincePreviousAcceptedShot = fHasPreviousAcceptedShot ? (gpGlobals->time - m_flLastAcceptedPrimaryShotTime) : 0.0f;
 
@@ -198,7 +192,7 @@ void CGlock::PrimaryAttack( void )
 		acceptedTelemetry.tapFireActive = ExpPistolTapFireEnabled();
 		acceptedTelemetry.firstShotAccuracyApplied = fFirstShotAccuracyApplied != FALSE;
 		acceptedTelemetry.spread = flSpread;
-		acceptedTelemetry.baseSpread = kGlockPrimaryBaseSpread;
+		acceptedTelemetry.baseSpread = ExpGlockPrimaryBaseSpread();
 		acceptedTelemetry.movementPenalty = flMovementPenalty;
 		acceptedTelemetry.horizontalSpeed = flHorizontalSpeed;
 		acceptedTelemetry.maxSpeedForNormalization = flMaxSpeedForNormalization;
@@ -310,7 +304,7 @@ BOOL CGlock::QualifiesForFirstShotAccuracy( void ) const
 		return FALSE;
 	}
 
-	if (m_pPlayer->pev->velocity.Length2D() > kGlockFirstShotAccuracyMaxSpeed)
+	if (m_pPlayer->pev->velocity.Length2D() > ExpGlockPrimaryFirstShotSpeedThreshold())
 	{
 		return FALSE;
 	}
@@ -334,7 +328,7 @@ float CGlock::GetPrimaryFireSpread( void ) const
 	const float flMoveSpreadScale = ExpMoveSpreadScale();
 	if (flMoveSpreadScale <= 0.0f)
 	{
-		return kGlockPrimaryBaseSpread;
+		return ExpGlockPrimaryBaseSpread();
 	}
 
 	float flMaxSpeed = m_pPlayer->pev->maxspeed;
@@ -345,15 +339,15 @@ float CGlock::GetPrimaryFireSpread( void ) const
 
 	const float flSpeedRatio = ClampFloat(m_pPlayer->pev->velocity.Length2D() / flMaxSpeed, 0.0f, 1.0f);
 	float flMovementPenalty = FBitSet(m_pPlayer->pev->flags, FL_ONGROUND)
-		? (kGlockGroundMoveSpreadPenalty * flSpeedRatio * flMoveSpreadScale)
-		: (kGlockAirMoveSpreadPenalty * flMoveSpreadScale);
+		? (ExpGlockPrimaryGroundMovePenalty() * flSpeedRatio * flMoveSpreadScale)
+		: (ExpGlockPrimaryAirMovePenalty() * flMoveSpreadScale);
 
 	if ((m_pPlayer->pev->button & IN_DUCK) || FBitSet(m_pPlayer->pev->flags, FL_DUCKING))
 	{
-		flMovementPenalty *= kGlockDuckPenaltyScale;
+		flMovementPenalty *= ExpGlockPrimaryDuckPenaltyScale();
 	}
 
-	return ClampFloat(kGlockPrimaryBaseSpread + flMovementPenalty, 0.0f, kGlockMaxPrimarySpread);
+	return ClampFloat(ExpGlockPrimaryBaseSpread() + flMovementPenalty, 0.0f, ExpGlockPrimaryMaxSpread());
 }
 
 

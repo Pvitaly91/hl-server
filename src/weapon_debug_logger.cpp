@@ -328,10 +328,21 @@ void EnsureWeaponDebugLogOpen()
         sessionLine,
         sizeof(sessionLine),
         _TRUNCATE,
-        "[weaponlog] type=session ts=%s map=%s event=weapon_debug_session status=ready game=valve file=\"%s\"",
+        "[weaponlog] type=session ts=%s map=%s event=weapon_debug_session status=ready game=valve file=\"%s\" profile=\"%s\" tapfire=%d move_scale=%.4f firstshot_enabled=%d recovery=%.3f base=%.4f ground_move_penalty=%.4f air_move_penalty=%.4f duck_penalty_scale=%.4f firstshot_speed=%.1f max_spread=%.4f",
         timestamp,
         SanitizeLogValue(GetSafeMapName()).c_str(),
-        g_weaponDebugLogPath.c_str());
+        g_weaponDebugLogPath.c_str(),
+        SanitizeLogValue(ExpGlockProfileName()).c_str(),
+        ExpPistolTapFireEnabled() ? 1 : 0,
+        ExpMoveSpreadScale(),
+        ExpFirstShotAccuracyEnabled() ? 1 : 0,
+        ExpSpreadRecoverySeconds(),
+        ExpGlockPrimaryBaseSpread(),
+        ExpGlockPrimaryGroundMovePenalty(),
+        ExpGlockPrimaryAirMovePenalty(),
+        ExpGlockPrimaryDuckPenaltyScale(),
+        ExpGlockPrimaryFirstShotSpeedThreshold(),
+        ExpGlockPrimaryMaxSpread());
     WriteTelemetryLine(sessionLine);
 }
 

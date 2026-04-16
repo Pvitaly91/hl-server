@@ -5,6 +5,7 @@ param(
 
     [int]$Port = 27015,
     [string]$Map = "crossfire",
+    [string]$GlockProfile,
     [switch]$NoClient,
     [switch]$NoTail,
     [switch]$AnalyzeLatestOnExit,
@@ -99,6 +100,7 @@ function Write-Checklist {
         [string]$RuntimeRoot,
         [Parameter(Mandatory = $true)]
         [string]$ServerLogPath,
+        [string]$GlockProfile,
         [string]$WeaponLogPath,
         [bool]$TailWindowRequested,
         [string]$ClientLaunchStatus
@@ -113,6 +115,7 @@ function Write-Checklist {
     Write-Host "  game          : valve"
     Write-Host "  runtime root  : $RuntimeRoot"
     Write-Host "  server log    : $ServerLogPath"
+    Write-Host "  glock profile : $(if ([string]::IsNullOrWhiteSpace($GlockProfile)) { 'default' } else { $GlockProfile })"
 
     if ([string]::IsNullOrWhiteSpace($WeaponLogPath)) {
         Write-Host "  weapon log    : pending; run .\\scripts\\tail-weapon-log.ps1 once the first telemetry session line is created"
@@ -190,7 +193,12 @@ Write-Step "Installing disposable runtime for the Glock manual session"
 & "$PSScriptRoot\install-testbed.ps1" -Configuration $configuration
 
 Write-Step "Launching disposable HLDS in experimental-debug mode"
-$launchInfo = & "$PSScriptRoot\run-server.ps1" -Configuration $configuration -Map $Map -Port $resolvedPort -Detached -EnableExperimentalGlock -EnableExperimentalGlockDebug -PassThru
+if ([string]::IsNullOrWhiteSpace($GlockProfile)) {
+    $launchInfo = & "$PSScriptRoot\run-server.ps1" -Configuration $configuration -Map $Map -Port $resolvedPort -Detached -EnableExperimentalGlock -EnableExperimentalGlockDebug -PassThru
+}
+else {
+    $launchInfo = & "$PSScriptRoot\run-server.ps1" -Configuration $configuration -Map $Map -Port $resolvedPort -Detached -EnableExperimentalGlock -EnableExperimentalGlockDebug -GlockProfile $GlockProfile -PassThru
+}
 
 $serverReady = Wait-ForHldsReady -LaunchInfo $launchInfo -Map $Map -TimeoutSeconds $TimeoutSeconds
 if (-not $serverReady) {
@@ -230,7 +238,7 @@ if (-not $NoClient) {
     }
 }
 
-Write-Checklist -Configuration $configuration -Port $resolvedPort -Map $Map -ConnectAddress $connectAddress -RuntimeRoot $runtimeRoot -ServerLogPath $launchInfo.StdOutLog -WeaponLogPath $(if ($weaponLog) { $weaponLog.FullName } else { $null }) -TailWindowRequested $tailWindowRequested -ClientLaunchStatus $clientLaunchStatus
+Write-Checklist -Configuration $configuration -Port $resolvedPort -Map $Map -ConnectAddress $connectAddress -RuntimeRoot $runtimeRoot -ServerLogPath $launchInfo.StdOutLog -GlockProfile $GlockProfile -WeaponLogPath $(if ($weaponLog) { $weaponLog.FullName } else { $null }) -TailWindowRequested $tailWindowRequested -ClientLaunchStatus $clientLaunchStatus
 
 if ($AnalyzeLatestOnExit) {
     Invoke-AnalyzeLatestWeaponLog -WeaponLogPath $(if ($weaponLog) { $weaponLog.FullName } else { $null })

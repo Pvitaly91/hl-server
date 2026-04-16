@@ -77,6 +77,18 @@ Launch the disposable HLDS runtime in experimental Glock mode with PowerShell:
 .\scripts\run-server.ps1 -Configuration Debug -Detached -EnableExperimentalGlock
 ```
 
+List the available versioned Glock tuning presets:
+
+```powershell
+.\scripts\list-glock-profiles.ps1
+```
+
+Launch a detached server with an experimental Glock preset:
+
+```powershell
+.\scripts\run-server.ps1 -Configuration Debug -Detached -GlockProfile cs_tight
+```
+
 Launch the same disposable runtime from `cmd.exe` or Explorer with the BAT wrapper:
 
 ```bat
@@ -95,10 +107,28 @@ Enable the experimental Glock mode with debug telemetry and dedicated weapon log
 scripts\run-testbed.bat experimental-debug
 ```
 
+List the available presets from the BAT wrapper:
+
+```bat
+scripts\run-testbed.bat glock-profiles
+```
+
+Launch detached experimental-debug HLDS with a preset from the BAT wrapper:
+
+```bat
+scripts\run-testbed.bat glock-profile cs_tight
+```
+
 Launch the one-click manual Glock session:
 
 ```powershell
 .\scripts\run-glock-test-session.ps1 -Configuration Debug
+```
+
+Launch the one-click manual Glock session with a preset:
+
+```powershell
+.\scripts\run-glock-test-session.ps1 -Configuration Debug -GlockProfile cs_mobile
 ```
 
 Launch the same session and analyze the latest Glock telemetry log after you finish the manual firing pass and press Enter in the original console:
@@ -127,6 +157,14 @@ The one-click Glock session always:
 - opens `scripts/tail-weapon-log.ps1` in a second PowerShell window when the session weapon log is ready, if possible
 - launches a stock `hl.exe` and auto-connects to `127.0.0.1:<port>` unless `-NoClient` is set
 - prints a compact in-terminal checklist for the manual firing pass
+
+Preset merge order stays predictable:
+
+1. built-in experimental Glock defaults
+2. selected preset from `configs/glock-presets/`
+3. explicit `-SetCvar` or `-Cvars` overrides
+
+These presets are experimental tuning helpers for server-side iteration. They are not claims of exact Counter-Strike values or exact Counter-Strike feel.
 
 The session prefers `testbed/runtime/hl.exe` when the mirrored runtime contains a stock client executable, which keeps client-side writes inside the disposable testbed. If the runtime does not contain `hl.exe`, it falls back to the same `HL_EXE` and Steam auto-detection path used by `scripts/run-client.ps1`. If no stock client is found, the script leaves a server-only session running and prints a clear message instead of failing.
 
@@ -174,7 +212,7 @@ Blocked tap-fire hold attempts log only when rejection logging is also enabled, 
 Each session also starts with a single header line:
 
 ```text
-[weaponlog] type=session ts=2026-04-16T21:24:54.901 map=crossfire event=weapon_debug_session status=ready game=valve file="d:/dev/cpp/hl-server/testbed/logs/weapon-debug-20260416-212454.log"
+[weaponlog] type=session ts=2026-04-16T21:24:54.901 map=crossfire event=weapon_debug_session status=ready game=valve file="d:/dev/cpp/hl-server/testbed/logs/weapon-debug-20260416-212454.log" profile="cs_tight" tapfire=1 move_scale=1.0000 firstshot_enabled=1 recovery=0.350 base=0.0080 ground_move_penalty=0.0950 air_move_penalty=0.1400 duck_penalty_scale=0.7000 firstshot_speed=30.0 max_spread=0.1600
 ```
 
 ## Analyze Glock telemetry
@@ -197,6 +235,12 @@ Export the summary JSON and per-event CSV to `testbed/logs/reports/`:
 .\scripts\analyze-weapon-log.ps1 -Latest -ExportJson -ExportCsv
 ```
 
+Analyze the newest disposable log and surface the active preset metadata:
+
+```powershell
+.\scripts\analyze-weapon-log.ps1 -Latest
+```
+
 Use the BAT alias from `cmd.exe` or Explorer:
 
 ```bat
@@ -216,6 +260,9 @@ Example summary:
 Weapon log analysis
   log path                 : D:\DEV\CPP\HL-Server\scripts\fixtures\sample-weapon-debug.log
   session                  : ts=2026-04-16T12:00:00.000 map=fixture_range game=valve status=ready
+  profile                  : cs_mobile
+  tuning                   : base=0.0120 ground=0.0600 air=0.0900 duck=0.6500 firstshot_speed=55.0 max_spread=0.1800
+  feature flags            : tapfire=1 move_scale=1.0000 firstshot=1 recovery=0.250
   accepted shots           : 5
   rejected shots           : 1
   first-shot accepted      : 2
@@ -223,7 +270,7 @@ Weapon log analysis
   accepted grounded        : 4
   accepted airborne        : 1
   accepted ducking         : 1
-  spread min/avg/max       : 0.0000 / 0.0487 / 0.1300
+  spread min/avg/max       : 0.0000 / 0.0384 / 0.1020
 ```
 
 The analyzer summarizes server-authoritative telemetry evidence only. It helps confirm that accepted shots, tap-fire hold rejections, movement penalties, recovery, and crouch-move candidates were logged, but it does not prove subjective stock-client feel or prediction quality.
@@ -277,10 +324,11 @@ No script writes into the user's real Steam `valve` folder.
 - `scripts/configure.ps1` configures the VS2022 Win32 CMake preset.
 - `scripts/build.ps1` builds Debug or Release and prints the resulting artifact paths.
 - `scripts/install-testbed.ps1` prepares the disposable runtime and installs the built `hl.dll`.
-- `scripts/run-server.ps1` launches HLDS against the disposable runtime with `-game valve`, defaults to `crossfire`, accepts `-EnableExperimentalGlock` and `-EnableExperimentalGlockDebug` for the documented server-only Glock cvar bundles, and still supports launch-time overrides through `-SetCvar @('name=value', ...)` or `-Cvars @{ name = 'value' }`.
-- `scripts/run-glock-test-session.ps1` reinstalls the disposable runtime, launches the experimental-debug Glock server, waits for readiness, optionally opens a tail window for the exact weapon log, optionally launches a stock client, prints the manual checklist with the connect address and log paths, and can hand off to the analyzer with `-AnalyzeLatestOnExit`.
-- `scripts/analyze-weapon-log.ps1` analyzes the newest or a specific `weapon-debug-*.log`, prints a concise evidence summary, optionally exports JSON and CSV under `testbed/logs/reports/`, and can fail non-zero when required telemetry signals are missing.
-- `scripts/run-testbed.bat` is a thin convenience wrapper over the PowerShell scripts that defaults to a detached Debug disposable launch, maps `experimental` and `experimental-debug` to the corresponding server switches, maps `glock-session` to the one-click manual session helper, and maps `glock-report` to `scripts/analyze-weapon-log.ps1`.
+- `scripts/run-server.ps1` launches HLDS against the disposable runtime with `-game valve`, defaults to `crossfire`, accepts `-EnableExperimentalGlock`, `-EnableExperimentalGlockDebug`, and `-GlockProfile <name>` for server-only Glock tuning, and still supports launch-time overrides through `-SetCvar @('name=value', ...)` or `-Cvars @{ name = 'value' }`.
+- `scripts/run-glock-test-session.ps1` reinstalls the disposable runtime, launches the experimental-debug Glock server, waits for readiness, optionally opens a tail window for the exact weapon log, optionally launches a stock client, prints the manual checklist with the connect address and log paths, accepts `-GlockProfile <name>`, and can hand off to the analyzer with `-AnalyzeLatestOnExit`.
+- `scripts/list-glock-profiles.ps1` lists the checked-in versioned Glock presets from `configs/glock-presets/`.
+- `scripts/analyze-weapon-log.ps1` analyzes the newest or a specific `weapon-debug-*.log`, prints a concise evidence summary including session profile metadata when present, optionally exports JSON and CSV under `testbed/logs/reports/`, and can fail non-zero when required telemetry signals are missing.
+- `scripts/run-testbed.bat` is a thin convenience wrapper over the PowerShell scripts that defaults to a detached Debug disposable launch, maps `experimental` and `experimental-debug` to the corresponding server switches, maps `glock-session` to the one-click manual session helper, maps `glock-report` to `scripts/analyze-weapon-log.ps1`, maps `glock-profiles` to the preset listing helper, and maps `glock-profile <name>` to a detached experimental-debug launch with that preset.
 - `scripts/tail-weapon-log.ps1` finds the newest `testbed/logs/weapon-debug-*.log` file, or follows a specific log passed through `-Path`, prints a helpful message if none exists, and can either follow the log or dump it once with `-NoFollow`.
 - `scripts/run-client.ps1` optionally launches a stock Half-Life client on `-game valve` and connects to `127.0.0.1`.
 - `scripts/smoke-test.ps1` validates the end-to-end bootstrap non-interactively and can verify experimental cvar values from launch-time overrides.

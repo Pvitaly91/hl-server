@@ -1,0 +1,16 @@
+{
+  "name": "cs_mobile",
+  "description": "Experimental more mobile Glock preset with lighter movement penalties and a larger first-shot speed window.",
+  "cvars": {
+    "sv_exp_pistol_tapfire": "1",
+    "sv_exp_move_spread_scale": "1.0",
+    "sv_exp_first_shot_accuracy": "1",
+    "sv_exp_spread_recovery": "0.25",
+    "sv_exp_glock_primary_base_spread": "0.012",
+    "sv_exp_glock_primary_ground_move_penalty": "0.06",
+    "sv_exp_glock_primary_air_move_penalty": "0.09",
+    "sv_exp_glock_primary_duck_penalty_scale": "0.65",
+    "sv_exp_glock_primary_first_shot_speed_threshold": "55.0",
+    "sv_exp_glock_primary_max_spread": "0.18"
+  }
+}

@@ -635,7 +635,8 @@ function Get-ExperimentalGlockLaunchAssignments {
         "sv_exp_pistol_tapfire=1",
         "sv_exp_move_spread_scale=1.0",
         "sv_exp_first_shot_accuracy=1",
-        "sv_exp_spread_recovery=0.3"
+        "sv_exp_spread_recovery=0.3",
+        "sv_exp_glock_profile_name=default"
     )
 }
 
@@ -644,6 +645,109 @@ function Get-ExperimentalGlockDebugLaunchAssignments {
         "sv_exp_debug_weaponlog=1",
         "sv_exp_debug_weaponlog_rejections=1"
     )
+}
+
+function Get-GlockProfilesRoot {
+    return (Join-RepoPath "configs\glock-presets")
+}
+
+function ConvertTo-GlockProfileAssignments {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Cvars
+    )
+
+    $assignments = New-Object System.Collections.Generic.List[string]
+
+    foreach ($property in $Cvars.PSObject.Properties) {
+        $name = [string]$property.Name
+        $value = [string]$property.Value
+
+        if ([string]::IsNullOrWhiteSpace($name) -or [string]::IsNullOrWhiteSpace($value)) {
+            throw "Glock preset cvar names and values must be non-empty."
+        }
+
+        $assignments.Add(('{0}={1}' -f $name, $value))
+    }
+
+    return $assignments.ToArray()
+}
+
+function Get-GlockProfiles {
+    $profilesRoot = Get-GlockProfilesRoot
+    if (-not (Test-Path -LiteralPath $profilesRoot -PathType Container)) {
+        throw "Glock profiles directory was not found: $profilesRoot"
+    }
+
+    $profiles = New-Object System.Collections.Generic.List[object]
+
+    foreach ($profileFile in (Get-ChildItem -LiteralPath $profilesRoot -File -Filter "*.json" | Sort-Object BaseName, Name)) {
+        try {
+            $rawJson = Get-Content -LiteralPath $profileFile.FullName -Raw
+            $profileData = $rawJson | ConvertFrom-Json
+        }
+        catch {
+            throw "Failed to parse Glock profile '$($profileFile.FullName)': $($_.Exception.Message)"
+        }
+
+        $profileName = [string]$profileData.name
+        $description = [string]$profileData.description
+
+        if ([string]::IsNullOrWhiteSpace($profileName)) {
+            throw "Glock profile '$($profileFile.FullName)' must define a non-empty 'name'."
+        }
+
+        if ([string]::IsNullOrWhiteSpace($description)) {
+            throw "Glock profile '$($profileFile.FullName)' must define a non-empty 'description'."
+        }
+
+        if ($profileFile.BaseName -ne $profileName) {
+            throw "Glock profile filename '$($profileFile.Name)' must match preset name '$profileName'."
+        }
+
+        if ($null -eq $profileData.cvars) {
+            throw "Glock profile '$($profileFile.FullName)' must define a 'cvars' object."
+        }
+
+        $assignments = @(ConvertTo-GlockProfileAssignments -Cvars $profileData.cvars)
+
+        $profiles.Add([PSCustomObject]@{
+            Name = $profileName
+            Description = $description
+            Path = $profileFile.FullName
+            Assignments = $assignments
+            Cvars = $profileData.cvars
+        })
+    }
+
+    return $profiles.ToArray()
+}
+
+function Get-GlockProfile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    $profiles = @(Get-GlockProfiles)
+    $match = $profiles | Where-Object { $_.Name.Equals($Name, [System.StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1
+    if ($match) {
+        return $match
+    }
+
+    $available = $profiles | Select-Object -ExpandProperty Name
+    $availableText = if ($available.Count -gt 0) { ($available -join ", ") } else { "none" }
+    throw "Unknown Glock profile '$Name'. Available profiles: $availableText"
+}
+
+function Get-GlockProfileLaunchAssignments {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    $profile = Get-GlockProfile -Name $Name
+    return @("sv_exp_glock_profile_name=$($profile.Name)") + @($profile.Assignments)
 }
 
 function Get-WeaponDebugLogsRoot {

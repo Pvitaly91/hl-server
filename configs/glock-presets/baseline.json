@@ -1,0 +1,16 @@
+{
+  "name": "baseline",
+  "description": "Matches the current experimental Glock tuning defaults as closely as practical.",
+  "cvars": {
+    "sv_exp_pistol_tapfire": "1",
+    "sv_exp_move_spread_scale": "1.0",
+    "sv_exp_first_shot_accuracy": "1",
+    "sv_exp_spread_recovery": "0.3",
+    "sv_exp_glock_primary_base_spread": "0.01",
+    "sv_exp_glock_primary_ground_move_penalty": "0.08",
+    "sv_exp_glock_primary_air_move_penalty": "0.12",
+    "sv_exp_glock_primary_duck_penalty_scale": "0.75",
+    "sv_exp_glock_primary_first_shot_speed_threshold": "40.0",
+    "sv_exp_glock_primary_max_spread": "0.2"
+  }
+}

@@ -191,6 +191,15 @@ function Parse-WeaponLogLine {
         Status               = Get-WeaponLogValue -Values $values -Name "status"
         Game                 = Get-WeaponLogValue -Values $values -Name "game"
         LogFile              = Get-WeaponLogValue -Values $values -Name "file"
+        ProfileName          = Get-WeaponLogValue -Values $values -Name "profile"
+        MoveSpreadScale      = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "move_scale")
+        FirstShotEnabled     = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "firstshot_enabled")
+        SpreadRecovery       = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "recovery")
+        GroundMovePenalty    = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "ground_move_penalty")
+        AirMovePenalty       = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "air_move_penalty")
+        DuckPenaltyScale     = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "duck_penalty_scale")
+        FirstShotSpeedThreshold = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "firstshot_speed")
+        MaxSpread            = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "max_spread")
         Player               = Get-WeaponLogValue -Values $values -Name "player"
         EntIndex             = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "entindex")
         UserId               = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "userid")
@@ -405,6 +414,21 @@ $report = [ordered]@{
             event = $session.Event
             status = $session.Status
             file = $session.LogFile
+            profileName = $session.ProfileName
+            featureFlags = [ordered]@{
+                tapFire = $session.TapFire
+                moveSpreadScale = $session.MoveSpreadScale
+                firstShotAccuracy = $session.FirstShotEnabled
+                spreadRecovery = $session.SpreadRecovery
+            }
+            tuning = [ordered]@{
+                baseSpread = $session.BaseSpread
+                groundMovePenalty = $session.GroundMovePenalty
+                airMovePenalty = $session.AirMovePenalty
+                duckPenaltyScale = $session.DuckPenaltyScale
+                firstShotSpeedThreshold = $session.FirstShotSpeedThreshold
+                maxSpread = $session.MaxSpread
+            }
         }
     }
     else {
@@ -464,6 +488,17 @@ Write-Host "  log path                 : $($targetLog.FullName)"
 
 if ($session) {
     Write-Host "  session                  : ts=$($session.Timestamp) map=$($session.Map) game=$($session.Game) status=$($session.Status)"
+    if (-not [string]::IsNullOrWhiteSpace($session.ProfileName)) {
+        Write-Host "  profile                  : $($session.ProfileName)"
+    }
+
+    if ($null -ne $session.BaseSpread -or $null -ne $session.GroundMovePenalty -or $null -ne $session.AirMovePenalty -or $null -ne $session.DuckPenaltyScale -or $null -ne $session.FirstShotSpeedThreshold -or $null -ne $session.MaxSpread) {
+        Write-Host "  tuning                   : base=$(Format-WeaponLogNumber -Value $session.BaseSpread -Digits 4) ground=$(Format-WeaponLogNumber -Value $session.GroundMovePenalty -Digits 4) air=$(Format-WeaponLogNumber -Value $session.AirMovePenalty -Digits 4) duck=$(Format-WeaponLogNumber -Value $session.DuckPenaltyScale -Digits 4) firstshot_speed=$(Format-WeaponLogNumber -Value $session.FirstShotSpeedThreshold -Digits 1) max_spread=$(Format-WeaponLogNumber -Value $session.MaxSpread -Digits 4)"
+    }
+
+    if ($null -ne $session.TapFire -or $null -ne $session.MoveSpreadScale -or $null -ne $session.FirstShotEnabled -or $null -ne $session.SpreadRecovery) {
+        Write-Host "  feature flags            : tapfire=$(if ($null -eq $session.TapFire) { 'n/a' } elseif ($session.TapFire) { '1' } else { '0' }) move_scale=$(Format-WeaponLogNumber -Value $session.MoveSpreadScale -Digits 4) firstshot=$(if ($null -eq $session.FirstShotEnabled) { 'n/a' } elseif ($session.FirstShotEnabled) { '1' } else { '0' }) recovery=$(Format-WeaponLogNumber -Value $session.SpreadRecovery -Digits 3)"
+    }
 }
 else {
     Write-Host "  session                  : missing"

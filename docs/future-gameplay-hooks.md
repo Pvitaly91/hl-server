@@ -23,12 +23,55 @@ This keeps the stock runtime on `-game valve`, keeps all debug writes inside the
   `1` allows a fully accurate accepted primary shot when the player is grounded, moving slowly enough, and has recovered long enough since the previous accepted shot.
 - `sv_exp_spread_recovery`
   Quiet time in seconds before first-shot accuracy can return. Values less than or equal to `0` mean immediate recovery once the movement conditions are met.
+- `sv_exp_glock_profile_name`
+  String-like server cvar used as active preset metadata. `default` means no checked-in preset was selected.
+- `sv_exp_glock_primary_base_spread`
+  Glock primary base spread coefficient for the experimental server path.
+- `sv_exp_glock_primary_ground_move_penalty`
+  Ground movement penalty coefficient before the generic `sv_exp_move_spread_scale` multiplier is applied.
+- `sv_exp_glock_primary_air_move_penalty`
+  Air movement penalty coefficient before the generic `sv_exp_move_spread_scale` multiplier is applied.
+- `sv_exp_glock_primary_duck_penalty_scale`
+  Multiplier applied to the movement penalty when ducking.
+- `sv_exp_glock_primary_first_shot_speed_threshold`
+  Maximum horizontal speed for first-shot accuracy qualification.
+- `sv_exp_glock_primary_max_spread`
+  Clamp ceiling for experimental Glock primary spread.
 - `sv_exp_debug_weaponlog`
   Default `0` keeps telemetry fully quiet.
   `1` logs accepted Glock primary shots for the current server-authoritative experiment.
 - `sv_exp_debug_weaponlog_rejections`
   Default `0` logs accepted shots only.
   `1` also logs tap-fire hold rejections when primary fire is blocked because the player never released attack for a fresh press.
+
+The Glock tuning coefficients now live behind typed accessors in `src/future_gameplay_hooks.cpp`, so changing presets or launch-time overrides no longer requires recompiling the weapon logic.
+
+## Preset files
+
+Checked-in Glock tuning presets live under `configs/glock-presets/` as small JSON files.
+
+Current examples:
+
+- `baseline.json`
+  Matches the current experimental Glock tuning defaults as closely as practical.
+- `cs_tight.json`
+  Experimental tighter, more deliberate tuning with harsher movement penalties.
+- `cs_mobile.json`
+  Experimental more mobile tuning with lighter movement penalties.
+
+Each preset file contains:
+
+- `name`
+- `description`
+- `cvars`
+
+The launcher merge order is:
+
+1. built-in experimental Glock defaults
+2. selected preset file
+3. explicit command-line overrides
+
+This keeps tuning iteration versioned, reviewable, and server-side while staying stock-client-compatible on `-game valve`.
 
 ## What the Glock telemetry proves
 
@@ -52,13 +95,15 @@ Launch and smoke verification are automated. Actual weapon feel still requires m
 The telemetry now uses a stable, single-line, parser-friendly prefix plus `key=value` fields:
 
 - session header
-  `[weaponlog] type=session ts=... map=... event=weapon_debug_session status=ready game=valve file="..."`
+  `[weaponlog] type=session ts=... map=... event=weapon_debug_session status=ready game=valve file="..." profile="..." tapfire=... move_scale=... firstshot_enabled=... recovery=... base=... ground_move_penalty=... air_move_penalty=... duck_penalty_scale=... firstshot_speed=... max_spread=...`
 - accepted primary shot
   `[weaponlog] type=accepted ts=... map=... player="..." entindex=... userid=... weapon=glock fire=primary ...`
 - rejected tap-fire hold
   `[weaponlog] type=rejected ts=... map=... player="..." entindex=... userid=... weapon=glock fire=primary reason=tapfire_hold_blocked ...`
 
 The line remains human-readable, but the stable prefix and `type=` field make it fast to parse. The current analyzer is also backward-compatible with older unprefixed `key=value` Glock logs so earlier manual sessions are still usable.
+
+The session header now exposes the active profile name and the actual tuning values that the server used for that run. That makes it possible to compare telemetry evidence against the real launch profile instead of relying on memory or handwritten notes.
 
 ## One-click manual Glock session
 
@@ -80,6 +125,7 @@ The corresponding BAT alias is `scripts\run-testbed.bat glock-session`.
 
 It infers:
 
+- which Glock profile metadata and tuning values were present in the session header
 - whether accepted shots were logged
 - whether tap-fire hold rejections were logged
 - whether first-shot accepted events occurred
@@ -96,6 +142,13 @@ It cannot infer:
 - whether a single crouch-moving sample is enough to prove balance quality
 
 That distinction matters. The analyzer summarizes evidence from logs; it does not replace a human in-game firing pass.
+
+Tuning and telemetry evidence are still separate from feel testing:
+
+- tuning and telemetry evidence
+  proves which preset and coefficients were active, plus what the server-authoritative firing path did with them
+- subjective in-game feel testing
+  still requires a human to fire the weapon with the stock client and judge cadence, readability, responsiveness, and prediction feel
 
 ## Manual checklist summary
 
@@ -166,8 +219,10 @@ Only the fourth layer speaks to real in-game behavior. The first three layers pr
   Analyze the newest disposable Glock telemetry log, with optional forwarded export or assertion switches.
 - `scripts/run-glock-test-session.ps1`
   PowerShell entry point for the same one-click manual session flow, plus an optional `-AnalyzeLatestOnExit` handoff after a manual stop point.
+- `scripts/list-glock-profiles.ps1`
+  Lists the checked-in Glock preset files, their paths, and their short descriptions.
 - `scripts/analyze-weapon-log.ps1`
-  PowerShell analyzer for the newest or a specific `weapon-debug-*.log`, including concise summary output, JSON/CSV exports, and optional signal assertions.
+  PowerShell analyzer for the newest or a specific `weapon-debug-*.log`, including concise summary output, session profile/tuning metadata, JSON/CSV exports, and optional signal assertions.
 - `scripts/tail-weapon-log.ps1`
   Follows the newest disposable Glock telemetry log, or a specific path passed through `-Path`, or dumps it once with `-NoFollow`.
 

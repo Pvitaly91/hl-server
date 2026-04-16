@@ -1,0 +1,16 @@
+{
+  "name": "cs_tight",
+  "description": "Experimental tighter Glock preset with harsher movement penalties and a smaller first-shot speed window.",
+  "cvars": {
+    "sv_exp_pistol_tapfire": "1",
+    "sv_exp_move_spread_scale": "1.0",
+    "sv_exp_first_shot_accuracy": "1",
+    "sv_exp_spread_recovery": "0.35",
+    "sv_exp_glock_primary_base_spread": "0.008",
+    "sv_exp_glock_primary_ground_move_penalty": "0.095",
+    "sv_exp_glock_primary_air_move_penalty": "0.14",
+    "sv_exp_glock_primary_duck_penalty_scale": "0.7",
+    "sv_exp_glock_primary_first_shot_speed_threshold": "30.0",
+    "sv_exp_glock_primary_max_spread": "0.16"
+  }
+}
