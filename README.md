@@ -50,7 +50,7 @@ To smoke-test the whole flow non-interactively:
 
 ## Live BAT launchers
 
-These BAT files are the ready-to-run entry points for live disposable-server testing from Explorer or `cmd.exe`. They stay on `-game valve`, run the disposable-runtime doctor with repair before launching, keep writes inside `testbed/`, and then delegate to the existing PowerShell session flows.
+These BAT files are the ready-to-run entry points for live disposable-server testing from Explorer or `cmd.exe`. They stay on `-game valve`, run the disposable-runtime doctor with repair before launching, keep writes inside `testbed/`, and use the explicit client-matched live mode so the disposable runtime mirrors the stock client content root before launching the attached session.
 
 Launch the default Glock live lab:
 
@@ -93,6 +93,8 @@ Use the new aliases from the existing BAT dispatcher:
 ```bat
 scripts\run-testbed.bat play-glock
 scripts\run-testbed.bat play-mp5
+scripts\run-testbed.bat play-glock-clientmatched
+scripts\run-testbed.bat play-mp5-clientmatched
 scripts\run-testbed.bat play-menu
 ```
 
@@ -110,14 +112,22 @@ scripts\play-mp5-live.bat -Preset cs_mobile -TargetProfile vest_headprotected
 What to expect from the live launchers:
 
 - the disposable runtime is repaired or refreshed first
+- live client-attached runs mirror the resolved stock client root into `testbed/runtime/` and supplement missing server-side files from the selected HLDS-capable source when needed
 - HLDS starts against `testbed/runtime/` on `-game valve`
-- a stock client launch is requested when a valid `hl.exe` is available
+- the stock client launch is requested from `testbed/runtime/hl.exe` when a valid stock client root is available
 - the one-player lab dummy appears for the live session flow
 - logs are written under `testbed/logs/`
 - analyzer output remains under `testbed/logs/reports/`
-- the console prints the connect target, active preset, active target profile, and the log locations
+- the console prints the chosen client root, runtime source root, content source root, chosen map, and the log locations
 
-If `hl.exe` is not found, the live BAT wrappers stop before the session hand-off and print the remediation path. Set `HL_EXE` in `.env`, pass `-HlExe D:\Steam\steamapps\common\Half-Life\hl.exe`, or use a runtime template that already mirrors `hl.exe` into `testbed/runtime/`.
+If the fix is working, the live launcher and the doctor will show:
+
+- the stock client root under `Client root`
+- the selected HLDS-capable source under `Selected source` or `Runtime source`
+- `Live content verdict: runtime and client share the same live content root` or `runtime crossfire matches the client after client-matched mirroring`
+- matching `Runtime crossfire SHA256` and `Client crossfire SHA256` values
+
+If `hl.exe` is not found, the live BAT wrappers stop before the session hand-off and print the remediation path. Set `HL_EXE` in `.env` or pass `-HlExe D:\Steam\steamapps\common\Half-Life\hl.exe`.
 
 ## Runtime doctor
 
@@ -125,6 +135,19 @@ Inspect the currently selected runtime source and the disposable runtime:
 
 ```powershell
 .\scripts\doctor-testbed.ps1
+```
+
+Inspect the current live client/root pairing and the representative `crossfire.bsp` hashes:
+
+```powershell
+.\scripts\check-live-map-match.ps1
+```
+
+Inspect or repair the runtime specifically for a client-attached live session:
+
+```powershell
+.\scripts\doctor-testbed.ps1 -PreferClientMatchedRuntime
+.\scripts\doctor-testbed.ps1 -PreferClientMatchedRuntime -Repair
 ```
 
 Force a disposable-runtime refresh and let the repo provision a dedicated HLDS cache under `testbed/cache/` when needed:
@@ -150,6 +173,9 @@ If you only want to refresh the disposable runtime without the full repair flow:
 - the selected runtime source root
 - the selected `hlds.exe`
 - the selected `hl.exe` when one is available
+- the resolved stock client root used for live play
+- the effective content source root that will be mirrored into `testbed/runtime/`
+- the representative `valve\maps\crossfire.bsp` paths and SHA256 hashes for the runtime, the selected source, and the client root
 - the disposable runtime root and runtime manifest
 - key executable-side files or directories that are present or missing
 - the current blocker classification and remediation guidance
@@ -168,6 +194,8 @@ Runtime source selection now prefers, in order:
 4. the cached dedicated HLDS template under `testbed/cache/hlds-template`
 5. an installed `Half-Life Dedicated Server` runtime
 6. a regular Half-Life client install only as a fallback when it already contains `hlds.exe`
+
+That preference order is still correct for no-client or dedicated-only flows. Live client-attached play is different: `play-glock-live.bat`, `play-mp5-live.bat`, and `.\scripts\doctor-testbed.ps1 -PreferClientMatchedRuntime` intentionally mirror the resolved stock client root into `testbed/runtime/` so the client and server use compatible `valve` content and avoid `different map`.
 
 To build Release instead:
 

@@ -1,0 +1,61 @@
+[CmdletBinding()]
+param(
+    [ValidateSet("Debug", "Release")]
+    [string]$Configuration = "Debug",
+
+    [string]$TemplateRoot,
+    [string]$HldsExe,
+    [string]$HlExe,
+    [string]$SteamCmdExe,
+    [switch]$AllowSteamCmdDownload,
+    [switch]$PreferClientMatchedRuntime
+)
+
+$ErrorActionPreference = "Stop"
+. "$PSScriptRoot\common.ps1"
+Import-HLServerEnv
+
+$configuration = Get-ValidatedConfiguration -Configuration $Configuration
+$report = Get-TestbedDoctorReport `
+    -Configuration $configuration `
+    -ExplicitTemplateRoot $TemplateRoot `
+    -ExplicitHldsExe $HldsExe `
+    -ExplicitHlExe $HlExe `
+    -ExplicitSteamCmdExe $SteamCmdExe `
+    -AllowSteamCmdDownload:$AllowSteamCmdDownload `
+    -PreferClientMatchedRuntime:$PreferClientMatchedRuntime `
+    -IgnoreLatestLaunchFailure
+
+$live = $report.LiveContentStatus
+
+Write-Step "Live content inspection"
+Write-Host "Diagnosis           : $($report.Classification)"
+Write-Host "Client-matched mode : $(if ($live.PreferClientMatchedRuntime) { 'requested' } else { 'not requested' })"
+Write-Host "Client hl.exe       : $(if ($live.ClientHlExe) { $live.ClientHlExe } else { 'not found' })"
+Write-Host "Client root         : $(if ($live.ClientRoot) { $live.ClientRoot } else { 'not found' })"
+Write-Host "Runtime source root : $(if ($live.RuntimeSourceRoot) { $live.RuntimeSourceRoot } else { 'unavailable' })"
+Write-Host "Content source root : $(if ($live.EffectiveContentRoot) { $live.EffectiveContentRoot } else { 'unavailable' })"
+Write-Host "Manifest content    : $(if ($live.ManifestContentRoot) { $live.ManifestContentRoot } else { 'missing' })"
+Write-Host "Verdict             : $($live.Verdict)"
+Write-Host "Runtime map         : $(if ($live.RuntimeMap.Path) { $live.RuntimeMap.Path } else { 'missing' })"
+Write-Host "Client map          : $(if ($live.ClientMap.Path) { $live.ClientMap.Path } else { 'missing' })"
+Write-Host "Source map          : $(if ($live.SourceMap.Path) { $live.SourceMap.Path } else { 'missing' })"
+Write-Host "Runtime map hash    : $(if ($live.RuntimeMap.Hash) { $live.RuntimeMap.Hash } else { 'missing' })"
+Write-Host "Client map hash     : $(if ($live.ClientMap.Hash) { $live.ClientMap.Hash } else { 'missing' })"
+Write-Host "Source map hash     : $(if ($live.SourceMap.Hash) { $live.SourceMap.Hash } else { 'missing' })"
+
+foreach ($warning in @($report.Warnings)) {
+    Write-Host "Warning             : $warning"
+}
+
+foreach ($issue in @($report.Issues)) {
+    Write-Host "Issue               : $issue"
+}
+
+foreach ($recommendation in @($report.Recommendations)) {
+    Write-Host "Remediation         : $recommendation"
+}
+
+if (-not $report.IsHealthy) {
+    throw (Get-TestbedDoctorFailureMessage -Report $report)
+}

@@ -60,8 +60,19 @@ Write-Step "Repairing and validating the disposable runtime for $displayName"
     -HlExe $HlExe `
     -SteamCmdExe $SteamCmdExe `
     -AllowSteamCmdDownload:$AllowSteamCmdDownload `
+    -PreferClientMatchedRuntime `
     -Repair `
     -BuildIfMissing
+
+$doctorReport = Get-TestbedDoctorReport `
+    -Configuration $configuration `
+    -ExplicitTemplateRoot $TemplateRoot `
+    -ExplicitHldsExe $HldsExe `
+    -ExplicitHlExe $HlExe `
+    -ExplicitSteamCmdExe $SteamCmdExe `
+    -AllowSteamCmdDownload:$AllowSteamCmdDownload `
+    -PreferClientMatchedRuntime `
+    -IgnoreLatestLaunchFailure
 
 $resolvedClientExe = $null
 if (-not $NoClient) {
@@ -73,8 +84,15 @@ Write-Host "$displayName launcher"
 Write-Host "  connect target : 127.0.0.1:$Port (the session may pick another free local port if this one is busy)"
 Write-Host "  active preset  : $effectivePreset"
 Write-Host "  target profile : $effectiveTargetProfile"
+Write-Host "  chosen map     : $Map"
 Write-Host "  logs           : $logsRoot"
 Write-Host "  analyzer output: $reportsRoot"
+Write-Host "  client root    : $(if ($doctorReport.LiveContentStatus.ClientRoot) { $doctorReport.LiveContentStatus.ClientRoot } else { 'not found' })"
+Write-Host "  runtime source : $(if ($doctorReport.LiveContentStatus.RuntimeSourceRoot) { $doctorReport.LiveContentStatus.RuntimeSourceRoot } else { 'unavailable' })"
+Write-Host "  content source : $(if ($doctorReport.LiveContentStatus.EffectiveContentRoot) { $doctorReport.LiveContentStatus.EffectiveContentRoot } else { 'unavailable' })"
+Write-Host "  live verdict   : $($doctorReport.LiveContentStatus.Verdict)"
+Write-Host "  runtime map    : $(if ($doctorReport.LiveContentStatus.RuntimeMap.Path) { $doctorReport.LiveContentStatus.RuntimeMap.Path } else { 'missing' })"
+Write-Host "  client map     : $(if ($doctorReport.LiveContentStatus.ClientMap.Path) { $doctorReport.LiveContentStatus.ClientMap.Path } else { 'missing' })"
 Write-Host "  stock client   : $(if ($NoClient) { 'disabled by -NoClient' } elseif ($resolvedClientExe) { $resolvedClientExe } else { 'not found' })"
 
 if ((-not $NoClient) -and (-not $resolvedClientExe)) {
@@ -136,6 +154,8 @@ if (-not [string]::IsNullOrWhiteSpace($SteamCmdExe)) {
 if ($AllowSteamCmdDownload) {
     $sessionParameters.AllowSteamCmdDownload = $true
 }
+
+$sessionParameters.PreferClientMatchedRuntime = $true
 
 if ($ExtraSessionArgs) {
     & $sessionScript @sessionParameters @ExtraSessionArgs

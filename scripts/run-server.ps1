@@ -23,7 +23,8 @@ param(
     [string]$HldsExe,
     [string]$HlExe,
     [string]$SteamCmdExe,
-    [switch]$AllowSteamCmdDownload
+    [switch]$AllowSteamCmdDownload,
+    [switch]$PreferClientMatchedRuntime
 )
 
 $ErrorActionPreference = "Stop"
@@ -32,12 +33,12 @@ Import-HLServerEnv
 
 $configuration = Get-ValidatedConfiguration -Configuration $Configuration
 $runtimeRoot = Get-TestbedRuntimeRoot
-$preflightReport = Get-TestbedDoctorReport -Configuration $configuration -ExplicitTemplateRoot $TemplateRoot -ExplicitHldsExe $HldsExe -ExplicitHlExe $HlExe -ExplicitSteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload -IgnoreLatestLaunchFailure
+$preflightReport = Get-TestbedDoctorReport -Configuration $configuration -ExplicitTemplateRoot $TemplateRoot -ExplicitHldsExe $HldsExe -ExplicitHlExe $HlExe -ExplicitSteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload -PreferClientMatchedRuntime:$PreferClientMatchedRuntime -IgnoreLatestLaunchFailure
 
 if (-not $preflightReport.IsHealthy) {
     Write-Step "Refreshing disposable runtime before launch"
-    & "$PSScriptRoot\install-testbed.ps1" -Configuration $configuration -TemplateRoot $TemplateRoot -HldsExe $HldsExe -HlExe $HlExe -SteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload
-    $preflightReport = Get-TestbedDoctorReport -Configuration $configuration -ExplicitTemplateRoot $TemplateRoot -ExplicitHldsExe $HldsExe -ExplicitHlExe $HlExe -ExplicitSteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload -IgnoreLatestLaunchFailure
+    & "$PSScriptRoot\install-testbed.ps1" -Configuration $configuration -TemplateRoot $TemplateRoot -HldsExe $HldsExe -HlExe $HlExe -SteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload -PreferClientMatchedRuntime:$PreferClientMatchedRuntime
+    $preflightReport = Get-TestbedDoctorReport -Configuration $configuration -ExplicitTemplateRoot $TemplateRoot -ExplicitHldsExe $HldsExe -ExplicitHlExe $HlExe -ExplicitSteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload -PreferClientMatchedRuntime:$PreferClientMatchedRuntime -IgnoreLatestLaunchFailure
 }
 
 if (-not $preflightReport.IsHealthy) {
@@ -49,6 +50,11 @@ if ($preflightReport.SourceSelection -and $preflightReport.SourceSelection.Selec
     $selectedSource = $preflightReport.SourceSelection.SelectedCandidate
     Write-Host "Runtime source: $($selectedSource.Root)"
     Write-Host "Source reason : $($selectedSource.Reason)"
+}
+if ($preflightReport.LiveContentStatus) {
+    Write-Host "Client root   : $(if ($preflightReport.LiveContentStatus.ClientRoot) { $preflightReport.LiveContentStatus.ClientRoot } else { 'not found' })"
+    Write-Host "Content root  : $(if ($preflightReport.LiveContentStatus.EffectiveContentRoot) { $preflightReport.LiveContentStatus.EffectiveContentRoot } else { 'unavailable' })"
+    Write-Host "Live verdict  : $($preflightReport.LiveContentStatus.Verdict)"
 }
 
 Assert-UdpPortAvailable -Port $Port

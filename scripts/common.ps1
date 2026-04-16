@@ -314,6 +314,24 @@ function Get-TestbedSessionClientExe {
     return (Resolve-HlExe)
 }
 
+function Resolve-TestbedClientInstall {
+    param(
+        [string]$ExplicitHlExe
+    )
+
+    $clientExe = Resolve-HlExe -ExplicitPath $ExplicitHlExe
+    if (-not $clientExe) {
+        return $null
+    }
+
+    $clientRoot = Split-Path -Parent $clientExe
+    return [PSCustomObject]@{
+        HlExe = $clientExe
+        Root = $clientRoot
+        Probe = Get-HldsRuntimeProbe -Root $clientRoot
+    }
+}
+
 function Get-ObjectPropertyValue {
     param(
         $InputObject,
@@ -1078,15 +1096,21 @@ function Write-TestbedRuntimeManifest {
         [Parameter(Mandatory = $true)]
         $TemplateSelection,
         [Parameter(Mandatory = $true)]
+        [string]$MirrorRoot,
+        [Parameter(Mandatory = $true)]
         $MirrorResult,
         [Parameter(Mandatory = $true)]
         [string]$InstalledDllPath,
         [string]$InstalledPdbPath,
-        [bool]$CreatedSteamAppIdFile = $false
+        [bool]$CreatedSteamAppIdFile = $false,
+        $ClientInstall,
+        [bool]$PreferClientMatchedRuntime = $false
     )
 
     $manifestPath = Get-TestbedRuntimeManifestPath -RuntimeRoot $RuntimeRoot
     $selectedCandidate = $TemplateSelection.SelectedCandidate
+    $contentSourceRoot = if ($ClientInstall) { $ClientInstall.Root } else { $selectedCandidate.Root }
+    $contentSourceHlExe = if ($ClientInstall) { $ClientInstall.HlExe } else { $selectedCandidate.Probe.HlExe }
 
     $manifest = [ordered]@{
         runtimeRoot = (Get-FullPath -Path $RuntimeRoot)
@@ -1099,6 +1123,11 @@ function Write-TestbedRuntimeManifest {
         sourceHldsExe = $selectedCandidate.Probe.HldsExe
         sourceHlExe = $selectedCandidate.Probe.HlExe
         sourceSteamAppId = $selectedCandidate.Probe.SteamAppId
+        runtimeMode = if ($PreferClientMatchedRuntime) { "client_matched_live" } else { "default" }
+        preferClientMatchedRuntime = $PreferClientMatchedRuntime
+        mirrorRoot = $MirrorRoot
+        contentSourceRoot = $contentSourceRoot
+        contentSourceHlExe = $contentSourceHlExe
         suggestedSteamAppId = $selectedCandidate.Probe.SuggestedSteamAppId
         createdSteamAppIdFile = $CreatedSteamAppIdFile
         installedDllPath = $InstalledDllPath
@@ -1177,6 +1206,142 @@ function Get-LatestHldsLaunchFailure {
     return $null
 }
 
+function New-TestbedContentSignature {
+    param(
+        [string]$Root,
+        [Parameter(Mandatory = $true)]
+        [string]$RelativePath
+    )
+
+    $path = $null
+    $exists = $false
+    $hash = $null
+
+    if (-not [string]::IsNullOrWhiteSpace($Root)) {
+        $path = Join-Path (Get-FullPath -Path $Root) $RelativePath
+        $exists = Test-LeafPath -Path $path
+        if ($exists) {
+            $hash = Get-FileSha256HashString -Path $path
+        }
+    }
+
+    return [PSCustomObject]@{
+        Root = if ([string]::IsNullOrWhiteSpace($Root)) { $null } else { Get-FullPath -Path $Root }
+        RelativePath = $RelativePath
+        Path = $path
+        Exists = $exists
+        Hash = $hash
+    }
+}
+
+function Get-TestbedLiveContentStatus {
+    param(
+        [string]$RuntimeRoot,
+        $SelectedCandidate,
+        $ClientInstall,
+        $RuntimeManifest,
+        [bool]$PreferClientMatchedRuntime = $false
+    )
+
+    $runtimeRootFull = Get-FullPath -Path $RuntimeRoot
+    $clientRoot = if ($ClientInstall) { $ClientInstall.Root } else { $null }
+    $runtimeSourceRoot = if ($SelectedCandidate) { $SelectedCandidate.Root } else { $null }
+    $effectiveContentRoot = if ($PreferClientMatchedRuntime -and $clientRoot) {
+        $clientRoot
+    }
+    else {
+        $runtimeSourceRoot
+    }
+
+    $manifestContentRoot = $null
+    if ($RuntimeManifest) {
+        $manifestContentRoot = Get-ObjectPropertyValue -InputObject $RuntimeManifest -Names @("contentSourceRoot", "mirrorRoot", "sourceRoot")
+    }
+
+    $runtimeSignature = New-TestbedContentSignature -Root $runtimeRootFull -RelativePath "valve\maps\crossfire.bsp"
+    $sourceSignature = New-TestbedContentSignature -Root $runtimeSourceRoot -RelativePath "valve\maps\crossfire.bsp"
+    $clientSignature = New-TestbedContentSignature -Root $clientRoot -RelativePath "valve\maps\crossfire.bsp"
+
+    $runtimeMatchesClientHash = $runtimeSignature.Exists -and $clientSignature.Exists -and ($runtimeSignature.Hash -eq $clientSignature.Hash)
+    $sourceMatchesClientHash = $sourceSignature.Exists -and $clientSignature.Exists -and ($sourceSignature.Hash -eq $clientSignature.Hash)
+    $sourceMatchesClientRoot = Test-PathsEqual -Left $runtimeSourceRoot -Right $clientRoot
+    $expectedContentMatchesClientRoot = Test-PathsEqual -Left $effectiveContentRoot -Right $clientRoot
+    $manifestContentMatchesClientRoot = Test-PathsEqual -Left $manifestContentRoot -Right $clientRoot
+
+    $verdict = if (-not $clientRoot) {
+        "no stock client root was resolved"
+    }
+    elseif (-not $runtimeSourceRoot) {
+        "runtime source was not resolved"
+    }
+    elseif ($runtimeMatchesClientHash) {
+        if ($PreferClientMatchedRuntime -and $expectedContentMatchesClientRoot) {
+            if ($sourceMatchesClientRoot) {
+                "runtime and client share the same live content root"
+            }
+            else {
+                "runtime crossfire matches the client after client-matched mirroring"
+            }
+        }
+        elseif ($sourceMatchesClientRoot) {
+            "runtime and client share the same live content root"
+        }
+        elseif ($sourceMatchesClientHash) {
+            "different roots, but crossfire matches between runtime source and client"
+        }
+        else {
+            "runtime crossfire matches the client after client-matched mirroring"
+        }
+    }
+    elseif ($sourceMatchesClientHash) {
+        "selected source matches the client, but the disposable runtime is stale"
+    }
+    else {
+        "crossfire differs between the runtime/client content roots"
+    }
+
+    return [PSCustomObject]@{
+        PreferClientMatchedRuntime = $PreferClientMatchedRuntime
+        ClientHlExe = if ($ClientInstall) { $ClientInstall.HlExe } else { $null }
+        ClientRoot = $clientRoot
+        RuntimeSourceRoot = $runtimeSourceRoot
+        RuntimeSourceKind = if ($SelectedCandidate) { $SelectedCandidate.Probe.Kind } else { $null }
+        EffectiveContentRoot = $effectiveContentRoot
+        ManifestContentRoot = $manifestContentRoot
+        RuntimeMap = $runtimeSignature
+        SourceMap = $sourceSignature
+        ClientMap = $clientSignature
+        SourceMatchesClientRoot = $sourceMatchesClientRoot
+        SourceMatchesClientHash = $sourceMatchesClientHash
+        ExpectedContentMatchesClientRoot = $expectedContentMatchesClientRoot
+        ManifestContentMatchesClientRoot = $manifestContentMatchesClientRoot
+        RuntimeMatchesClientHash = $runtimeMatchesClientHash
+        Verdict = $verdict
+    }
+}
+
+function Get-FileSha256HashString {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $resolvedPath = Get-FullPath -Path $Path
+    $stream = [System.IO.File]::Open($resolvedPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+    try {
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            return ([System.BitConverter]::ToString($sha256.ComputeHash($stream))).Replace("-", "")
+        }
+        finally {
+            $sha256.Dispose()
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
 function Get-TestbedDoctorReport {
     param(
         [ValidateSet("Debug", "Release")]
@@ -1187,6 +1352,7 @@ function Get-TestbedDoctorReport {
         [string]$ExplicitSteamCmdExe,
         [switch]$AllowSteamCmdDownload,
         [switch]$ForceRefreshSteamCmdTemplate,
+        [switch]$PreferClientMatchedRuntime,
         [switch]$IgnoreLatestLaunchFailure
     )
 
@@ -1196,6 +1362,8 @@ function Get-TestbedDoctorReport {
     $runtimeManifest = Read-TestbedRuntimeManifest -RuntimeRoot $runtimeRoot
     $buildDllPath = Get-HlDllPath -Configuration $configuration
     $buildDllExists = Test-LeafPath -Path $buildDllPath
+    $clientInstall = $null
+    $clientInstallError = $null
 
     $selection = $null
     $selectionError = $null
@@ -1207,10 +1375,19 @@ function Get-TestbedDoctorReport {
         $selectionError = $_.Exception.Message
     }
 
+    try {
+        $clientInstall = Resolve-TestbedClientInstall -ExplicitHlExe $ExplicitHlExe
+    }
+    catch {
+        $clientInstallError = $_.Exception.Message
+    }
+
     $entryComparison = @()
     if ($selection -and $selection.SelectedCandidate -and $runtimeProbe.Exists) {
         $entryComparison = @(Get-TestbedRuntimeEntryComparison -SourceProbe $selection.SelectedCandidate.Probe -RuntimeProbe $runtimeProbe)
     }
+
+    $liveContentStatus = Get-TestbedLiveContentStatus -RuntimeRoot $runtimeRoot -SelectedCandidate $(if ($selection) { $selection.SelectedCandidate } else { $null }) -ClientInstall $clientInstall -RuntimeManifest $runtimeManifest -PreferClientMatchedRuntime:$PreferClientMatchedRuntime
 
     $issues = New-Object System.Collections.Generic.List[string]
     $warnings = New-Object System.Collections.Generic.List[string]
@@ -1240,6 +1417,25 @@ function Get-TestbedDoctorReport {
             $issues.Add("The selected runtime template resolves to the disposable runtime itself. Choose a real install root or a cached template instead.")
             $recommendations.Add("Clear HL_RUNTIME_TEMPLATE and HLDS_EXE if they point at testbed/runtime, then rerun the doctor.")
         }
+    }
+
+    if ($clientInstallError) {
+        if ($PreferClientMatchedRuntime -and ($classification -eq "healthy")) {
+            $classification = "missing stock client"
+            $issues.Add($clientInstallError)
+            $recommendations.Add("Set HL_EXE in .env or pass -HlExe <path> so live client-matched sessions can mirror the stock client root into testbed/runtime.")
+        }
+        else {
+            $warnings.Add($clientInstallError)
+        }
+    }
+    elseif ($PreferClientMatchedRuntime -and (-not $clientInstall)) {
+        if ($classification -eq "healthy") {
+            $classification = "missing stock client"
+        }
+
+        $issues.Add("Client-matched live mode was requested, but no stock hl.exe could be resolved.")
+        $recommendations.Add("Set HL_EXE in .env or pass -HlExe <path> so live client-attached sessions can mirror the stock client root into testbed/runtime.")
     }
 
     if ($classification -eq "healthy") {
@@ -1273,6 +1469,12 @@ function Get-TestbedDoctorReport {
             $issues.Add("Disposable runtime was prepared for configuration $($runtimeManifest.configuration), not the requested $configuration build.")
             $recommendations.Add("Run .\scripts\install-testbed.ps1 -Configuration $configuration to refresh the disposable runtime.")
         }
+        elseif ($PreferClientMatchedRuntime -and $clientInstall -and (-not $liveContentStatus.ManifestContentMatchesClientRoot)) {
+            $classification = "stale disposable runtime"
+            $needsRepair = $true
+            $issues.Add("Disposable runtime content root is $($liveContentStatus.ManifestContentRoot), but live client-matched mode expects $($liveContentStatus.ClientRoot).")
+            $recommendations.Add("Run .\scripts\doctor-testbed.ps1 -Repair -PreferClientMatchedRuntime to rebuild testbed/runtime from the stock client content root.")
+        }
     }
 
     if ($classification -eq "healthy" -and $runtimeProbe.Exists -and (-not $runtimeProbe.IsRunnable)) {
@@ -1288,6 +1490,24 @@ function Get-TestbedDoctorReport {
         $needsRepair = $true
         $issues.Add("Disposable runtime is missing entries that exist in the selected source: $($missingExpectedEntries -join ', ').")
         $recommendations.Add("Run .\scripts\doctor-testbed.ps1 -Repair to refresh the mirrored executable-side dependencies.")
+    }
+
+    if ($classification -eq "healthy" -and $liveContentStatus.ClientRoot) {
+        if ($PreferClientMatchedRuntime -and (-not $liveContentStatus.RuntimeMatchesClientHash)) {
+            $classification = "live content mismatch"
+            $needsRepair = $true
+            $issues.Add("Disposable runtime map $($liveContentStatus.RuntimeMap.Path) does not match the live client map $($liveContentStatus.ClientMap.Path).")
+            $recommendations.Add("Run .\scripts\doctor-testbed.ps1 -Repair -PreferClientMatchedRuntime to rebuild testbed/runtime from client-matched content.")
+        }
+        elseif ((-not $PreferClientMatchedRuntime) -and (-not $liveContentStatus.SourceMatchesClientRoot)) {
+            if ($liveContentStatus.SourceMatchesClientHash) {
+                $warnings.Add("Live sessions currently resolve the runtime source to $($liveContentStatus.RuntimeSourceRoot) while the stock client root is $($liveContentStatus.ClientRoot). crossfire.bsp matches today, but the roots differ.")
+            }
+            else {
+                $warnings.Add("Live sessions currently resolve the runtime source to $($liveContentStatus.RuntimeSourceRoot) while the stock client root is $($liveContentStatus.ClientRoot), and crossfire.bsp hashes differ. Use -PreferClientMatchedRuntime for live play to avoid 'different map'.")
+                $recommendations.Add("Use .\scripts\doctor-testbed.ps1 -PreferClientMatchedRuntime -Repair before a live client-attached session.")
+            }
+        }
     }
 
     $latestLaunchFailure = if ($IgnoreLatestLaunchFailure) { $null } else { Get-LatestHldsLaunchFailure }
@@ -1330,6 +1550,9 @@ function Get-TestbedDoctorReport {
         BuildDllExists = $buildDllExists
         SourceSelection = $selection
         SourceSelectionError = $selectionError
+        ClientInstall = $clientInstall
+        ClientInstallError = $clientInstallError
+        LiveContentStatus = $liveContentStatus
         EntryComparison = $entryComparison
         Classification = $classification
         Issues = $issues.ToArray()
@@ -1370,6 +1593,36 @@ function Write-TestbedDoctorSummary {
 
     $manifestPath = Get-TestbedRuntimeManifestPath -RuntimeRoot $Report.RuntimeRoot
     Write-Host "Runtime manifest    : $(if (Test-LeafPath -Path $manifestPath) { $manifestPath } else { 'missing' })"
+    Write-Host "Client hl.exe       : $(if ($Report.LiveContentStatus.ClientHlExe) { $Report.LiveContentStatus.ClientHlExe } else { 'not found' })"
+    Write-Host "Client root         : $(if ($Report.LiveContentStatus.ClientRoot) { $Report.LiveContentStatus.ClientRoot } else { 'not found' })"
+    Write-Host "Live content mode   : $(if ($Report.LiveContentStatus.PreferClientMatchedRuntime) { 'client-matched requested' } else { 'default selection' })"
+    Write-Host "Content source root : $(if ($Report.LiveContentStatus.EffectiveContentRoot) { $Report.LiveContentStatus.EffectiveContentRoot } else { 'unavailable' })"
+    Write-Host "Manifest content    : $(if ($Report.LiveContentStatus.ManifestContentRoot) { $Report.LiveContentStatus.ManifestContentRoot } else { 'missing' })"
+    Write-Host "Live content verdict: $($Report.LiveContentStatus.Verdict)"
+
+    if ($Report.LiveContentStatus.RuntimeMap.Path) {
+        Write-Host "Runtime crossfire   : $($Report.LiveContentStatus.RuntimeMap.Path)"
+    }
+
+    if ($Report.LiveContentStatus.ClientMap.Path) {
+        Write-Host "Client crossfire    : $($Report.LiveContentStatus.ClientMap.Path)"
+    }
+
+    if ($Report.LiveContentStatus.SourceMap.Path) {
+        Write-Host "Source crossfire    : $($Report.LiveContentStatus.SourceMap.Path)"
+    }
+
+    if ($Report.LiveContentStatus.RuntimeMap.Hash) {
+        Write-Host "Runtime crossfire SHA256: $($Report.LiveContentStatus.RuntimeMap.Hash)"
+    }
+
+    if ($Report.LiveContentStatus.ClientMap.Hash) {
+        Write-Host "Client crossfire SHA256 : $($Report.LiveContentStatus.ClientMap.Hash)"
+    }
+
+    if ($Report.LiveContentStatus.SourceMap.Hash) {
+        Write-Host "Source crossfire SHA256 : $($Report.LiveContentStatus.SourceMap.Hash)"
+    }
 
     if ($Report.LatestLaunchFailure -and $Report.LatestLaunchFailureApplies) {
         Write-Host "Latest blocker      : $($Report.LatestLaunchFailure.Summary)"
@@ -1549,12 +1802,25 @@ function Install-TestbedRuntime {
         [string]$ExplicitHlExe,
         [string]$ExplicitSteamCmdExe,
         [switch]$AllowSteamCmdDownload,
+        [switch]$PreferClientMatchedRuntime,
         [switch]$ForceTemplateRefresh
     )
 
     $configuration = Get-ValidatedConfiguration -Configuration $Configuration
     $selection = Get-HldsTemplateSelection -ExplicitTemplateRoot $ExplicitTemplateRoot -ExplicitHldsExe $ExplicitHldsExe -ExplicitHlExe $ExplicitHlExe -ExplicitSteamCmdExe $ExplicitSteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload -ForceRefreshSteamCmdTemplate:$ForceTemplateRefresh
     $selectedCandidate = $selection.SelectedCandidate
+    $clientInstall = $null
+    $mirrorRoot = $selectedCandidate.Root
+
+    if ($PreferClientMatchedRuntime) {
+        $clientInstall = Resolve-TestbedClientInstall -ExplicitHlExe $ExplicitHlExe
+        if (-not $clientInstall) {
+            throw "Client-matched live mode was requested, but no stock hl.exe could be resolved. Set HL_EXE in .env or pass -HlExe <path>."
+        }
+
+        $mirrorRoot = $clientInstall.Root
+    }
+
     $runtimeRoot = Get-TestbedRuntimeRoot
     $testbedRoot = Get-TestbedRoot
 
@@ -1562,11 +1828,16 @@ function Install-TestbedRuntime {
         throw "The selected runtime template resolves to the disposable runtime itself: $runtimeRoot"
     }
 
-    Write-Step "Preparing disposable runtime from $($selectedCandidate.Root)"
+    Write-Step "Preparing disposable runtime from $mirrorRoot"
     Write-Host "Template source kind: $($selectedCandidate.Probe.KindLabel)"
     Write-Host "Template selection  : $($selectedCandidate.Reason)"
     Write-Host "Selected hlds.exe   : $($selectedCandidate.Probe.HldsExe)"
     Write-Host "Selected hl.exe     : $(if ($selectedCandidate.Probe.HlExe) { $selectedCandidate.Probe.HlExe } else { 'not found' })"
+    Write-Host "Mirror base root    : $mirrorRoot"
+    if ($clientInstall) {
+        Write-Host "Client root         : $($clientInstall.Root)"
+        Write-Host "Client hl.exe       : $($clientInstall.HlExe)"
+    }
 
     foreach ($warning in @($selection.Warnings)) {
         Write-Host "Template warning    : $warning"
@@ -1579,7 +1850,7 @@ function Install-TestbedRuntime {
     }
 
     Reset-DisposableDirectory -Path $runtimeRoot -AllowedRoot $testbedRoot
-    $mirrorResult = Copy-RuntimeTemplateToDisposable -SourceRoot $selectedCandidate.Root -RuntimeRoot $runtimeRoot
+    $mirrorResult = Copy-RuntimeTemplateToDisposable -SourceRoot $mirrorRoot -RuntimeRoot $runtimeRoot
     $runtimeFixups = Ensure-DisposableRuntimeKeyEntries -SourceProbe $selectedCandidate.Probe -RuntimeRoot $runtimeRoot
 
     $runtimeValveDlls = Join-Path $runtimeRoot "valve\dlls"
@@ -1594,15 +1865,17 @@ function Install-TestbedRuntime {
     @"
 Disposable runtime prepared by hl-server.
 Template root: $($selectedCandidate.Root)
+Mirror root: $mirrorRoot
 Template reason: $($selectedCandidate.Reason)
 Installed hl.dll: $BuiltDllPath
 Timestamp: $(Get-Date -Format o)
 "@ | Set-Content -LiteralPath $markerPath -Encoding ASCII
 
-    $manifestPath = Write-TestbedRuntimeManifest -RuntimeRoot $runtimeRoot -Configuration $configuration -TemplateSelection $selection -MirrorResult $mirrorResult -InstalledDllPath $BuiltDllPath -InstalledPdbPath $BuiltPdbPath -CreatedSteamAppIdFile:$runtimeFixups.CreatedSteamAppIdFile
+    $manifestPath = Write-TestbedRuntimeManifest -RuntimeRoot $runtimeRoot -Configuration $configuration -TemplateSelection $selection -MirrorRoot $mirrorRoot -MirrorResult $mirrorResult -InstalledDllPath $BuiltDllPath -InstalledPdbPath $BuiltPdbPath -CreatedSteamAppIdFile:$runtimeFixups.CreatedSteamAppIdFile -ClientInstall $clientInstall -PreferClientMatchedRuntime:$PreferClientMatchedRuntime
     $runtimeProbe = Get-HldsRuntimeProbe -Root $runtimeRoot
     $entryComparison = Get-TestbedRuntimeEntryComparison -SourceProbe $selectedCandidate.Probe -RuntimeProbe $runtimeProbe
     $missingExpectedEntries = @($entryComparison | Where-Object { $_.MissingExpected } | Select-Object -ExpandProperty RelativePath)
+    $liveContentStatus = Get-TestbedLiveContentStatus -RuntimeRoot $runtimeRoot -SelectedCandidate $selectedCandidate -ClientInstall $clientInstall -RuntimeManifest (Read-TestbedRuntimeManifest -RuntimeRoot $runtimeRoot) -PreferClientMatchedRuntime:$PreferClientMatchedRuntime
 
     if (-not $runtimeProbe.IsRunnable) {
         throw "Disposable runtime is missing required entries after mirroring: $($runtimeProbe.MissingBaseRequired -join ', ')"
@@ -1612,9 +1885,15 @@ Timestamp: $(Get-Date -Format o)
         throw "Disposable runtime is missing entries that exist in the selected source after mirroring: $($missingExpectedEntries -join ', ')"
     }
 
+    if ($PreferClientMatchedRuntime -and (-not $liveContentStatus.RuntimeMatchesClientHash)) {
+        throw "Client-matched live mode expected $($liveContentStatus.RuntimeMap.Path) to match $($liveContentStatus.ClientMap.Path), but the hashes still differ."
+    }
+
     return [PSCustomObject]@{
         RuntimeRoot = $runtimeRoot
         TemplateSelection = $selection
+        ClientInstall = $clientInstall
+        LiveContentStatus = $liveContentStatus
         RuntimeProbe = $runtimeProbe
         ManifestPath = $manifestPath
         MarkerPath = $markerPath

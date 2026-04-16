@@ -8,6 +8,7 @@ param(
     [string]$HlExe,
     [string]$SteamCmdExe,
     [switch]$AllowSteamCmdDownload,
+    [switch]$PreferClientMatchedRuntime,
     [switch]$BuildIfMissing,
     [switch]$ForceTemplateRefresh
 )
@@ -29,10 +30,14 @@ if (-not (Test-LeafPath -Path $dllPath)) {
 }
 
 $pdbPath = Get-HlPdbPath -Configuration $configuration
-$installResult = Install-TestbedRuntime -Configuration $configuration -BuiltDllPath $dllPath -BuiltPdbPath $pdbPath -ExplicitTemplateRoot $TemplateRoot -ExplicitHldsExe $HldsExe -ExplicitHlExe $HlExe -ExplicitSteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload -ForceTemplateRefresh:$ForceTemplateRefresh
+$installResult = Install-TestbedRuntime -Configuration $configuration -BuiltDllPath $dllPath -BuiltPdbPath $pdbPath -ExplicitTemplateRoot $TemplateRoot -ExplicitHldsExe $HldsExe -ExplicitHlExe $HlExe -ExplicitSteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload -PreferClientMatchedRuntime:$PreferClientMatchedRuntime -ForceTemplateRefresh:$ForceTemplateRefresh
 
 Write-Step "Disposable runtime ready"
 Write-Host "Runtime root       : $($installResult.RuntimeRoot)"
 Write-Host "Installed DLL      : $($installResult.InstalledDllPath)"
 Write-Host "Runtime manifest   : $($installResult.ManifestPath)"
 Write-Host "Created steam_appid: $($installResult.CreatedSteamAppIdFile)"
+if ($installResult.ClientInstall) {
+    Write-Host "Client root        : $($installResult.ClientInstall.Root)"
+}
+Write-Host "Live content       : $($installResult.LiveContentStatus.Verdict)"
