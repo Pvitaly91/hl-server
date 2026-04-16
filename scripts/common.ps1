@@ -32,6 +32,18 @@ function Join-RepoPath {
     return (Join-Path (Get-RepoRoot) $RelativePath)
 }
 
+function Get-TestbedRoot {
+    return (Join-RepoPath "testbed")
+}
+
+function Get-TestbedRuntimeRoot {
+    return (Join-Path (Get-TestbedRoot) "runtime")
+}
+
+function Get-TestbedLogsRoot {
+    return (Join-Path (Get-TestbedRoot) "logs")
+}
+
 function Get-FullPath {
     param(
         [Parameter(Mandatory = $true)]
@@ -635,7 +647,7 @@ function Get-ExperimentalGlockDebugLaunchAssignments {
 }
 
 function Get-WeaponDebugLogsRoot {
-    return (Join-RepoPath "testbed\logs")
+    return (Get-TestbedLogsRoot)
 }
 
 function Get-LatestWeaponDebugLog {
@@ -796,7 +808,7 @@ function Start-HldsDetached {
         throw "No hlds.exe was found in the disposable runtime: $hldsExe"
     }
 
-    $logsRoot = Join-RepoPath "testbed\logs"
+    $logsRoot = Get-TestbedLogsRoot
     Ensure-Directory -Path $logsRoot
 
     $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -840,7 +852,7 @@ function Invoke-HldsForeground {
         throw "No hlds.exe was found in the disposable runtime: $hldsExe"
     }
 
-    $logsRoot = Join-RepoPath "testbed\logs"
+    $logsRoot = Get-TestbedLogsRoot
     Ensure-Directory -Path $logsRoot
 
     $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -869,6 +881,21 @@ function Get-HldsLogCandidates {
         $LaunchInfo.QConsoleLog,
         $LaunchInfo.ValveQConsoleLog
     )
+}
+
+function Wait-ForHldsReady {
+    param(
+        [Parameter(Mandatory = $true)]
+        $LaunchInfo,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Map,
+
+        [Parameter(Mandatory = $true)]
+        [int]$TimeoutSeconds
+    )
+
+    return (Wait-ForLogPattern -Paths (Get-HldsLogCandidates -LaunchInfo $LaunchInfo) -Pattern ('Started map "' + $Map + '"') -TimeoutSeconds $TimeoutSeconds -Process $LaunchInfo.Process)
 }
 
 function Wait-ForLogPattern {

@@ -67,7 +67,7 @@ try {
 
     $launchInfo = Start-HldsDetached -RuntimeRoot (Join-RepoPath "testbed\runtime") -Map $Map -Port $resolvedPort -MaxPlayers $MaxPlayers -SetCvar $effectiveSetCvars
 
-    $startupObserved = Wait-ForLogPattern -Paths (Get-HldsLogCandidates -LaunchInfo $launchInfo) -Pattern ('Started map "' + $Map + '"') -TimeoutSeconds 30 -Process $launchInfo.Process
+    $startupObserved = Wait-ForHldsReady -LaunchInfo $launchInfo -Map $Map -TimeoutSeconds 30
     if (-not $startupObserved) {
         throw "Smoke test did not observe server startup in the launch logs."
     }

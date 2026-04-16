@@ -95,10 +95,39 @@ Enable the experimental Glock mode with debug telemetry and dedicated weapon log
 scripts\run-testbed.bat experimental-debug
 ```
 
+Launch the one-click manual Glock session:
+
+```powershell
+.\scripts\run-glock-test-session.ps1 -Configuration Debug
+```
+
+Launch the same one-click session from `cmd.exe` or Explorer:
+
+```bat
+scripts\run-testbed.bat glock-session
+```
+
 Forward extra launch arguments through the BAT wrapper when needed:
 
 ```bat
 scripts\run-testbed.bat experimental -Port 27016 -Map crossfire
+```
+
+The one-click Glock session always:
+
+- reinstalls the selected disposable runtime into `testbed/runtime/`
+- launches HLDS in experimental-debug mode on `-game valve`
+- waits until the server actually reports `Started map "<map>"`
+- opens `scripts/tail-weapon-log.ps1` in a second PowerShell window when the session weapon log is ready, if possible
+- launches a stock `hl.exe` and auto-connects to `127.0.0.1:<port>` unless `-NoClient` is set
+- prints a compact in-terminal checklist for the manual firing pass
+
+The session prefers `testbed/runtime/hl.exe` when the mirrored runtime contains a stock client executable, which keeps client-side writes inside the disposable testbed. If the runtime does not contain `hl.exe`, it falls back to the same `HL_EXE` and Steam auto-detection path used by `scripts/run-client.ps1`. If no stock client is found, the script leaves a server-only session running and prints a clear message instead of failing.
+
+Run a server-only one-click session when you only want readiness and telemetry validation:
+
+```powershell
+.\scripts\run-glock-test-session.ps1 -Configuration Debug -NoClient
 ```
 
 Tail the newest disposable weapon debug log in PowerShell:
@@ -169,7 +198,7 @@ The CMake preset is the source of truth.
 ## Disposable testbed layout
 
 - `testbed/runtime/` - disposable HLDS runtime mirror
-- `testbed/logs/` - server launch logs
+- `testbed/logs/` - `hlds-*.log` server launch logs and `weapon-debug-*.log` Glock telemetry logs
 - `testbed/cache/` - downloaded SteamCMD and optional HLDS template cache
 
 `install-testbed.ps1` copies the selected runtime template into `testbed/runtime/` and then overwrites only:
@@ -186,9 +215,10 @@ No script writes into the user's real Steam `valve` folder.
 - `scripts/build.ps1` builds Debug or Release and prints the resulting artifact paths.
 - `scripts/install-testbed.ps1` prepares the disposable runtime and installs the built `hl.dll`.
 - `scripts/run-server.ps1` launches HLDS against the disposable runtime with `-game valve`, defaults to `crossfire`, accepts `-EnableExperimentalGlock` and `-EnableExperimentalGlockDebug` for the documented server-only Glock cvar bundles, and still supports launch-time overrides through `-SetCvar @('name=value', ...)` or `-Cvars @{ name = 'value' }`.
-- `scripts/run-testbed.bat` is a thin convenience wrapper over `scripts/run-server.ps1` that defaults to a detached Debug disposable launch and maps `experimental` and `experimental-debug` to the corresponding PowerShell switches.
-- `scripts/tail-weapon-log.ps1` finds the newest `testbed/logs/weapon-debug-*.log` file, prints a helpful message if none exists, and can either follow the log or dump it once with `-NoFollow`.
-- `scripts/run-client.ps1` optionally launches the stock Half-Life client and connects to `127.0.0.1`.
+- `scripts/run-glock-test-session.ps1` reinstalls the disposable runtime, launches the experimental-debug Glock server, waits for readiness, optionally opens a tail window for the exact weapon log, optionally launches a stock client, and prints the manual checklist with the connect address and log paths.
+- `scripts/run-testbed.bat` is a thin convenience wrapper over the PowerShell scripts that defaults to a detached Debug disposable launch, maps `experimental` and `experimental-debug` to the corresponding server switches, and maps `glock-session` to the one-click manual session helper.
+- `scripts/tail-weapon-log.ps1` finds the newest `testbed/logs/weapon-debug-*.log` file, or follows a specific log passed through `-Path`, prints a helpful message if none exists, and can either follow the log or dump it once with `-NoFollow`.
+- `scripts/run-client.ps1` optionally launches a stock Half-Life client on `-game valve` and connects to `127.0.0.1`.
 - `scripts/smoke-test.ps1` validates the end-to-end bootstrap non-interactively and can verify experimental cvar values from launch-time overrides.
 - `scripts/clean-testbed.ps1` removes generated build and disposable runtime artifacts.
 

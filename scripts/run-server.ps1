@@ -11,6 +11,7 @@ param(
     [switch]$EnableExperimentalGlock,
     [switch]$EnableExperimentalGlockDebug,
     [switch]$Detached,
+    [switch]$PassThru,
     [string]$TemplateRoot,
     [string]$HldsExe,
     [string]$HlExe,
@@ -23,14 +24,14 @@ $ErrorActionPreference = "Stop"
 Import-HLServerEnv
 
 $configuration = Get-ValidatedConfiguration -Configuration $Configuration
-$runtimeHldsExe = Join-RepoPath "testbed\runtime\hlds.exe"
-$runtimeDll = Join-RepoPath "testbed\runtime\valve\dlls\hl.dll"
+$runtimeRoot = Get-TestbedRuntimeRoot
+$runtimeHldsExe = Join-Path $runtimeRoot "hlds.exe"
+$runtimeDll = Join-Path $runtimeRoot "valve\dlls\hl.dll"
 
 if ((-not (Test-LeafPath -Path $runtimeHldsExe)) -or (-not (Test-LeafPath -Path $runtimeDll))) {
     & "$PSScriptRoot\install-testbed.ps1" -Configuration $configuration -TemplateRoot $TemplateRoot -HldsExe $HldsExe -HlExe $HlExe -SteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload
 }
 
-$runtimeRoot = Join-RepoPath "testbed\runtime"
 Assert-UdpPortAvailable -Port $Port
 $effectiveSetCvars = @()
 
@@ -47,6 +48,10 @@ $effectiveSetCvars += @($SetCvar)
 if ($Detached) {
     Write-Step "Launching HLDS in detached mode"
     $launchInfo = Start-HldsDetached -RuntimeRoot $runtimeRoot -Map $Map -Port $Port -MaxPlayers $MaxPlayers -SetCvar $effectiveSetCvars -Cvars $Cvars
+    if ($PassThru) {
+        return $launchInfo
+    }
+
     Write-Host "PID: $($launchInfo.Process.Id)"
     Write-Host "stdout log: $($launchInfo.StdOutLog)"
     Write-Host "stderr log: $($launchInfo.StdErrLog)"

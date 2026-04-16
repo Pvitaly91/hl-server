@@ -16,5 +16,5 @@ if (-not $resolvedHlExe) {
 
 Write-Step "Launching stock Half-Life client"
 
-Start-Process -FilePath $resolvedHlExe -ArgumentList @("-game", "valve", "-console", "+connect", $ConnectAddress) | Out-Null
+Start-Process -FilePath $resolvedHlExe -WorkingDirectory (Split-Path -Parent $resolvedHlExe) -ArgumentList @("-game", "valve", "-console", "+connect", $ConnectAddress) | Out-Null
 Write-Host "Client launch requested: $resolvedHlExe"

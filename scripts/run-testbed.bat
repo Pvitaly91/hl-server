@@ -5,8 +5,14 @@ set "SCRIPT_DIR=%~dp0"
 set "MODE=%~1"
 set "RUN_SWITCHES="
 set "FORWARDED_ARGS="
+set "TARGET_SCRIPT=%SCRIPT_DIR%run-server.ps1"
+set "DEFAULT_ARGS=-Detached"
 
-if /I "%MODE%"=="experimental-debug" (
+if /I "%MODE%"=="glock-session" (
+    set "TARGET_SCRIPT=%SCRIPT_DIR%run-glock-test-session.ps1"
+    set "DEFAULT_ARGS="
+    shift
+) else if /I "%MODE%"=="experimental-debug" (
     set "RUN_SWITCHES=-EnableExperimentalGlock -EnableExperimentalGlockDebug"
     shift
 ) else if /I "%MODE%"=="experimental" (
@@ -23,5 +29,5 @@ shift
 goto collect_args
 
 :launch
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%run-server.ps1" -Detached %RUN_SWITCHES% %FORWARDED_ARGS%
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%TARGET_SCRIPT%" %DEFAULT_ARGS% %RUN_SWITCHES% %FORWARDED_ARGS%
 exit /b %ERRORLEVEL%

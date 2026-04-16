@@ -47,6 +47,35 @@ The telemetry does not prove player feel:
 
 Launch and smoke verification are automated. Actual weapon feel still requires manual in-game testing against the stock Steam Half-Life client.
 
+## One-click manual Glock session
+
+`scripts/run-glock-test-session.ps1` exists to collapse the manual validation path into one disposable flow:
+
+- reinstall the selected testbed runtime
+- launch the experimental-debug Glock server on `-game valve`
+- wait for the server to report that the map actually started
+- surface the server log path and the current `weapon-debug-*.log` path
+- optionally open a tail window and launch a stock client that auto-connects
+- print the compact checklist that a human still has to execute in-game
+
+The corresponding BAT alias is `scripts\run-testbed.bat glock-session`.
+
+## Manual checklist summary
+
+- connect the stock client to the disposable server on the printed port
+- stand still, wait briefly, and fire one single primary shot
+  expected: one accepted Glock line and `firstshot=1` once the recovery gate is satisfied
+- hold primary without releasing
+  expected: no repeated accepted shots and `tapfire_hold_blocked` rejection lines when rejection logging is enabled
+- move continuously and fire primary
+  expected: accepted lines with `move_penalty > 0`
+- stop, wait past recovery, and fire again
+  expected: the first-shot bonus can return
+- crouch-move and compare against uncrouched movement at a similar speed
+  expected: lower movement penalty than standing movement
+
+This checklist is intentionally honest. It validates the authoritative telemetry and a human-observed firing pass, but it does not claim that stock-client prediction or weapon feel is already solved.
+
 ## Glock telemetry hook location
 
 The Glock telemetry itself lives in two places:
@@ -71,6 +100,19 @@ This experiment stays server-side:
 
 That boundary is deliberate. Once a change must alter client-side prediction, presentation, or HUD behavior, it is no longer a stock-client-only experiment.
 
+## Verification boundary
+
+Keep these three layers separate when evaluating the Glock work:
+
+- launch verification
+  the disposable runtime started, stayed on `-game valve`, chose the expected map and port, and exposed the expected log paths
+- telemetry verification
+  the server produced the session-ready header plus accepted and rejected Glock lines that reflect the server-authoritative decision path
+- manual in-game firing verification
+  a human joined with a stock client and actually fired the Glock to compare standing, moving, recovery, and crouch-moving cases
+
+Only the third layer speaks to real in-game behavior. The first two layers prove setup and server authority, not prediction feel.
+
 ## Disposable launch entry points
 
 - `scripts/run-testbed.bat`
@@ -79,8 +121,12 @@ That boundary is deliberate. Once a change must alter client-side prediction, pr
   Experimental Glock launch with the existing movement, tap-fire, and first-shot cvar bundle.
 - `scripts/run-testbed.bat experimental-debug`
   Experimental Glock launch plus `sv_exp_debug_weaponlog 1` and `sv_exp_debug_weaponlog_rejections 1`.
+- `scripts/run-testbed.bat glock-session`
+  One-click manual Glock session: disposable reinstall, experimental-debug launch, readiness wait, optional tail window, optional stock-client auto-connect, and printed checklist.
+- `scripts/run-glock-test-session.ps1`
+  PowerShell entry point for the same one-click manual session flow.
 - `scripts/tail-weapon-log.ps1`
-  Follows the newest disposable Glock telemetry log, or dumps it once with `-NoFollow`.
+  Follows the newest disposable Glock telemetry log, or a specific path passed through `-Path`, or dumps it once with `-NoFollow`.
 
 The BAT wrapper remains thin and delegates the real launch behavior to `scripts/run-server.ps1`.
 
