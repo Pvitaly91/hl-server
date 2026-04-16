@@ -1,0 +1,22 @@
+{
+  "name": "mixed_quick_smoke",
+  "description": "Small manual mixed-weapon sanity pass for Glock and MP5 launch, tagging, and report plumbing. It structures evidence collection but does not prove gameplay truth by itself.",
+  "defaults": {
+    "map": "crossfire",
+    "labTargetProfile": "unarmored"
+  },
+  "steps": [
+    {
+      "name": "glock_smoke",
+      "weapon": "glock",
+      "glockProfile": "baseline",
+      "operatorNote": "Take one recovered single shot, exercise hold-to-fire rejection, and attempt one dummy headshot."
+    },
+    {
+      "name": "mp5_smoke",
+      "weapon": "mp5",
+      "mp5Profile": "cs_burst",
+      "operatorNote": "Take one short burst, one longer burst, and one moving spray pass before the headshot attempt."
+    }
+  ]
+}

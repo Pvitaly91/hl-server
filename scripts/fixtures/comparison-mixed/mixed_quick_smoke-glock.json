@@ -1,0 +1,101 @@
+{
+  "analyzedLogPath": "scripts/fixtures/comparison-mixed/mixed_quick_smoke-glock.log",
+  "session": {
+    "timestamp": "2026-04-16T18:10:00",
+    "map": "fixture_range",
+    "game": "valve",
+    "status": "ready",
+    "file": "scripts/fixtures/comparison-mixed/mixed_quick_smoke-glock.log",
+    "weaponUnderTest": "glock",
+    "weaponProfileName": "baseline",
+    "profileName": "baseline",
+    "glockProfileName": "baseline",
+    "targetProfileName": "unarmored",
+    "sessionTag": "fixture-mixed-01-glock",
+    "matrixName": "mixed_quick_smoke",
+    "matrixStep": "glock_smoke"
+  },
+  "metadata": {
+    "weaponUnderTest": "glock",
+    "weaponProfile": "baseline",
+    "sessionTag": "fixture-mixed-01-glock",
+    "matrixName": "mixed_quick_smoke",
+    "matrixStep": "glock_smoke",
+    "glockProfile": "baseline",
+    "labTargetProfile": "unarmored"
+  },
+  "counters": {
+    "acceptedShots": 4,
+    "rejectedShots": 1,
+    "hitEvents": 3,
+    "killEvents": 1,
+    "lethalHeadshotEvidence": 1,
+    "dummyHits": 3,
+    "dummyKills": 1,
+    "dummyHeadshotHits": 1,
+    "dummyHeadshotKills": 1,
+    "dummyLethalHeadshotEvidence": 1,
+    "armoredDummyHits": 0,
+    "protectedDummyHeadshotHits": 0,
+    "protectedDummyHeadshotKills": 0
+  },
+  "stats": {
+    "appliedDamage": {
+      "Min": 8.0,
+      "Average": 24.0,
+      "Max": 40.0
+    }
+  },
+  "signals": {
+    "tapFireHoldRejections": true,
+    "movementPenaltyPositive": true,
+    "dummyHeadshotHitsPresent": true,
+    "armoredDummyHitsPresent": false,
+    "protectedDummyHeadshotHitsPresent": false,
+    "dummyLethalHeadshotEvidencePresent": true,
+    "lethalHeadshotEvidencePresent": true,
+    "burstGrowthEvidencePresent": false
+  },
+  "comparisonSummary": {
+    "weaponUnderTest": "glock",
+    "weaponProfile": "baseline",
+    "sessionTag": "fixture-mixed-01-glock",
+    "matrixName": "mixed_quick_smoke",
+    "matrixStep": "glock_smoke",
+    "glockProfile": "baseline",
+    "labTargetProfile": "unarmored",
+    "acceptedShotCount": 4,
+    "rejectedShotCount": 1,
+    "hitCount": 3,
+    "killCount": 1,
+    "dummyHitCount": 3,
+    "dummyKillCount": 1,
+    "dummyHeadshotHitCount": 1,
+    "dummyHeadshotKillCount": 1,
+    "lethalHeadshotEvidenceCount": 1,
+    "dummyLethalHeadshotEvidenceCount": 1,
+    "armoredDummyHitCount": 0,
+    "protectedDummyHeadshotHitCount": 0,
+    "protectedDummyHeadshotKillCount": 0,
+    "burstGrowthEvidenceCount": 0,
+    "movementPenaltyEvidenceCount": 2,
+    "appliedDamage": {
+      "min": 8.0,
+      "average": 24.0,
+      "max": 40.0
+    },
+    "evidence": {
+      "tapFireRejectionEvidence": true,
+      "movementPenaltyEvidence": true,
+      "burstGrowthEvidence": false,
+      "dummyHeadshotPathEvidence": true,
+      "armoredDummyEvidence": false,
+      "protectedHeadDummyEvidence": false,
+      "lethalHeadshotEvidence": true
+    }
+  },
+  "observations": [
+    "Synthetic mixed Glock comparison fixture."
+  ],
+  "warnings": []
+}

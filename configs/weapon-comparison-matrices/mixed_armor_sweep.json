@@ -1,0 +1,37 @@
+{
+  "name": "mixed_armor_sweep",
+  "description": "Manual helper for comparing Glock and MP5 against armored and protected-head dummy states. It organizes review notes but does not settle balance questions by itself.",
+  "defaults": {
+    "map": "crossfire"
+  },
+  "steps": [
+    {
+      "name": "glock_vest",
+      "weapon": "glock",
+      "glockProfile": "baseline",
+      "labTargetProfile": "vest",
+      "operatorNote": "Compare torso hits against one headshot attempt so the armored torso path is represented."
+    },
+    {
+      "name": "mp5_vest",
+      "weapon": "mp5",
+      "mp5Profile": "cs_mobile",
+      "labTargetProfile": "vest",
+      "operatorNote": "Capture one short burst, one moving spray, and a torso-versus-head comparison against armor."
+    },
+    {
+      "name": "glock_vest_headprotected",
+      "weapon": "glock",
+      "glockProfile": "cs_mobile",
+      "labTargetProfile": "vest_headprotected",
+      "operatorNote": "Deliberately compare torso hits and protected-head attempts for the Glock path."
+    },
+    {
+      "name": "mp5_vest_headprotected",
+      "weapon": "mp5",
+      "mp5Profile": "cs_burst",
+      "labTargetProfile": "vest_headprotected",
+      "operatorNote": "Capture both controlled and longer bursts, then compare torso and protected-head attempts."
+    }
+  ]
+}

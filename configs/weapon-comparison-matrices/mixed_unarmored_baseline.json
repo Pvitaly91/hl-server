@@ -1,0 +1,22 @@
+{
+  "name": "mixed_unarmored_baseline",
+  "description": "Manual helper for comparing Glock and MP5 baseline sessions against the same unarmored dummy. It keeps the setup repeatable, not authoritative.",
+  "defaults": {
+    "map": "crossfire",
+    "labTargetProfile": "unarmored"
+  },
+  "steps": [
+    {
+      "name": "glock_baseline_unarmored",
+      "weapon": "glock",
+      "glockProfile": "baseline",
+      "operatorNote": "Capture the unarmored Glock baseline with one recovered shot, one moving shot, and one headshot attempt."
+    },
+    {
+      "name": "mp5_baseline_unarmored",
+      "weapon": "mp5",
+      "mp5Profile": "baseline",
+      "operatorNote": "Capture the unarmored MP5 baseline with both a short burst and a longer burst before the headshot attempt."
+    }
+  ]
+}

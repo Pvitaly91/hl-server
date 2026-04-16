@@ -14,7 +14,7 @@ The repository vendors a pinned snapshot of Valve's official Half-Life source ba
 
 - A reproducible VS2022 Win32 build for the vanilla Half-Life server GameDLL.
 - A disposable HLDS test stand that mirrors a user-supplied or SteamCMD-provisioned runtime into `testbed/runtime/`.
-- A server-only experimental Glock path for tap-fire, movement-dependent spread, and optional first-shot accuracy without changing the stock client DLL.
+- Server-only experimental Glock and MP5 paths for manual stock-client-compatible gameplay iteration without changing the stock client DLL.
 
 It is not yet a gameplay conversion and it does not ship any proprietary game assets, Steam files, or HLDS binaries.
 
@@ -455,6 +455,63 @@ vest_headprotected baseline vest_headprotected   6   2     5      1      2 20.50
 
 The matrix runner structures a reproducible manual checklist, per-step tagging, and report aggregation. It does not generate gameplay evidence by itself. In `-AutoAdvance` mode it is only validating the tooling path, not live Glock behavior.
 
+## Mixed weapon comparison matrices
+
+Checked-in mixed comparison matrices now live under `configs/weapon-comparison-matrices/`.
+
+List the available mixed matrices:
+
+```powershell
+.\scripts\list-weapon-comparison-matrices.ps1
+```
+
+Run a named mixed matrix in the guided lab flow:
+
+```powershell
+.\scripts\run-weapon-comparison-matrix.ps1 -Matrix mixed_quick_smoke -Configuration Debug
+```
+
+Run the same matrix in no-client auto-advance mode for tooling verification only:
+
+```powershell
+.\scripts\run-weapon-comparison-matrix.ps1 -Matrix mixed_quick_smoke -Configuration Debug -NoClient -NoTail -AutoAdvance -MaxSteps 2
+```
+
+Compare mixed analyzer JSON outputs directly:
+
+```powershell
+.\scripts\compare-weapon-reports.ps1 -ReportDir .\scripts\fixtures\comparison-mixed -ExportMarkdown -ExportCsv -ExportJson
+```
+
+Use the BAT aliases from `cmd.exe` or Explorer:
+
+```bat
+scripts\run-testbed.bat weapon-matrices
+scripts\run-testbed.bat weapon-matrix mixed_quick_smoke
+scripts\run-testbed.bat weapon-matrix mixed_quick_smoke -NoClient -NoTail -AutoAdvance -MaxSteps 2
+scripts\run-testbed.bat weapon-compare -ReportDir .\scripts\fixtures\comparison-mixed
+```
+
+`scripts\run-testbed.bat weapon-compare` with no extra arguments will compare the latest generated mixed matrix report directory if one exists. Otherwise pass `-ReportDir` or `-ReportPaths`.
+
+The mixed matrix runner writes all generated artifacts under the disposable reports area:
+
+- per-step analyzer JSON and CSV:
+  `testbed/logs/reports/weapon-comparison-matrices/<matrix>-<timestamp>/steps/<step>/`
+- consolidated mixed comparison JSON, CSV, and Markdown:
+  `testbed/logs/reports/weapon-comparison-matrices/<matrix>-<timestamp>/`
+
+Example mixed comparison summary produced from the synthetic fixtures:
+
+```text
+Step                  Wpn   Prof      Tgt                Acc Rej Hit Kill DHit DKill Leth Sig
+glock_smoke           glock baseline  unarmored            4   1   3    1    3     1    1 tap:Y move:Y dummy:Y armor:N prot:N lethal:Y
+mp5_smoke             mp5   cs_burst  unarmored            6   0   4    1    4     1    0 burst:Y move:Y dummy:Y armor:N prot:N lethal:N
+mp5_vest_headprotected mp5  cs_mobile vest_headprotected   7   0   5    1    5     1    1 burst:Y move:Y dummy:Y armor:Y prot:Y lethal:Y
+```
+
+The mixed matrix runner tags every step with `weaponUnderTest`, weapon-profile metadata, target-profile metadata, `sessionTag`, `matrixName`, and `matrixStep`, then aggregates the resulting analyzer JSON into one mixed report set. It still structures manual comparison testing only. Without human firing, the generated artifacts prove launch, tagging, and aggregation, not gameplay behavior.
+
 Tail the newest disposable weapon debug log in PowerShell:
 
 ```powershell
@@ -657,8 +714,11 @@ No script writes into the user's real Steam `valve` folder.
 - `scripts/run-glock-test-session.ps1` reinstalls the disposable runtime, launches the experimental-debug Glock server, waits for readiness, optionally opens a tail window for the exact weapon log, optionally launches a stock client, prints the manual checklist with the connect address and log paths, accepts `-GlockProfile <name>` and `-LabTargetProfile <name>`, and can hand off to the analyzer with `-AnalyzeLatestOnExit`.
 - `scripts/list-glock-profiles.ps1` lists the checked-in versioned Glock presets from `configs/glock-presets/`.
 - `scripts/list-glock-lab-targets.ps1` lists the checked-in lab target profiles from `configs/glock-lab-targets/`.
+- `scripts/list-weapon-comparison-matrices.ps1` lists the checked-in mixed Glock-plus-MP5 comparison matrices from `configs/weapon-comparison-matrices/`.
+- `scripts/run-weapon-comparison-matrix.ps1` dispatches mixed matrix steps to the existing Glock or MP5 session scripts, stamps normalized session metadata, exports per-step analyzer artifacts, and writes one consolidated mixed comparison report set under `testbed/logs/reports/weapon-comparison-matrices/`.
+- `scripts/compare-weapon-reports.ps1` aggregates analyzer JSON from Glock-only or mixed Glock-plus-MP5 sessions, prints a concise comparison table, and can export normalized JSON, CSV, and Markdown summaries.
 - `scripts/analyze-weapon-log.ps1` analyzes the newest or a specific `weapon-debug-*.log`, prints a concise evidence summary including session profile and target-profile metadata when present, optionally exports JSON and CSV under `testbed/logs/reports/`, and can fail non-zero when required armored-dummy telemetry signals are missing.
-- `scripts/run-testbed.bat` is a thin convenience wrapper over the PowerShell scripts that defaults to a detached Debug disposable launch, maps `experimental` and `experimental-debug` to the corresponding server switches, maps `glock-session` to the one-click manual session helper, maps `glock-report` to `scripts/analyze-weapon-log.ps1`, maps `glock-profiles` and `glock-lab-targets` to the listing helpers, maps `glock-profile <name>` to a detached experimental-debug launch with that preset, maps `glock-lab-target <name>` to a one-player dummy session with that target profile, and keeps argument forwarding thin.
+- `scripts/run-testbed.bat` is a thin convenience wrapper over the PowerShell scripts that defaults to a detached Debug disposable launch, maps `experimental` and `experimental-debug` to the corresponding server switches, maps `glock-session` to the one-click manual session helper, maps `glock-report` to `scripts/analyze-weapon-log.ps1`, maps `glock-profiles`, `glock-lab-targets`, and `weapon-matrices` to the listing helpers, maps `glock-profile <name>` to a detached experimental-debug launch with that preset, maps `glock-lab-target <name>` to a one-player dummy session with that target profile, maps `weapon-matrix <name>` and `weapon-compare` to the mixed comparison helpers, and keeps argument forwarding thin.
 - `scripts/tail-weapon-log.ps1` finds the newest `testbed/logs/weapon-debug-*.log` file, or follows a specific log passed through `-Path`, prints a helpful message if none exists, and can either follow the log or dump it once with `-NoFollow`.
 - `scripts/run-client.ps1` optionally launches a stock Half-Life client on `-game valve` and connects to `127.0.0.1`.
 - `scripts/smoke-test.ps1` validates the end-to-end bootstrap non-interactively and can verify experimental cvar values from launch-time overrides.
@@ -675,7 +735,7 @@ No script writes into the user's real Steam `valve` folder.
 
 ## Future direction
 
-This repository is aimed at iterative server-side gameplay experiments that keep the stock Steam Half-Life client compatible. The first pass is Glock-only; future work can extend the same seam to additional weapons without turning the project into a custom client or full conversion.
+This repository is aimed at iterative server-side gameplay experiments that keep the stock Steam Half-Life client compatible. The current checked-in manual flows cover Glock and MP5, and future work can extend the same seam to additional weapons without turning the project into a custom client or full conversion.
 
 See:
 

@@ -19,6 +19,9 @@ if /I "%MODE%"=="glock-profile" goto mode_glock_profile
 if /I "%MODE%"=="glock-matrices" goto mode_glock_matrices
 if /I "%MODE%"=="glock-matrix" goto mode_glock_matrix
 if /I "%MODE%"=="glock-compare" goto mode_glock_compare
+if /I "%MODE%"=="weapon-matrices" goto mode_weapon_matrices
+if /I "%MODE%"=="weapon-matrix" goto mode_weapon_matrix
+if /I "%MODE%"=="weapon-compare" goto mode_weapon_compare
 if /I "%MODE%"=="mp5-profiles" goto mode_mp5_profiles
 if /I "%MODE%"=="mp5-profile" goto mode_mp5_profile
 if /I "%MODE%"=="mp5-session" goto mode_mp5_session
@@ -97,7 +100,26 @@ goto collect_args
 
 :mode_glock_compare
 set "TARGET_SCRIPT=%SCRIPT_DIR%compare-weapon-reports.ps1"
+set "DEFAULT_ARGS=-LatestReportKind glock"
+shift
+goto collect_args
+
+:mode_weapon_matrices
+set "TARGET_SCRIPT=%SCRIPT_DIR%list-weapon-comparison-matrices.ps1"
 set "DEFAULT_ARGS="
+shift
+goto collect_args
+
+:mode_weapon_matrix
+set "TARGET_SCRIPT=%SCRIPT_DIR%run-weapon-comparison-matrix.ps1"
+set "RUN_SWITCHES=-Matrix"
+set "DEFAULT_ARGS="
+shift
+goto collect_args
+
+:mode_weapon_compare
+set "TARGET_SCRIPT=%SCRIPT_DIR%compare-weapon-reports.ps1"
+set "DEFAULT_ARGS=-LatestReportKind mixed"
 shift
 goto collect_args
 

@@ -1,13 +1,15 @@
 [CmdletBinding()]
 param(
     [string]$ReportDir,
-    [string[]]$ReportPaths,
+    [string[]]$ReportPaths = @(),
     [switch]$ExportJson,
     [switch]$ExportCsv,
     [switch]$ExportMarkdown,
     [string]$OutputDir,
-    [ValidateSet("MatrixStep", "SessionTag", "GlockProfile", "LabTargetProfile", "AcceptedShotCount", "DummyHitCount", "DummyKillCount", "AppliedDamageAverage")]
+    [ValidateSet("MatrixStep", "SessionTag", "WeaponUnderTest", "WeaponProfile", "LabTargetProfile", "AcceptedShotCount", "DummyHitCount", "DummyKillCount", "AppliedDamageAverage")]
     [string]$SortBy = "MatrixStep",
+    [ValidateSet("auto", "glock", "mixed")]
+    [string]$LatestReportKind = "auto",
     [switch]$PassThru
 )
 
@@ -47,21 +49,20 @@ function To-ReportBool {
     }
 
     $text = ([string]$Value).Trim().ToLowerInvariant()
-    if ([string]::IsNullOrWhiteSpace($text)) {
-        return $false
-    }
-
     switch ($text) {
         "1" { return $true }
+        "0" { return $false }
         "true" { return $true }
+        "false" { return $false }
         "yes" { return $true }
+        "no" { return $false }
         default { return $false }
     }
 }
 
 function Format-Number {
     param(
-        $Value,
+        [double]$Value,
         [int]$Digits = 2
     )
 
@@ -69,7 +70,7 @@ function Format-Number {
         return "n/a"
     }
 
-    return ([double]$Value).ToString(("F{0}" -f $Digits), [System.Globalization.CultureInfo]::InvariantCulture)
+    return $Value.ToString(("F{0}" -f $Digits), [Globalization.CultureInfo]::InvariantCulture)
 }
 
 function Escape-MarkdownTableValue {
@@ -84,21 +85,66 @@ function Escape-MarkdownTableValue {
     return $Value.Replace("|", "/").Replace("`r", " ").Replace("`n", " ")
 }
 
+function Get-LatestComparisonInputDirectory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("auto", "glock", "mixed")]
+        [string]$Kind
+    )
+
+    $latestGlock = Get-LatestGlockComparisonReportDirectory
+    $latestMixed = Get-LatestWeaponComparisonReportDirectory
+
+    switch ($Kind) {
+        "glock" { return $latestGlock }
+        "mixed" { return $latestMixed }
+        default {
+            if ($latestGlock -and $latestMixed) {
+                if ($latestMixed.LastWriteTimeUtc -ge $latestGlock.LastWriteTimeUtc) {
+                    return $latestMixed
+                }
+
+                return $latestGlock
+            }
+
+            if ($latestMixed) {
+                return $latestMixed
+            }
+
+            return $latestGlock
+        }
+    }
+}
+
 function Get-DefaultComparisonOutputDirectory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("auto", "glock", "mixed")]
+        [string]$Kind
+    )
+
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    return (Join-Path (Get-GlockComparisonReportsRoot) ("compare-" + $stamp))
+    $root = if ($Kind -eq "glock") { Get-GlockComparisonReportsRoot } else { Get-WeaponComparisonReportsRoot }
+    return (Join-Path $root ("compare-" + $stamp))
 }
 
 function Resolve-ComparisonInputPaths {
     $resolved = New-Object System.Collections.Generic.List[string]
     $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
-
     $effectiveReportDir = $ReportDir
+
     if ([string]::IsNullOrWhiteSpace($effectiveReportDir) -and ($null -eq $ReportPaths -or $ReportPaths.Count -eq 0)) {
-        $latestReportDir = Get-LatestGlockComparisonReportDirectory
+        $latestReportDir = Get-LatestComparisonInputDirectory -Kind $LatestReportKind
         if ($latestReportDir) {
             $effectiveReportDir = $latestReportDir.FullName
-            Write-Step "No report input was specified; using the latest Glock comparison report directory at $effectiveReportDir"
+            $kindLabel = if ($latestReportDir.FullName.StartsWith((Get-FullPath -Path (Get-WeaponComparisonReportsRoot)), [System.StringComparison]::OrdinalIgnoreCase)) {
+                "mixed weapon"
+            }
+            else {
+                "Glock"
+            }
+
+            Write-Step "No report input was specified; using the latest $kindLabel comparison report directory at $effectiveReportDir"
         }
     }
 
@@ -131,22 +177,90 @@ function Resolve-ComparisonInputPaths {
     }
 
     if ($resolved.Count -eq 0) {
-        throw "No comparison report inputs were found. Pass -ReportDir or -ReportPaths, or generate a matrix report folder first."
+        throw "No comparison report inputs were found. Pass -ReportDir or -ReportPaths, or generate a comparison report folder first."
     }
 
     return $resolved.ToArray()
 }
 
 function Test-AnalyzerReportShape {
-    param($Report)
-
-    if ($null -eq $Report) {
-        return $false
-    }
+    param(
+        [Parameter(Mandatory = $true)]
+        $Report
+    )
 
     return ($null -ne (Get-ObjectPropertyValue -InputObject $Report -Names @("comparisonSummary"))) -or
+        ($null -ne (Get-ObjectPropertyValue -InputObject $Report -Names @("metadata"))) -or
         ($null -ne (Get-ObjectPropertyValue -InputObject $Report -Names @("counters"))) -or
         ($null -ne (Get-ObjectPropertyValue -InputObject $Report -Names @("session")))
+}
+
+function Get-ComparisonString {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Names,
+        [object[]]$InputObjects = @()
+    )
+
+    foreach ($inputObject in @($InputObjects)) {
+        $value = Get-OptionalObjectString -InputObject $inputObject -Names $Names
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            return $value
+        }
+    }
+
+    return $null
+}
+
+function Get-ComparisonBool {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Names,
+        [object[]]$InputObjects = @()
+    )
+
+    foreach ($inputObject in @($InputObjects)) {
+        $value = Get-ObjectPropertyValue -InputObject $inputObject -Names $Names
+        if ($null -ne $value) {
+            return (To-ReportBool $value)
+        }
+    }
+
+    return $false
+}
+
+function Get-ComparisonInt {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Names,
+        [object[]]$InputObjects = @()
+    )
+
+    foreach ($inputObject in @($InputObjects)) {
+        $value = Get-ObjectPropertyValue -InputObject $inputObject -Names $Names
+        if ($null -ne $value -and -not [string]::IsNullOrWhiteSpace([string]$value)) {
+            return (To-ReportInt $value)
+        }
+    }
+
+    return 0
+}
+
+function Get-ComparisonNumber {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Names,
+        [object[]]$InputObjects = @()
+    )
+
+    foreach ($inputObject in @($InputObjects)) {
+        $value = Get-ObjectPropertyValue -InputObject $inputObject -Names $Names
+        if ($null -ne $value -and -not [string]::IsNullOrWhiteSpace([string]$value)) {
+            return (To-ReportNum $value)
+        }
+    }
+
+    return $null
 }
 
 function ConvertTo-ComparisonRow {
@@ -163,142 +277,182 @@ function ConvertTo-ComparisonRow {
     $counters = Get-ObjectPropertyValue -InputObject $Report -Names @("counters")
     $signals = Get-ObjectPropertyValue -InputObject $Report -Names @("signals")
     $stats = Get-ObjectPropertyValue -InputObject $Report -Names @("stats")
-
     $appliedDamageSummary = Get-ObjectPropertyValue -InputObject $summary -Names @("appliedDamage")
     $appliedDamageStats = Get-ObjectPropertyValue -InputObject $stats -Names @("appliedDamage")
     $evidenceSummary = Get-ObjectPropertyValue -InputObject $summary -Names @("evidence")
 
-    $row = [PSCustomObject]@{
-        SourceReportPath = $SourcePath
-        WeaponUnderTest = Get-OptionalObjectString -InputObject $summary -Names @("weaponUnderTest")
-        SessionTag = Get-OptionalObjectString -InputObject $summary -Names @("sessionTag")
-        MatrixName = Get-OptionalObjectString -InputObject $summary -Names @("matrixName")
-        MatrixStep = Get-OptionalObjectString -InputObject $summary -Names @("matrixStep")
-        GlockProfile = Get-OptionalObjectString -InputObject $summary -Names @("glockProfile")
-        Mp5Profile = Get-OptionalObjectString -InputObject $summary -Names @("mp5Profile")
-        LabTargetProfile = Get-OptionalObjectString -InputObject $summary -Names @("labTargetProfile")
-        AcceptedShotCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $summary -Names @("acceptedShotCount"))
-        RejectedShotCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $summary -Names @("rejectedShotCount"))
-        HitCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $summary -Names @("hitCount"))
-        KillCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $summary -Names @("killCount"))
-        DummyHitCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $summary -Names @("dummyHitCount"))
-        DummyKillCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $summary -Names @("dummyKillCount"))
-        DummyHeadshotHitCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $summary -Names @("dummyHeadshotHitCount"))
-        DummyHeadshotKillCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $summary -Names @("dummyHeadshotKillCount"))
-        DummyLethalHeadshotEvidenceCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $summary -Names @("dummyLethalHeadshotEvidenceCount"))
-        ArmoredDummyHitCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $summary -Names @("armoredDummyHitCount"))
-        ProtectedDummyHeadshotHitCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $summary -Names @("protectedDummyHeadshotHitCount"))
-        ProtectedDummyHeadshotKillCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $summary -Names @("protectedDummyHeadshotKillCount"))
-        BurstGrowthEvidenceCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $summary -Names @("burstGrowthEvidenceCount"))
-        MovementPenaltyEvidenceCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $summary -Names @("movementPenaltyEvidenceCount"))
-        AppliedDamageMin = To-ReportNum (Get-ObjectPropertyValue -InputObject $appliedDamageSummary -Names @("min"))
-        AppliedDamageAverage = To-ReportNum (Get-ObjectPropertyValue -InputObject $appliedDamageSummary -Names @("average"))
-        AppliedDamageMax = To-ReportNum (Get-ObjectPropertyValue -InputObject $appliedDamageSummary -Names @("max"))
-        TapFireRejectionEvidence = To-ReportBool (Get-ObjectPropertyValue -InputObject $evidenceSummary -Names @("tapFireRejection"))
-        MovementPenaltyEvidence = To-ReportBool (Get-ObjectPropertyValue -InputObject $evidenceSummary -Names @("movementPenalty"))
-        DummyHeadshotEvidence = To-ReportBool (Get-ObjectPropertyValue -InputObject $evidenceSummary -Names @("dummyHeadshotPath"))
-        ArmoredDummyEvidence = To-ReportBool (Get-ObjectPropertyValue -InputObject $evidenceSummary -Names @("armoredDummyPath"))
-        ProtectedHeadDummyEvidence = To-ReportBool (Get-ObjectPropertyValue -InputObject $evidenceSummary -Names @("protectedHeadDummyPath"))
-        LethalHeadshotEvidence = To-ReportBool (Get-ObjectPropertyValue -InputObject $evidenceSummary -Names @("lethalHeadshotPath"))
-        MissingSignalNotes = @((Get-ObjectPropertyValue -InputObject $summary -Names @("missingSignalNotes")))
-    }
+    $weaponUnderTest = Get-ComparisonString -Names @("weaponUnderTest") -InputObjects @($summary, $metadata, $session)
+    $glockProfile = Get-ComparisonString -Names @("glockProfile", "glockProfileName") -InputObjects @($summary, $metadata, $session)
+    $mp5Profile = Get-ComparisonString -Names @("mp5Profile", "mp5ProfileName") -InputObjects @($summary, $metadata, $session)
+    $weaponProfile = Get-ComparisonString -Names @("weaponProfile", "weaponProfileName") -InputObjects @($summary, $metadata, $session)
 
-    if ([string]::IsNullOrWhiteSpace($row.SessionTag)) {
-        $row.SessionTag = Get-OptionalObjectString -InputObject $metadata -Names @("sessionTag")
-    }
-    if ([string]::IsNullOrWhiteSpace($row.WeaponUnderTest)) {
-        $row.WeaponUnderTest = Get-OptionalObjectString -InputObject $metadata -Names @("weaponUnderTest")
-    }
-    if ([string]::IsNullOrWhiteSpace($row.MatrixName)) {
-        $row.MatrixName = Get-OptionalObjectString -InputObject $metadata -Names @("matrixName")
-    }
-    if ([string]::IsNullOrWhiteSpace($row.MatrixStep)) {
-        $row.MatrixStep = Get-OptionalObjectString -InputObject $metadata -Names @("matrixStep")
-    }
-    if ([string]::IsNullOrWhiteSpace($row.GlockProfile)) {
-        $row.GlockProfile = Get-OptionalObjectString -InputObject $metadata -Names @("glockProfile")
-    }
-    if ([string]::IsNullOrWhiteSpace($row.Mp5Profile)) {
-        $row.Mp5Profile = Get-OptionalObjectString -InputObject $metadata -Names @("mp5Profile")
-    }
-    if ([string]::IsNullOrWhiteSpace($row.LabTargetProfile)) {
-        $row.LabTargetProfile = Get-OptionalObjectString -InputObject $metadata -Names @("labTargetProfile")
-    }
-
-    if ([string]::IsNullOrWhiteSpace($row.WeaponUnderTest)) {
-        $row.WeaponUnderTest = Get-OptionalObjectString -InputObject $session -Names @("weaponUnderTest")
-    }
-    if ([string]::IsNullOrWhiteSpace($row.SessionTag)) {
-        $row.SessionTag = Get-OptionalObjectString -InputObject $session -Names @("sessionTag")
-    }
-    if ([string]::IsNullOrWhiteSpace($row.MatrixName)) {
-        $row.MatrixName = Get-OptionalObjectString -InputObject $session -Names @("matrixName")
-    }
-    if ([string]::IsNullOrWhiteSpace($row.MatrixStep)) {
-        $row.MatrixStep = Get-OptionalObjectString -InputObject $session -Names @("matrixStep")
-    }
-    if ([string]::IsNullOrWhiteSpace($row.GlockProfile)) {
-        $row.GlockProfile = Get-OptionalObjectString -InputObject $session -Names @("profileName")
-    }
-    if ([string]::IsNullOrWhiteSpace($row.Mp5Profile)) {
-        $row.Mp5Profile = Get-OptionalObjectString -InputObject $session -Names @("mp5ProfileName", "profileName")
-    }
-    if ([string]::IsNullOrWhiteSpace($row.LabTargetProfile)) {
-        $row.LabTargetProfile = Get-OptionalObjectString -InputObject $session -Names @("targetProfileName")
-    }
-
-    if ($row.AcceptedShotCount -eq 0) { $row.AcceptedShotCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $counters -Names @("acceptedShots")) }
-    if ($row.RejectedShotCount -eq 0) { $row.RejectedShotCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $counters -Names @("rejectedShots")) }
-    if ($row.HitCount -eq 0) { $row.HitCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $counters -Names @("hitEvents")) }
-    if ($row.KillCount -eq 0) { $row.KillCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $counters -Names @("killEvents")) }
-    if ($row.DummyHitCount -eq 0) { $row.DummyHitCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $counters -Names @("dummyHits")) }
-    if ($row.DummyKillCount -eq 0) { $row.DummyKillCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $counters -Names @("dummyKills")) }
-    if ($row.DummyHeadshotHitCount -eq 0) { $row.DummyHeadshotHitCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $counters -Names @("dummyHeadshotHits")) }
-    if ($row.DummyHeadshotKillCount -eq 0) { $row.DummyHeadshotKillCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $counters -Names @("dummyHeadshotKills")) }
-    if ($row.DummyLethalHeadshotEvidenceCount -eq 0) { $row.DummyLethalHeadshotEvidenceCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $counters -Names @("dummyLethalHeadshotEvidence")) }
-    if ($row.ArmoredDummyHitCount -eq 0) { $row.ArmoredDummyHitCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $counters -Names @("armoredDummyHits")) }
-    if ($row.ProtectedDummyHeadshotHitCount -eq 0) { $row.ProtectedDummyHeadshotHitCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $counters -Names @("protectedDummyHeadshotHits")) }
-    if ($row.ProtectedDummyHeadshotKillCount -eq 0) { $row.ProtectedDummyHeadshotKillCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $counters -Names @("protectedDummyHeadshotKills")) }
-    if ($row.BurstGrowthEvidenceCount -eq 0) { $row.BurstGrowthEvidenceCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $counters -Names @("burstGrowthEvidence")) }
-    if ($row.MovementPenaltyEvidenceCount -eq 0) { $row.MovementPenaltyEvidenceCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $counters -Names @("acceptedMovePenaltyPositive")) }
-
-    if ($null -eq $row.AppliedDamageMin) { $row.AppliedDamageMin = To-ReportNum (Get-ObjectPropertyValue -InputObject $appliedDamageStats -Names @("Min")) }
-    if ($null -eq $row.AppliedDamageAverage) { $row.AppliedDamageAverage = To-ReportNum (Get-ObjectPropertyValue -InputObject $appliedDamageStats -Names @("Average")) }
-    if ($null -eq $row.AppliedDamageMax) { $row.AppliedDamageMax = To-ReportNum (Get-ObjectPropertyValue -InputObject $appliedDamageStats -Names @("Max")) }
-
-    if (-not $row.TapFireRejectionEvidence) { $row.TapFireRejectionEvidence = To-ReportBool (Get-ObjectPropertyValue -InputObject $signals -Names @("tapFireHoldRejections")) }
-    if (-not $row.MovementPenaltyEvidence) { $row.MovementPenaltyEvidence = To-ReportBool (Get-ObjectPropertyValue -InputObject $signals -Names @("movementPenaltyPositive")) }
-    if (-not $row.DummyHeadshotEvidence) { $row.DummyHeadshotEvidence = To-ReportBool (Get-ObjectPropertyValue -InputObject $signals -Names @("dummyHeadshotHitsPresent")) }
-    if (-not $row.ArmoredDummyEvidence) { $row.ArmoredDummyEvidence = To-ReportBool (Get-ObjectPropertyValue -InputObject $signals -Names @("armoredDummyHitsPresent")) }
-    if (-not $row.ProtectedHeadDummyEvidence) { $row.ProtectedHeadDummyEvidence = To-ReportBool (Get-ObjectPropertyValue -InputObject $signals -Names @("protectedDummyHeadshotHitsPresent")) }
-    if (-not $row.LethalHeadshotEvidence) {
-        $row.LethalHeadshotEvidence = To-ReportBool (Get-ObjectPropertyValue -InputObject $signals -Names @("dummyLethalHeadshotEvidencePresent"))
-        if (-not $row.LethalHeadshotEvidence) {
-            $row.LethalHeadshotEvidence = To-ReportBool (Get-ObjectPropertyValue -InputObject $signals -Names @("lethalHeadshotEvidencePresent"))
+    if ([string]::IsNullOrWhiteSpace($weaponUnderTest)) {
+        if (-not [string]::IsNullOrWhiteSpace($mp5Profile)) {
+            $weaponUnderTest = "mp5"
+        }
+        elseif (-not [string]::IsNullOrWhiteSpace($glockProfile)) {
+            $weaponUnderTest = "glock"
         }
     }
 
-    $missingNotes = @($row.MissingSignalNotes | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
-    if ($missingNotes.Count -eq 0) {
-        if (-not $row.TapFireRejectionEvidence) { $missingNotes += "No tap-fire rejection evidence was logged." }
-        if (-not $row.MovementPenaltyEvidence) { $missingNotes += "No movement-penalty evidence was logged." }
-        if (-not $row.DummyHeadshotEvidence) { $missingNotes += "No dummy headshot evidence was logged." }
-        if (-not $row.ArmoredDummyEvidence) { $missingNotes += "No armored dummy evidence was logged." }
-        if (-not $row.ProtectedHeadDummyEvidence) { $missingNotes += "No protected-head dummy evidence was logged." }
-        if (-not $row.LethalHeadshotEvidence) { $missingNotes += "No lethal-headshot evidence was logged." }
+    if ([string]::IsNullOrWhiteSpace($weaponProfile)) {
+        if ($weaponUnderTest -eq "mp5") {
+            $weaponProfile = $mp5Profile
+        }
+        elseif ($weaponUnderTest -eq "glock") {
+            $weaponProfile = $glockProfile
+        }
+        elseif (-not [string]::IsNullOrWhiteSpace($mp5Profile)) {
+            $weaponProfile = $mp5Profile
+        }
+        elseif (-not [string]::IsNullOrWhiteSpace($glockProfile)) {
+            $weaponProfile = $glockProfile
+        }
+        else {
+            $weaponProfile = Get-ComparisonString -Names @("profileName") -InputObjects @($session)
+        }
     }
 
-    $row | Add-Member -NotePropertyName MissingSignalsText -NotePropertyValue ($missingNotes -join " ")
-    $row | Add-Member -NotePropertyName EvidenceSummary -NotePropertyValue (
-        "tap:{0} move:{1} hs:{2} armor:{3} prot:{4} lethal:{5}" -f
-            $(if ($row.TapFireRejectionEvidence) { "Y" } else { "N" }),
+    $missingSignalNotes = @()
+    $rawMissingSignalNotes = Get-ObjectPropertyValue -InputObject $summary -Names @("missingSignalNotes")
+    foreach ($entry in @($rawMissingSignalNotes)) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$entry)) {
+            $missingSignalNotes += ([string]$entry)
+        }
+    }
+
+    $row = [PSCustomObject]@{
+        SourceReportPath = $SourcePath
+        WeaponUnderTest = $weaponUnderTest
+        WeaponProfile = $weaponProfile
+        SessionTag = Get-ComparisonString -Names @("sessionTag") -InputObjects @($summary, $metadata, $session)
+        MatrixName = Get-ComparisonString -Names @("matrixName") -InputObjects @($summary, $metadata, $session)
+        MatrixStep = Get-ComparisonString -Names @("matrixStep") -InputObjects @($summary, $metadata, $session)
+        GlockProfile = $glockProfile
+        Mp5Profile = $mp5Profile
+        LabTargetProfile = Get-ComparisonString -Names @("labTargetProfile", "targetProfileName") -InputObjects @($summary, $metadata, $session)
+        AcceptedShotCount = Get-ComparisonInt -Names @("acceptedShotCount", "acceptedShots") -InputObjects @($summary, $counters)
+        RejectedShotCount = Get-ComparisonInt -Names @("rejectedShotCount", "rejectedShots") -InputObjects @($summary, $counters)
+        HitCount = Get-ComparisonInt -Names @("hitCount", "hitEvents") -InputObjects @($summary, $counters)
+        KillCount = Get-ComparisonInt -Names @("killCount", "killEvents") -InputObjects @($summary, $counters)
+        DummyHitCount = Get-ComparisonInt -Names @("dummyHitCount", "dummyHits") -InputObjects @($summary, $counters)
+        DummyKillCount = Get-ComparisonInt -Names @("dummyKillCount", "dummyKills") -InputObjects @($summary, $counters)
+        DummyHeadshotHitCount = Get-ComparisonInt -Names @("dummyHeadshotHitCount", "dummyHeadshotHits") -InputObjects @($summary, $counters)
+        DummyHeadshotKillCount = Get-ComparisonInt -Names @("dummyHeadshotKillCount", "dummyHeadshotKills") -InputObjects @($summary, $counters)
+        LethalHeadshotEvidenceCount = Get-ComparisonInt -Names @("lethalHeadshotEvidenceCount", "lethalHeadshotEvidence") -InputObjects @($summary, $counters)
+        DummyLethalHeadshotEvidenceCount = Get-ComparisonInt -Names @("dummyLethalHeadshotEvidenceCount", "dummyLethalHeadshotEvidence") -InputObjects @($summary, $counters)
+        ArmoredDummyHitCount = Get-ComparisonInt -Names @("armoredDummyHitCount", "armoredDummyHits") -InputObjects @($summary, $counters)
+        ProtectedHeadDummyHeadshotHitCount = Get-ComparisonInt -Names @("protectedHeadDummyHeadshotHitCount", "protectedDummyHeadshotHitCount", "protectedDummyHeadshotHits") -InputObjects @($summary, $counters)
+        ProtectedHeadDummyHeadshotKillCount = Get-ComparisonInt -Names @("protectedHeadDummyHeadshotKillCount", "protectedDummyHeadshotKillCount", "protectedDummyHeadshotKills") -InputObjects @($summary, $counters)
+        BurstGrowthEvidenceCount = Get-ComparisonInt -Names @("burstGrowthEvidenceCount", "burstGrowthEvidence") -InputObjects @($summary, $counters)
+        MovementPenaltyEvidenceCount = Get-ComparisonInt -Names @("movementPenaltyEvidenceCount", "acceptedMovePenaltyPositive") -InputObjects @($summary, $counters)
+        AppliedDamageMin = Get-ComparisonNumber -Names @("min", "Min") -InputObjects @($appliedDamageSummary, $appliedDamageStats)
+        AppliedDamageAverage = Get-ComparisonNumber -Names @("average", "Average") -InputObjects @($appliedDamageSummary, $appliedDamageStats)
+        AppliedDamageMax = Get-ComparisonNumber -Names @("max", "Max") -InputObjects @($appliedDamageSummary, $appliedDamageStats)
+        TapFireRejectionEvidence = Get-ComparisonBool -Names @("tapFireRejectionEvidence", "tapFireRejection") -InputObjects @($evidenceSummary)
+        BurstGrowthEvidence = Get-ComparisonBool -Names @("burstGrowthEvidence", "burstGrowth") -InputObjects @($evidenceSummary)
+        MovementPenaltyEvidence = Get-ComparisonBool -Names @("movementPenaltyEvidence", "movementPenalty") -InputObjects @($evidenceSummary)
+        DummyHeadshotPathEvidence = Get-ComparisonBool -Names @("dummyHeadshotPathEvidence", "dummyHeadshotPath") -InputObjects @($evidenceSummary)
+        ArmoredDummyEvidence = Get-ComparisonBool -Names @("armoredDummyEvidence", "armoredDummyPath") -InputObjects @($evidenceSummary)
+        ProtectedHeadDummyEvidence = Get-ComparisonBool -Names @("protectedHeadDummyEvidence", "protectedHeadDummyPath") -InputObjects @($evidenceSummary)
+        LethalHeadshotEvidence = Get-ComparisonBool -Names @("lethalHeadshotEvidence", "lethalHeadshotPath") -InputObjects @($evidenceSummary)
+        MissingSignalNotes = @($missingSignalNotes)
+    }
+
+    if (-not $row.TapFireRejectionEvidence) {
+        $row.TapFireRejectionEvidence = Get-ComparisonBool -Names @("tapFireHoldRejections") -InputObjects @($signals)
+    }
+    if (-not $row.BurstGrowthEvidence) {
+        $row.BurstGrowthEvidence = Get-ComparisonBool -Names @("burstGrowthEvidencePresent") -InputObjects @($signals)
+        if (-not $row.BurstGrowthEvidence) {
+            $row.BurstGrowthEvidence = $row.BurstGrowthEvidenceCount -gt 0
+        }
+    }
+    if (-not $row.MovementPenaltyEvidence) {
+        $row.MovementPenaltyEvidence = Get-ComparisonBool -Names @("movementPenaltyPositive", "movementPenaltyEvidencePresent") -InputObjects @($signals)
+        if (-not $row.MovementPenaltyEvidence) {
+            $row.MovementPenaltyEvidence = $row.MovementPenaltyEvidenceCount -gt 0
+        }
+    }
+    if (-not $row.DummyHeadshotPathEvidence) {
+        $row.DummyHeadshotPathEvidence = Get-ComparisonBool -Names @("dummyHeadshotHitsPresent") -InputObjects @($signals)
+    }
+    if (-not $row.ArmoredDummyEvidence) {
+        $row.ArmoredDummyEvidence = Get-ComparisonBool -Names @("armoredDummyHitsPresent") -InputObjects @($signals)
+        if (-not $row.ArmoredDummyEvidence) {
+            $row.ArmoredDummyEvidence = $row.ArmoredDummyHitCount -gt 0
+        }
+    }
+    if (-not $row.ProtectedHeadDummyEvidence) {
+        $row.ProtectedHeadDummyEvidence = Get-ComparisonBool -Names @("protectedDummyHeadshotHitsPresent") -InputObjects @($signals)
+        if (-not $row.ProtectedHeadDummyEvidence) {
+            $row.ProtectedHeadDummyEvidence = $row.ProtectedHeadDummyHeadshotHitCount -gt 0
+        }
+    }
+    if (-not $row.LethalHeadshotEvidence) {
+        $row.LethalHeadshotEvidence = Get-ComparisonBool -Names @("dummyLethalHeadshotEvidencePresent", "lethalHeadshotEvidencePresent") -InputObjects @($signals)
+        if (-not $row.LethalHeadshotEvidence) {
+            $row.LethalHeadshotEvidence = ($row.LethalHeadshotEvidenceCount -gt 0) -or ($row.DummyLethalHeadshotEvidenceCount -gt 0)
+        }
+    }
+
+    if ($row.MissingSignalNotes.Count -eq 0) {
+        if ($row.WeaponUnderTest -eq "glock" -and -not $row.TapFireRejectionEvidence) {
+            $row.MissingSignalNotes += "No tap-fire rejection evidence was logged."
+        }
+        if ($row.WeaponUnderTest -eq "mp5" -and -not $row.BurstGrowthEvidence) {
+            $row.MissingSignalNotes += "No burst-growth evidence was logged."
+        }
+        if (-not $row.MovementPenaltyEvidence) {
+            $row.MissingSignalNotes += "No movement-penalty evidence was logged."
+        }
+        if (-not $row.DummyHeadshotPathEvidence) {
+            $row.MissingSignalNotes += "No dummy headshot path evidence was logged."
+        }
+        if (-not $row.ArmoredDummyEvidence) {
+            $row.MissingSignalNotes += "No armored dummy evidence was logged."
+        }
+        if (-not $row.ProtectedHeadDummyEvidence) {
+            $row.MissingSignalNotes += "No protected-head dummy evidence was logged."
+        }
+        if (-not $row.LethalHeadshotEvidence) {
+            $row.MissingSignalNotes += "No lethal-headshot evidence was logged."
+        }
+    }
+
+    $row | Add-Member -NotePropertyName ProtectedDummyHeadshotHitCount -NotePropertyValue $row.ProtectedHeadDummyHeadshotHitCount
+    $row | Add-Member -NotePropertyName ProtectedDummyHeadshotKillCount -NotePropertyValue $row.ProtectedHeadDummyHeadshotKillCount
+    $row | Add-Member -NotePropertyName DummyHeadshotEvidence -NotePropertyValue $row.DummyHeadshotPathEvidence
+    $row | Add-Member -NotePropertyName MissingSignalsText -NotePropertyValue (($row.MissingSignalNotes -join " ").Trim())
+
+    $evidenceSummary = if ($row.WeaponUnderTest -eq "mp5") {
+        "burst:{0} move:{1} dummy:{2} armor:{3} prot:{4} lethal:{5}" -f
+            $(if ($row.BurstGrowthEvidence) { "Y" } else { "N" }),
             $(if ($row.MovementPenaltyEvidence) { "Y" } else { "N" }),
-            $(if ($row.DummyHeadshotEvidence) { "Y" } else { "N" }),
+            $(if ($row.DummyHeadshotPathEvidence) { "Y" } else { "N" }),
             $(if ($row.ArmoredDummyEvidence) { "Y" } else { "N" }),
             $(if ($row.ProtectedHeadDummyEvidence) { "Y" } else { "N" }),
             $(if ($row.LethalHeadshotEvidence) { "Y" } else { "N" })
-    )
+    }
+    elseif ($row.WeaponUnderTest -eq "glock") {
+        "tap:{0} move:{1} dummy:{2} armor:{3} prot:{4} lethal:{5}" -f
+            $(if ($row.TapFireRejectionEvidence) { "Y" } else { "N" }),
+            $(if ($row.MovementPenaltyEvidence) { "Y" } else { "N" }),
+            $(if ($row.DummyHeadshotPathEvidence) { "Y" } else { "N" }),
+            $(if ($row.ArmoredDummyEvidence) { "Y" } else { "N" }),
+            $(if ($row.ProtectedHeadDummyEvidence) { "Y" } else { "N" }),
+            $(if ($row.LethalHeadshotEvidence) { "Y" } else { "N" })
+    }
+    else {
+        "move:{0} dummy:{1} armor:{2} prot:{3} lethal:{4}" -f
+            $(if ($row.MovementPenaltyEvidence) { "Y" } else { "N" }),
+            $(if ($row.DummyHeadshotPathEvidence) { "Y" } else { "N" }),
+            $(if ($row.ArmoredDummyEvidence) { "Y" } else { "N" }),
+            $(if ($row.ProtectedHeadDummyEvidence) { "Y" } else { "N" }),
+            $(if ($row.LethalHeadshotEvidence) { "Y" } else { "N" })
+    }
 
+    $row | Add-Member -NotePropertyName EvidenceSummary -NotePropertyValue $evidenceSummary
     return $row
 }
 
@@ -329,21 +483,23 @@ if ($rows.Count -eq 0) {
 
 $sortedRows = @($rows | Sort-Object $SortBy, MatrixName, MatrixStep, SessionTag, SourceReportPath)
 
-Write-Host "Weapon comparison aggregation"
-Write-Host "  source report count      : $($sortedRows.Count)"
-Write-Host "  sort field               : $SortBy"
+Write-Host "Weapon comparison summary"
+Write-Host "  source reports : $($sortedRows.Count)"
+Write-Host "  sort           : $SortBy"
 
 $tableRows = $sortedRows | Select-Object `
-    @{Name = "MatrixStep"; Expression = { if ([string]::IsNullOrWhiteSpace($_.MatrixStep)) { "n/a" } else { $_.MatrixStep } } }, `
-    @{Name = "Profile"; Expression = { if ([string]::IsNullOrWhiteSpace($_.GlockProfile)) { "n/a" } else { $_.GlockProfile } } }, `
-    @{Name = "Target"; Expression = { if ([string]::IsNullOrWhiteSpace($_.LabTargetProfile)) { "n/a" } else { $_.LabTargetProfile } } }, `
+    @{Name = "Step"; Expression = { if ([string]::IsNullOrWhiteSpace($_.MatrixStep)) { "n/a" } else { $_.MatrixStep } } }, `
+    @{Name = "Wpn"; Expression = { if ([string]::IsNullOrWhiteSpace($_.WeaponUnderTest)) { "n/a" } else { $_.WeaponUnderTest } } }, `
+    @{Name = "Prof"; Expression = { if ([string]::IsNullOrWhiteSpace($_.WeaponProfile)) { "n/a" } else { $_.WeaponProfile } } }, `
+    @{Name = "Tgt"; Expression = { if ([string]::IsNullOrWhiteSpace($_.LabTargetProfile)) { "n/a" } else { $_.LabTargetProfile } } }, `
     @{Name = "Acc"; Expression = { $_.AcceptedShotCount } }, `
     @{Name = "Rej"; Expression = { $_.RejectedShotCount } }, `
-    @{Name = "DHits"; Expression = { $_.DummyHitCount } }, `
-    @{Name = "DKills"; Expression = { $_.DummyKillCount } }, `
-    @{Name = "ProtHS"; Expression = { $_.ProtectedDummyHeadshotHitCount } }, `
-    @{Name = "AvgDmg"; Expression = { Format-Number -Value $_.AppliedDamageAverage -Digits 2 } }, `
-    @{Name = "Signals"; Expression = { $_.EvidenceSummary } }
+    @{Name = "Hit"; Expression = { $_.HitCount } }, `
+    @{Name = "Kill"; Expression = { $_.KillCount } }, `
+    @{Name = "DHit"; Expression = { $_.DummyHitCount } }, `
+    @{Name = "DKill"; Expression = { $_.DummyKillCount } }, `
+    @{Name = "Leth"; Expression = { $_.LethalHeadshotEvidenceCount } }, `
+    @{Name = "Sig"; Expression = { $_.EvidenceSummary } }
 
 $formattedTable = ($tableRows | Format-Table -AutoSize | Out-String).TrimEnd()
 if (-not [string]::IsNullOrWhiteSpace($formattedTable)) {
@@ -355,7 +511,16 @@ if ($rowsWithMissingSignals.Count -gt 0) {
     Write-Host ""
     Write-Host "Missing signal notes"
     foreach ($row in $rowsWithMissingSignals) {
-        $rowLabel = if (-not [string]::IsNullOrWhiteSpace($row.MatrixStep)) { $row.MatrixStep } elseif (-not [string]::IsNullOrWhiteSpace($row.SessionTag)) { $row.SessionTag } else { Split-Path -Leaf $row.SourceReportPath }
+        $rowLabel = if (-not [string]::IsNullOrWhiteSpace($row.MatrixStep)) {
+            $row.MatrixStep
+        }
+        elseif (-not [string]::IsNullOrWhiteSpace($row.SessionTag)) {
+            $row.SessionTag
+        }
+        else {
+            Split-Path -Leaf $row.SourceReportPath
+        }
+
         Write-Host "  - ${rowLabel}: $($row.MissingSignalsText)"
     }
 }
@@ -370,12 +535,18 @@ if ($skippedInputs.Count -gt 0) {
 
 $exports = [ordered]@{}
 if ($ExportJson -or $ExportCsv -or $ExportMarkdown) {
-    $resolvedOutputDir = if ([string]::IsNullOrWhiteSpace($OutputDir)) { Get-DefaultComparisonOutputDirectory } else { Get-FullPath -Path $OutputDir }
+    $resolvedOutputDir = if ([string]::IsNullOrWhiteSpace($OutputDir)) {
+        Get-DefaultComparisonOutputDirectory -Kind $LatestReportKind
+    }
+    else {
+        Get-FullPath -Path $OutputDir
+    }
+
     Ensure-Directory -Path $resolvedOutputDir
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 
     if ($ExportJson) {
-        $jsonPath = Join-Path $resolvedOutputDir ("glock-comparison-summary-" + $stamp + ".json")
+        $jsonPath = Join-Path $resolvedOutputDir ("weapon-comparison-summary-" + $stamp + ".json")
         ([ordered]@{
             generatedAt = (Get-Date).ToString("s")
             sourceReportCount = $sortedRows.Count
@@ -387,36 +558,36 @@ if ($ExportJson -or $ExportCsv -or $ExportMarkdown) {
     }
 
     if ($ExportCsv) {
-        $csvPath = Join-Path $resolvedOutputDir ("glock-comparison-summary-" + $stamp + ".csv")
+        $csvPath = Join-Path $resolvedOutputDir ("weapon-comparison-summary-" + $stamp + ".csv")
         $sortedRows | Export-Csv -LiteralPath $csvPath -NoTypeInformation -Encoding UTF8
         $exports.csv = $csvPath
     }
 
     if ($ExportMarkdown) {
-        $markdownPath = Join-Path $resolvedOutputDir ("glock-comparison-summary-" + $stamp + ".md")
+        $markdownPath = Join-Path $resolvedOutputDir ("weapon-comparison-summary-" + $stamp + ".md")
         $markdownLines = New-Object System.Collections.Generic.List[string]
-        $markdownLines.Add("# Glock comparison summary")
+        $markdownLines.Add("# Weapon comparison summary")
         $markdownLines.Add("")
         $markdownLines.Add(("Generated: {0}" -f (Get-Date).ToString("s")))
         $markdownLines.Add(("Source report count: {0}" -f $sortedRows.Count))
         $markdownLines.Add("")
-        $markdownLines.Add("| Matrix step | Session tag | Glock profile | Target profile | Accepted | Rejected | Dummy hits | Dummy kills | Dummy headshot hits | Protected headshot hits | Avg damage | Signals | Missing notes |")
+        $markdownLines.Add("| Matrix step | Weapon | Weapon profile | Target profile | Accepted | Rejected | Hits | Kills | Dummy hits | Dummy kills | Lethal evidence | Signals | Missing notes |")
         $markdownLines.Add("| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |")
 
         foreach ($row in $sortedRows) {
             $markdownLines.Add((
                 "| {0} | {1} | {2} | {3} | {4} | {5} | {6} | {7} | {8} | {9} | {10} | {11} | {12} |" -f
                 (Escape-MarkdownTableValue $row.MatrixStep),
-                (Escape-MarkdownTableValue $row.SessionTag),
-                (Escape-MarkdownTableValue $row.GlockProfile),
+                (Escape-MarkdownTableValue $row.WeaponUnderTest),
+                (Escape-MarkdownTableValue $row.WeaponProfile),
                 (Escape-MarkdownTableValue $row.LabTargetProfile),
                 $row.AcceptedShotCount,
                 $row.RejectedShotCount,
+                $row.HitCount,
+                $row.KillCount,
                 $row.DummyHitCount,
                 $row.DummyKillCount,
-                $row.DummyHeadshotHitCount,
-                $row.ProtectedDummyHeadshotHitCount,
-                (Escape-MarkdownTableValue (Format-Number -Value $row.AppliedDamageAverage -Digits 2)),
+                $row.LethalHeadshotEvidenceCount,
                 (Escape-MarkdownTableValue $row.EvidenceSummary),
                 (Escape-MarkdownTableValue $row.MissingSignalsText)
             ))

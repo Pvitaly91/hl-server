@@ -292,6 +292,8 @@ if ($PassThru) {
         WeaponLogPath = if ($weaponLog) { $weaponLog.FullName } else { $null }
         TailWindowRequested = $tailWindowRequested
         ClientLaunchStatus = $clientLaunchStatus
+        WeaponUnderTest = "mp5"
+        WeaponProfile = if ([string]::IsNullOrWhiteSpace($Mp5Profile)) { "baseline" } else { $Mp5Profile }
         Mp5Profile = if ([string]::IsNullOrWhiteSpace($Mp5Profile)) { "baseline" } else { $Mp5Profile }
         LabTargetProfile = if ([string]::IsNullOrWhiteSpace($LabTargetProfile)) { "default" } else { $LabTargetProfile }
         LabDummy = $useLabDummy

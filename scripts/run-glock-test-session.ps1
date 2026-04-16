@@ -183,7 +183,7 @@ function Invoke-AnalyzeLatestWeaponLog {
     )
 
     $analysisScript = Join-Path $PSScriptRoot "analyze-weapon-log.ps1"
-    $analysisArguments = @()
+    $analysisArguments = @("-Weapon", "glock")
 
     if (-not [string]::IsNullOrWhiteSpace($WeaponLogPath) -and (Test-LeafPath -Path $WeaponLogPath)) {
         $analysisArguments += @("-Path", $WeaponLogPath)
@@ -294,6 +294,8 @@ if ($PassThru) {
         WeaponLogPath = if ($weaponLog) { $weaponLog.FullName } else { $null }
         TailWindowRequested = $tailWindowRequested
         ClientLaunchStatus = $clientLaunchStatus
+        WeaponUnderTest = "glock"
+        WeaponProfile = if ([string]::IsNullOrWhiteSpace($GlockProfile)) { "default" } else { $GlockProfile }
         GlockProfile = if ([string]::IsNullOrWhiteSpace($GlockProfile)) { "default" } else { $GlockProfile }
         LabTargetProfile = if ([string]::IsNullOrWhiteSpace($LabTargetProfile)) { "default" } else { $LabTargetProfile }
         LabDummy = $useLabDummy

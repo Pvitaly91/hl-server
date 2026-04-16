@@ -1,0 +1,102 @@
+{
+  "analyzedLogPath": "scripts/fixtures/comparison-mixed/mixed_armor_sweep-mp5-protected.log",
+  "session": {
+    "timestamp": "2026-04-16T18:14:00",
+    "map": "fixture_range",
+    "game": "valve",
+    "status": "ready",
+    "file": "scripts/fixtures/comparison-mixed/mixed_armor_sweep-mp5-protected.log",
+    "weaponUnderTest": "mp5",
+    "weaponProfileName": "cs_mobile",
+    "profileName": "cs_mobile",
+    "mp5ProfileName": "cs_mobile",
+    "targetProfileName": "vest_headprotected",
+    "sessionTag": "fixture-mixed-03-mp5-protected",
+    "matrixName": "mixed_armor_sweep",
+    "matrixStep": "mp5_vest_headprotected"
+  },
+  "metadata": {
+    "weaponUnderTest": "mp5",
+    "weaponProfile": "cs_mobile",
+    "sessionTag": "fixture-mixed-03-mp5-protected",
+    "matrixName": "mixed_armor_sweep",
+    "matrixStep": "mp5_vest_headprotected",
+    "mp5Profile": "cs_mobile",
+    "labTargetProfile": "vest_headprotected"
+  },
+  "counters": {
+    "acceptedShots": 7,
+    "rejectedShots": 0,
+    "hitEvents": 5,
+    "killEvents": 1,
+    "lethalHeadshotEvidence": 1,
+    "dummyHits": 5,
+    "dummyKills": 1,
+    "dummyHeadshotHits": 2,
+    "dummyHeadshotKills": 1,
+    "dummyLethalHeadshotEvidence": 1,
+    "armoredDummyHits": 4,
+    "protectedDummyHeadshotHits": 2,
+    "protectedDummyHeadshotKills": 1,
+    "burstGrowthEvidence": 5,
+    "acceptedMovePenaltyPositive": 4
+  },
+  "stats": {
+    "appliedDamage": {
+      "Min": 9.0,
+      "Average": 21.25,
+      "Max": 68.5
+    }
+  },
+  "signals": {
+    "movementPenaltyPositive": true,
+    "dummyHeadshotHitsPresent": true,
+    "armoredDummyHitsPresent": true,
+    "protectedDummyHeadshotHitsPresent": true,
+    "dummyLethalHeadshotEvidencePresent": true,
+    "lethalHeadshotEvidencePresent": true,
+    "burstGrowthEvidencePresent": true
+  },
+  "comparisonSummary": {
+    "weaponUnderTest": "mp5",
+    "weaponProfile": "cs_mobile",
+    "sessionTag": "fixture-mixed-03-mp5-protected",
+    "matrixName": "mixed_armor_sweep",
+    "matrixStep": "mp5_vest_headprotected",
+    "mp5Profile": "cs_mobile",
+    "labTargetProfile": "vest_headprotected",
+    "acceptedShotCount": 7,
+    "rejectedShotCount": 0,
+    "hitCount": 5,
+    "killCount": 1,
+    "dummyHitCount": 5,
+    "dummyKillCount": 1,
+    "dummyHeadshotHitCount": 2,
+    "dummyHeadshotKillCount": 1,
+    "lethalHeadshotEvidenceCount": 1,
+    "dummyLethalHeadshotEvidenceCount": 1,
+    "armoredDummyHitCount": 4,
+    "protectedDummyHeadshotHitCount": 2,
+    "protectedDummyHeadshotKillCount": 1,
+    "burstGrowthEvidenceCount": 5,
+    "movementPenaltyEvidenceCount": 4,
+    "appliedDamage": {
+      "min": 9.0,
+      "average": 21.25,
+      "max": 68.5
+    },
+    "evidence": {
+      "tapFireRejectionEvidence": false,
+      "movementPenaltyEvidence": true,
+      "burstGrowthEvidence": true,
+      "dummyHeadshotPathEvidence": true,
+      "armoredDummyEvidence": true,
+      "protectedHeadDummyEvidence": true,
+      "lethalHeadshotEvidence": true
+    }
+  },
+  "observations": [
+    "Synthetic protected-head MP5 comparison fixture."
+  ],
+  "warnings": []
+}

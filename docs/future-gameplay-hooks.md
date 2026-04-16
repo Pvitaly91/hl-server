@@ -122,6 +122,18 @@ The session and matrix tags also live behind typed accessors in `src/future_game
 
 These are metadata-only cvars. They do not change gameplay behavior by themselves. When set, the session header written to `[weaponlog]` includes them so later analyzer exports can correlate per-step artifacts across multiple sessions.
 
+For mixed Glock and MP5 comparison passes, the normalized metadata bundle now consists of:
+
+- `weaponUnderTest`
+- `weaponProfile`
+- `glockProfile` or `mp5Profile` when that weapon family is active
+- `labTargetProfile`
+- `sessionTag`
+- `matrixName`
+- `matrixStep`
+
+That same normalized shape now appears in the session header, analyzer JSON, and comparison-report rows so mixed manual passes can be aggregated without hand-normalizing logs afterward.
+
 ## Glock lab dummy cvars
 
 The one-player Glock lab dummy also lives behind typed accessors in `src/future_gameplay_hooks.cpp`.
@@ -320,6 +332,78 @@ Each step can define:
 
 The current matrix runner is intentionally Glock-lab-specific. It reuses the existing one-click session, analyzer, and report exports instead of trying to become a generic tournament harness.
 
+## Mixed weapon comparison matrices
+
+Checked-in mixed comparison matrices now live under `configs/weapon-comparison-matrices/` as small JSON files.
+
+Current examples:
+
+- `mixed_quick_smoke`
+  One Glock step and one MP5 step for launch, tagging, and export sanity checks.
+- `mixed_unarmored_baseline`
+  Glock and MP5 baseline sessions against the same unarmored dummy target.
+- `mixed_armor_sweep`
+  Glock and MP5 sessions across armored and protected-head dummy targets.
+
+Each mixed matrix file contains:
+
+- `name`
+- `description`
+- optional `defaults`
+- ordered `steps`
+
+Each step can define:
+
+- `name`
+- `weapon`
+- `glockProfile` or `mp5Profile`, or a generic `weaponProfile`
+- optional `labTargetProfile`
+- optional `operatorNote`
+- optional `map`
+- optional `extraCvars`
+
+`scripts/run-weapon-comparison-matrix.ps1` reuses the existing `run-glock-test-session.ps1` and `run-mp5-test-session.ps1` flows instead of duplicating launch logic. For each step it:
+
+- picks the correct session script for the weapon under test
+- stamps `sv_exp_weapon_under_test`, `sv_exp_session_tag`, `sv_exp_matrix_name`, and `sv_exp_matrix_step`
+- carries the appropriate Glock or MP5 profile metadata into the session header and analyzer JSON
+- applies the dummy target profile when present
+- prints a weapon-aware checklist before the operator confirms the step
+- analyzes the resulting log with the correct `-Weapon` filter
+- exports per-step JSON and CSV, then one consolidated mixed JSON, CSV, and Markdown report set
+
+The mixed session tags therefore appear in telemetry and exports as a stable chain:
+
+- `[weaponlog] type=session ... weapon_under_test=... session_tag=... matrix_name=... matrix_step=...`
+- `session.weaponUnderTest`
+- `metadata.weaponUnderTest`
+- `metadata.weaponProfile`
+- `comparisonSummary.weaponUnderTest`
+- `comparisonSummary.weaponProfile`
+
+`scripts/compare-weapon-reports.ps1` now aggregates Glock and MP5 analyzer outputs together. The mixed comparison rows surface the normalized session fields plus evidence such as:
+
+- tap-fire rejection evidence for Glock
+- burst-growth evidence for MP5
+- movement-penalty evidence
+- dummy headshot path evidence
+- armored dummy evidence
+- protected-head dummy evidence
+- lethal-headshot evidence
+
+This helps validate:
+
+- that the right weapon and profile were exercised for each step
+- that mixed manual passes can be replayed and aggregated consistently
+- that the right evidence flags appear or stay absent for each target state
+
+It still does not validate by itself:
+
+- subjective stock-client feel
+- whether the operator actually fired the intended pattern unless the log proves it
+- exact PvP balance or exact player-armor parity
+- real duel, scrim, or broader multiplayer balance outcomes
+
 ## What the MP5 telemetry proves
 
 The current MP5 telemetry is still server-authoritative and stock-client-compatible:
@@ -405,14 +489,25 @@ The analyzer now preserves those tags in exported JSON through:
 
 `comparisonSummary` also flattens the key counters, damage stats, evidence booleans, and missing-signal notes that the multi-session aggregation script uses.
 
-For MP5 logs, the exported JSON also carries normalized fields such as:
+For MP5 logs and mixed comparison runs, the exported JSON also carries normalized fields such as:
 
 - `metadata.weaponUnderTest`
+- `metadata.weaponProfile`
 - `metadata.mp5Profile`
+- `metadata.labTargetProfile`
+- `metadata.sessionTag`
+- `metadata.matrixName`
+- `metadata.matrixStep`
 - `comparisonSummary.weaponUnderTest`
+- `comparisonSummary.weaponProfile`
 - `comparisonSummary.mp5Profile`
+- `comparisonSummary.labTargetProfile`
+- `comparisonSummary.sessionTag`
+- `comparisonSummary.matrixName`
+- `comparisonSummary.matrixStep`
 - `comparisonSummary.burstGrowthEvidenceCount`
 - `comparisonSummary.movementPenaltyEvidenceCount`
+- `comparisonSummary.lethalHeadshotEvidenceCount`
 
 For dummy-driven sessions, the authoritative dummy configuration that matters for evidence review is the lifecycle telemetry itself:
 
