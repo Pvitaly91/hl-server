@@ -105,6 +105,12 @@ if (-not (Test-LeafPath -Path $runtimeDll)) {
     throw "Smoke test expected installed runtime DLL at $runtimeDll."
 }
 
+$doctorReport = Get-TestbedDoctorReport -Configuration $configuration -ExplicitTemplateRoot $TemplateRoot -ExplicitHldsExe $HldsExe -ExplicitHlExe $HlExe -ExplicitSteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload -IgnoreLatestLaunchFailure
+Write-TestbedDoctorSummary -Report $doctorReport
+if (-not $doctorReport.IsHealthy) {
+    throw (Get-TestbedDoctorFailureMessage -Report $doctorReport)
+}
+
 $launchInfo = $null
 
 try {
@@ -135,6 +141,11 @@ try {
     Write-Host "stdout log: $($launchInfo.StdOutLog)"
 }
 finally {
+    if ($launchInfo -and (-not (Wait-ForHldsReady -LaunchInfo $launchInfo -Map $Map -TimeoutSeconds 1))) {
+        $postFailureDoctor = Get-TestbedDoctorReport -Configuration $configuration -ExplicitTemplateRoot $TemplateRoot -ExplicitHldsExe $HldsExe -ExplicitHlExe $HlExe -ExplicitSteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload
+        Write-TestbedDoctorSummary -Report $postFailureDoctor
+    }
+
     if ($launchInfo) {
         Stop-ProcessIfRunning -Process $launchInfo.Process
     }

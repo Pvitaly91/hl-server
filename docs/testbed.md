@@ -12,14 +12,18 @@ The testbed exists to run HLDS with the locally built `hl.dll` without modifying
 
 ## Runtime source selection
 
-`install-testbed.ps1` resolves a template root in this order:
+`install-testbed.ps1` and `doctor-testbed.ps1` resolve a template root in this order:
 
 1. explicit script parameter
 2. `.env` / process environment override
-3. auto-detected `HLDS_EXE`
-4. SteamCMD-driven template provisioning when explicitly allowed
+3. explicit or environment `HLDS_EXE`
+4. explicit or environment `HL_EXE` when that root also contains `hlds.exe`
+5. cached dedicated template under `testbed/cache/hlds-template`
+6. installed `Half-Life Dedicated Server`
+7. regular Half-Life client install only as a fallback
+8. SteamCMD-driven dedicated-template provisioning when repair or explicit download is allowed
 
-The script does not write back into the original template root. It mirrors the template into `testbed/runtime/`, then installs the built DLL into `testbed/runtime/valve/dlls/`.
+The scripts do not write back into the original template root. They mirror the selected source into `testbed/runtime/`, validate key executable-side dependencies, generate `steam_appid.txt` inside the disposable runtime when the source type makes the AppID unambiguous, then install the built DLL into `testbed/runtime/valve/dlls/`.
 
 ## HLDS launch behavior
 
@@ -29,6 +33,8 @@ The script does not write back into the original template root. It mirrors the t
 - default map `crossfire`
 - LAN-friendly defaults for local iteration
 - log capture into `testbed/logs/`
+
+It also records a small `hlds-*-launch.txt` file so the working directory, executable path, Steam AppID, and exact launch arguments are visible after the fact.
 
 That preserves stock client compatibility while still swapping in the custom server DLL.
 

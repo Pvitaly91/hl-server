@@ -32,11 +32,23 @@ Import-HLServerEnv
 
 $configuration = Get-ValidatedConfiguration -Configuration $Configuration
 $runtimeRoot = Get-TestbedRuntimeRoot
-$runtimeHldsExe = Join-Path $runtimeRoot "hlds.exe"
-$runtimeDll = Join-Path $runtimeRoot "valve\dlls\hl.dll"
+$preflightReport = Get-TestbedDoctorReport -Configuration $configuration -ExplicitTemplateRoot $TemplateRoot -ExplicitHldsExe $HldsExe -ExplicitHlExe $HlExe -ExplicitSteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload -IgnoreLatestLaunchFailure
 
-if ((-not (Test-LeafPath -Path $runtimeHldsExe)) -or (-not (Test-LeafPath -Path $runtimeDll))) {
+if (-not $preflightReport.IsHealthy) {
+    Write-Step "Refreshing disposable runtime before launch"
     & "$PSScriptRoot\install-testbed.ps1" -Configuration $configuration -TemplateRoot $TemplateRoot -HldsExe $HldsExe -HlExe $HlExe -SteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload
+    $preflightReport = Get-TestbedDoctorReport -Configuration $configuration -ExplicitTemplateRoot $TemplateRoot -ExplicitHldsExe $HldsExe -ExplicitHlExe $HlExe -ExplicitSteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload -IgnoreLatestLaunchFailure
+}
+
+if (-not $preflightReport.IsHealthy) {
+    Write-TestbedDoctorSummary -Report $preflightReport
+    throw (Get-TestbedDoctorFailureMessage -Report $preflightReport)
+}
+
+if ($preflightReport.SourceSelection -and $preflightReport.SourceSelection.SelectedCandidate) {
+    $selectedSource = $preflightReport.SourceSelection.SelectedCandidate
+    Write-Host "Runtime source: $($selectedSource.Root)"
+    Write-Host "Source reason : $($selectedSource.Reason)"
 }
 
 Assert-UdpPortAvailable -Port $Port
@@ -89,6 +101,8 @@ if ($Detached) {
     Write-Host "PID: $($launchInfo.Process.Id)"
     Write-Host "stdout log: $($launchInfo.StdOutLog)"
     Write-Host "stderr log: $($launchInfo.StdErrLog)"
+    Write-Host "launch metadata: $($launchInfo.LaunchMetadataPath)"
+    Write-Host "working directory: $runtimeRoot"
 }
 else {
     Write-Step "Launching HLDS in the foreground"

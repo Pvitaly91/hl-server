@@ -18,7 +18,12 @@ param(
     [switch]$PassThru,
     [switch]$SkipChecklist,
     [switch]$DetachedServer = $true,
-    [int]$TimeoutSeconds = 45
+    [int]$TimeoutSeconds = 45,
+    [string]$TemplateRoot,
+    [string]$HldsExe,
+    [string]$HlExe,
+    [string]$SteamCmdExe,
+    [switch]$AllowSteamCmdDownload
 )
 
 $ErrorActionPreference = "Stop"
@@ -215,16 +220,16 @@ $useLabDummy = $LabDummy -or (-not [string]::IsNullOrWhiteSpace($LabTargetProfil
 $maxPlayers = if ($useLabDummy) { 1 } else { 4 }
 
 Write-Step $(if ($useLabDummy) { "Installing disposable runtime for the Glock lab session" } else { "Installing disposable runtime for the Glock manual session" })
-& "$PSScriptRoot\install-testbed.ps1" -Configuration $configuration
+& "$PSScriptRoot\install-testbed.ps1" -Configuration $configuration -TemplateRoot $TemplateRoot -HldsExe $HldsExe -HlExe $HlExe -SteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload
 
 Write-Step $(if ($useLabDummy) { "Launching disposable HLDS in experimental-debug lab mode" } else { "Launching disposable HLDS in experimental-debug mode" })
 $sessionMetadataCvars = @(Get-SessionMetadataLaunchAssignments -SessionTag $SessionTag -MatrixName $MatrixName -MatrixStep $MatrixStep -WeaponUnderTest glock)
 $effectiveSetCvars = @($sessionMetadataCvars) + @($SetCvar)
 if ([string]::IsNullOrWhiteSpace($GlockProfile)) {
-    $launchInfo = & "$PSScriptRoot\run-server.ps1" -Configuration $configuration -Map $Map -Port $resolvedPort -MaxPlayers $maxPlayers -Detached -EnableExperimentalGlock -EnableExperimentalGlockDebug -EnableGlockLabDummy:$useLabDummy -LabTargetProfile $LabTargetProfile -SetCvar $effectiveSetCvars -PassThru
+    $launchInfo = & "$PSScriptRoot\run-server.ps1" -Configuration $configuration -Map $Map -Port $resolvedPort -MaxPlayers $maxPlayers -Detached -EnableExperimentalGlock -EnableExperimentalGlockDebug -EnableGlockLabDummy:$useLabDummy -LabTargetProfile $LabTargetProfile -SetCvar $effectiveSetCvars -TemplateRoot $TemplateRoot -HldsExe $HldsExe -HlExe $HlExe -SteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload -PassThru
 }
 else {
-    $launchInfo = & "$PSScriptRoot\run-server.ps1" -Configuration $configuration -Map $Map -Port $resolvedPort -MaxPlayers $maxPlayers -Detached -EnableExperimentalGlock -EnableExperimentalGlockDebug -EnableGlockLabDummy:$useLabDummy -GlockProfile $GlockProfile -LabTargetProfile $LabTargetProfile -SetCvar $effectiveSetCvars -PassThru
+    $launchInfo = & "$PSScriptRoot\run-server.ps1" -Configuration $configuration -Map $Map -Port $resolvedPort -MaxPlayers $maxPlayers -Detached -EnableExperimentalGlock -EnableExperimentalGlockDebug -EnableGlockLabDummy:$useLabDummy -GlockProfile $GlockProfile -LabTargetProfile $LabTargetProfile -SetCvar $effectiveSetCvars -TemplateRoot $TemplateRoot -HldsExe $HldsExe -HlExe $HlExe -SteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload -PassThru
 }
 
 $weaponLog = Wait-ForSessionWeaponDebugLog -PreviousLatestLog $previousWeaponLog -TimeoutSeconds $TimeoutSeconds -Process $launchInfo.Process

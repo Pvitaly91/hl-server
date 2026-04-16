@@ -24,6 +24,7 @@ if /I "%MODE%"=="mp5-profile" goto mode_mp5_profile
 if /I "%MODE%"=="mp5-session" goto mode_mp5_session
 if /I "%MODE%"=="mp5-lab" goto mode_mp5_lab
 if /I "%MODE%"=="mp5-lab-profile" goto mode_mp5_lab_profile
+if /I "%MODE%"=="doctor" goto mode_doctor
 if /I "%MODE%"=="glock-report" goto mode_glock_report
 if /I "%MODE%"=="experimental-debug" goto mode_experimental_debug
 if /I "%MODE%"=="experimental" goto mode_experimental
@@ -129,6 +130,12 @@ goto collect_args
 :mode_mp5_lab_profile
 set "TARGET_SCRIPT=%SCRIPT_DIR%run-mp5-test-session.ps1"
 set "RUN_SWITCHES=-LabDummy -Mp5Profile"
+set "DEFAULT_ARGS="
+shift
+goto collect_args
+
+:mode_doctor
+set "TARGET_SCRIPT=%SCRIPT_DIR%doctor-testbed.ps1"
 set "DEFAULT_ARGS="
 shift
 goto collect_args

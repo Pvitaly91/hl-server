@@ -30,13 +30,15 @@ It is not yet a gameplay conversion and it does not ship any proprietary game as
   - an existing Half-Life install that already contains `hlds.exe`
   - SteamCMD, or permission to let the scripts download SteamCMD into `testbed/cache/`
 
+Recent Windows startup blockers such as `FATAL ERROR (shutting down): Unable to initialize Steam.` and `Assertion Failed: Failed to load "SDL3.dll"` are now surfaced through `scripts/doctor-testbed.ps1` instead of being left as opaque launch failures.
+
 ## Quick start
 
 ```powershell
 .\scripts\bootstrap.ps1
 .\scripts\configure.ps1
 .\scripts\build.ps1 -Configuration Debug
-.\scripts\install-testbed.ps1 -Configuration Debug -AllowSteamCmdDownload
+.\scripts\doctor-testbed.ps1 -Repair
 .\scripts\run-server.ps1 -Configuration Debug -Detached
 ```
 
@@ -45,6 +47,56 @@ To smoke-test the whole flow non-interactively:
 ```powershell
 .\scripts\smoke-test.ps1 -Configuration Debug -AllowSteamCmdDownload
 ```
+
+## Runtime doctor
+
+Inspect the currently selected runtime source and the disposable runtime:
+
+```powershell
+.\scripts\doctor-testbed.ps1
+```
+
+Force a disposable-runtime refresh and let the repo provision a dedicated HLDS cache under `testbed/cache/` when needed:
+
+```powershell
+.\scripts\doctor-testbed.ps1 -Repair
+```
+
+Use the thin BAT alias from `cmd.exe` or Explorer:
+
+```bat
+scripts\run-testbed.bat doctor
+```
+
+If you only want to refresh the disposable runtime without the full repair flow:
+
+```powershell
+.\scripts\install-testbed.ps1 -Configuration Debug
+```
+
+`doctor-testbed.ps1` prints:
+
+- the selected runtime source root
+- the selected `hlds.exe`
+- the selected `hl.exe` when one is available
+- the disposable runtime root and runtime manifest
+- key executable-side files or directories that are present or missing
+- the current blocker classification and remediation guidance
+
+`-Repair` is intentionally stronger than a plain install:
+
+- it refreshes `testbed/runtime/`
+- it can refresh the cached SteamCMD-provisioned HLDS template
+- it may create `testbed/runtime/steam_appid.txt` when the selected source does not carry one but the source type makes the AppID unambiguous
+
+Runtime source selection now prefers, in order:
+
+1. explicit `-TemplateRoot` or `HL_RUNTIME_TEMPLATE`
+2. explicit `-HldsExe` or `HLDS_EXE`
+3. explicit `-HlExe` or `HL_EXE` when that root also contains `hlds.exe`
+4. the cached dedicated HLDS template under `testbed/cache/hlds-template`
+5. an installed `Half-Life Dedicated Server` runtime
+6. a regular Half-Life client install only as a fallback when it already contains `hlds.exe`
 
 To build Release instead:
 
@@ -62,7 +114,7 @@ Build and install:
 ```powershell
 .\scripts\configure.ps1
 .\scripts\build.ps1 -Configuration Debug
-.\scripts\install-testbed.ps1 -Configuration Debug -AllowSteamCmdDownload
+.\scripts\doctor-testbed.ps1 -Repair
 ```
 
 Launch the disposable HLDS runtime in vanilla mode with PowerShell:
@@ -547,6 +599,14 @@ Supported variables:
 
 You can also pass explicit script parameters instead of using `.env`.
 
+Examples:
+
+```powershell
+.\scripts\doctor-testbed.ps1 -TemplateRoot D:\Games\Half-Life Dedicated Server
+.\scripts\install-testbed.ps1 -Configuration Debug -HldsExe D:\Steam\steamapps\common\Half-Life\hlds.exe
+.\scripts\run-server.ps1 -Configuration Debug -HlExe D:\Steam\steamapps\common\Half-Life\hl.exe -Detached
+```
+
 The scripts auto-detect common Steam install locations and the Steam install path from the Windows registry when possible. If auto-detection fails, they stop with a clear message instead of guessing unsafe locations.
 
 ## Build outputs
@@ -565,11 +625,24 @@ The CMake preset is the source of truth.
 - `testbed/runtime/` - disposable HLDS runtime mirror
 - `testbed/logs/` - `hlds-*.log` server launch logs and `weapon-debug-*.log` Glock telemetry logs
 - `testbed/cache/` - downloaded SteamCMD and optional HLDS template cache
+- `testbed/runtime/.hl-server-runtime.json` - runtime manifest recording which source root was mirrored
 
-`install-testbed.ps1` copies the selected runtime template into `testbed/runtime/` and then overwrites only:
+`install-testbed.ps1` now mirrors the selected source root into `testbed/runtime/`, validates the executable-side dependencies HLDS needs to start, repairs missing key sidecars when the source provides them, and then overwrites only:
 
 - `testbed/runtime/valve/dlls/hl.dll`
 - `testbed/runtime/valve/dlls/hl.pdb` when available
+
+Key runtime-side entries checked by the doctor include:
+
+- `hlds.exe`
+- `hl.exe` when available from the selected source
+- `steam_appid.txt`
+- `SDL2.dll` or `SDL3.dll` when present in the selected source
+- `steam_api.dll`
+- `tier0.dll`
+- `vstdlib.dll`
+- `platform/`
+- `bin/` when the selected source uses it
 
 No script writes into the user's real Steam `valve` folder.
 
@@ -579,6 +652,7 @@ No script writes into the user's real Steam `valve` folder.
 - `scripts/configure.ps1` configures the VS2022 Win32 CMake preset.
 - `scripts/build.ps1` builds Debug or Release and prints the resulting artifact paths.
 - `scripts/install-testbed.ps1` prepares the disposable runtime and installs the built `hl.dll`.
+- `scripts/doctor-testbed.ps1` diagnoses the selected runtime source, the disposable runtime, and common Windows startup blockers such as Steam initialization or missing executable-side DLL issues, and `-Repair` can refresh the runtime plus provision a dedicated HLDS cache.
 - `scripts/run-server.ps1` launches HLDS against the disposable runtime with `-game valve`, defaults to `crossfire`, accepts `-EnableExperimentalGlock`, `-EnableExperimentalGlockDebug`, `-GlockProfile <name>`, and `-LabTargetProfile <name>` for server-only Glock tuning plus dummy-target selection, and still supports launch-time overrides through `-SetCvar @('name=value', ...)` or `-Cvars @{ name = 'value' }`.
 - `scripts/run-glock-test-session.ps1` reinstalls the disposable runtime, launches the experimental-debug Glock server, waits for readiness, optionally opens a tail window for the exact weapon log, optionally launches a stock client, prints the manual checklist with the connect address and log paths, accepts `-GlockProfile <name>` and `-LabTargetProfile <name>`, and can hand off to the analyzer with `-AnalyzeLatestOnExit`.
 - `scripts/list-glock-profiles.ps1` lists the checked-in versioned Glock presets from `configs/glock-presets/`.
@@ -607,4 +681,5 @@ See:
 
 - `docs/upstream.md`
 - `docs/testbed.md`
+- `docs/testbed-runtime-troubleshooting.md`
 - `docs/future-gameplay-hooks.md`

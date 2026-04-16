@@ -8,7 +8,8 @@ param(
     [string]$HlExe,
     [string]$SteamCmdExe,
     [switch]$AllowSteamCmdDownload,
-    [switch]$BuildIfMissing
+    [switch]$BuildIfMissing,
+    [switch]$ForceTemplateRefresh
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,38 +28,11 @@ if (-not (Test-LeafPath -Path $dllPath)) {
     }
 }
 
-$resolvedTemplateRoot = Resolve-HldsTemplateRoot -ExplicitTemplateRoot $TemplateRoot -ExplicitHldsExe $HldsExe -ExplicitHlExe $HlExe -ExplicitSteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload
-$runtimeRoot = Join-RepoPath "testbed\runtime"
-$testbedRoot = Join-RepoPath "testbed"
-
-Write-Step "Preparing disposable runtime from $resolvedTemplateRoot"
-
-Reset-DisposableDirectory -Path $runtimeRoot -AllowedRoot $testbedRoot
-Copy-DirectoryContents -Source $resolvedTemplateRoot -Destination $runtimeRoot
-
-$runtimeHldsExe = Join-Path $runtimeRoot "hlds.exe"
-if (-not (Test-LeafPath -Path $runtimeHldsExe)) {
-    throw "Resolved runtime template did not contain hlds.exe: $resolvedTemplateRoot"
-}
-
-$runtimeValveDlls = Join-Path $runtimeRoot "valve\dlls"
-Ensure-Directory -Path $runtimeValveDlls
-
-Copy-Item -LiteralPath $dllPath -Destination (Join-Path $runtimeValveDlls "hl.dll") -Force
-
 $pdbPath = Get-HlPdbPath -Configuration $configuration
-if (Test-LeafPath -Path $pdbPath) {
-    Copy-Item -LiteralPath $pdbPath -Destination (Join-Path $runtimeValveDlls "hl.pdb") -Force
-}
-
-$markerPath = Join-Path $runtimeRoot ".hl-server-testbed.txt"
-@"
-Disposable runtime prepared by hl-server.
-Template root: $resolvedTemplateRoot
-Installed hl.dll: $dllPath
-Timestamp: $(Get-Date -Format o)
-"@ | Set-Content -LiteralPath $markerPath -Encoding ASCII
+$installResult = Install-TestbedRuntime -Configuration $configuration -BuiltDllPath $dllPath -BuiltPdbPath $pdbPath -ExplicitTemplateRoot $TemplateRoot -ExplicitHldsExe $HldsExe -ExplicitHlExe $HlExe -ExplicitSteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload -ForceTemplateRefresh:$ForceTemplateRefresh
 
 Write-Step "Disposable runtime ready"
-Write-Host "Runtime root: $runtimeRoot"
-Write-Host "Installed DLL: $(Join-Path $runtimeValveDlls 'hl.dll')"
+Write-Host "Runtime root       : $($installResult.RuntimeRoot)"
+Write-Host "Installed DLL      : $($installResult.InstalledDllPath)"
+Write-Host "Runtime manifest   : $($installResult.ManifestPath)"
+Write-Host "Created steam_appid: $($installResult.CreatedSteamAppIdFile)"

@@ -18,7 +18,12 @@ param(
     [switch]$PassThru,
     [switch]$SkipChecklist,
     [switch]$DetachedServer = $true,
-    [int]$TimeoutSeconds = 45
+    [int]$TimeoutSeconds = 45,
+    [string]$TemplateRoot,
+    [string]$HldsExe,
+    [string]$HlExe,
+    [string]$SteamCmdExe,
+    [switch]$AllowSteamCmdDownload
 )
 
 $ErrorActionPreference = "Stop"
@@ -200,7 +205,7 @@ $useLabDummy = $LabDummy -or (-not [string]::IsNullOrWhiteSpace($LabTargetProfil
 $maxPlayers = 1
 
 Write-Step $(if ($useLabDummy) { "Installing disposable runtime for the MP5 lab session" } else { "Installing disposable runtime for the MP5 manual session" })
-& "$PSScriptRoot\install-testbed.ps1" -Configuration $configuration
+& "$PSScriptRoot\install-testbed.ps1" -Configuration $configuration -TemplateRoot $TemplateRoot -HldsExe $HldsExe -HlExe $HlExe -SteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload
 
 Write-Step $(if ($useLabDummy) { "Launching disposable HLDS in MP5 experimental lab mode" } else { "Launching disposable HLDS in MP5 experimental mode" })
 $sessionMetadataCvars = @(Get-SessionMetadataLaunchAssignments -SessionTag $SessionTag -MatrixName $MatrixName -MatrixStep $MatrixStep -WeaponUnderTest mp5)
@@ -218,6 +223,11 @@ $launchInfo = & "$PSScriptRoot\run-server.ps1" `
     -Mp5Profile $Mp5Profile `
     -LabTargetProfile $LabTargetProfile `
     -SetCvar $effectiveSetCvars `
+    -TemplateRoot $TemplateRoot `
+    -HldsExe $HldsExe `
+    -HlExe $HlExe `
+    -SteamCmdExe $SteamCmdExe `
+    -AllowSteamCmdDownload:$AllowSteamCmdDownload `
     -PassThru
 
 $weaponLog = Wait-ForSessionWeaponDebugLog -PreviousLatestLog $previousWeaponLog -TimeoutSeconds $TimeoutSeconds -Process $launchInfo.Process

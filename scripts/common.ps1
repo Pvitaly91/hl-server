@@ -600,37 +600,430 @@ function Resolve-SteamCmdExe {
 function Install-HldsTemplateFromSteamCmd {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$SteamCmdExe
+        [string]$SteamCmdExe,
+        [switch]$ForceRefresh
     )
 
     $installDir = Join-RepoPath "testbed\cache\hlds-template"
     $hldsExe = Join-Path $installDir "hlds.exe"
 
-    if (Test-LeafPath -Path $hldsExe) {
+    $cachedProbe = if (Test-Path -LiteralPath $installDir -PathType Container) {
+        Get-HldsRuntimeProbe -Root $installDir
+    }
+    else {
+        $null
+    }
+
+    if ($cachedProbe -and $cachedProbe.IsRunnable -and (-not $ForceRefresh)) {
         return $installDir
     }
 
-    Write-Step "Installing Half-Life Dedicated Server template into testbed/cache"
+    if ($ForceRefresh -and $cachedProbe) {
+        Write-Step "Refreshing Half-Life Dedicated Server template in testbed/cache"
+    }
+    else {
+        Write-Step "Installing Half-Life Dedicated Server template into testbed/cache"
+    }
 
     Ensure-Directory -Path $installDir
+    Ensure-Directory -Path (Get-TestbedLogsRoot)
+
+    $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $steamCmdLog = Join-Path (Get-TestbedLogsRoot) ("steamcmd-hlds-template-" + $timestamp + ".log")
 
     $arguments = @(
-        "+login", "anonymous",
         "+force_install_dir", $installDir,
+        "+login", "anonymous",
         "+app_update", "90", "validate",
         "+quit"
     )
 
-    & $SteamCmdExe @arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "SteamCMD failed while installing Half-Life Dedicated Server."
+    & $SteamCmdExe @arguments 2>&1 | Tee-Object -FilePath $steamCmdLog | Out-Null
+    $steamCmdExitCode = $LASTEXITCODE
+    $steamCmdReportedSuccess = Select-String -Path $steamCmdLog -Pattern "Success! App '90' fully installed." -SimpleMatch -Quiet -ErrorAction SilentlyContinue
+
+    if (($steamCmdExitCode -ne 0) -and (-not $steamCmdReportedSuccess) -and (-not (Test-LeafPath -Path $hldsExe))) {
+        throw "SteamCMD failed while installing Half-Life Dedicated Server. Exit code: $steamCmdExitCode. Log: $steamCmdLog"
     }
 
     if (-not (Test-LeafPath -Path $hldsExe)) {
-        throw "SteamCMD completed but no hlds.exe was installed to $installDir."
+        throw "SteamCMD completed but no hlds.exe was installed to $installDir. Log: $steamCmdLog"
     }
 
+    Write-Host "SteamCMD template log: $steamCmdLog"
     return $installDir
+}
+
+function Test-PathsEqual {
+    param(
+        [string]$Left,
+        [string]$Right
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Left) -or [string]::IsNullOrWhiteSpace($Right)) {
+        return $false
+    }
+
+    return (Get-FullPath -Path $Left).Equals((Get-FullPath -Path $Right), [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Get-HldsTemplateRootKind {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Root
+    )
+
+    $fullRoot = Get-FullPath -Path $Root
+    $runtimeRoot = Get-TestbedRuntimeRoot
+    $cachedTemplateRoot = Join-RepoPath "testbed\cache\hlds-template"
+    $leafName = Split-Path -Leaf $fullRoot
+
+    if (Test-PathsEqual -Left $fullRoot -Right $runtimeRoot) {
+        return "disposable_runtime"
+    }
+
+    if (Test-PathsEqual -Left $fullRoot -Right $cachedTemplateRoot) {
+        return "cached_dedicated_server"
+    }
+
+    if ($leafName.Equals("Half-Life Dedicated Server", [System.StringComparison]::OrdinalIgnoreCase)) {
+        return "dedicated_server_install"
+    }
+
+    if (Test-LeafPath -Path (Join-Path $fullRoot "hl.exe")) {
+        return "half_life_client_install"
+    }
+
+    return "generic_hlds_runtime"
+}
+
+function Get-HldsTemplateRootKindLabel {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Kind
+    )
+
+    switch ($Kind) {
+        "cached_dedicated_server" { return "cached dedicated HLDS template" }
+        "dedicated_server_install" { return "installed Half-Life Dedicated Server runtime" }
+        "half_life_client_install" { return "Half-Life client install with embedded hlds.exe" }
+        "generic_hlds_runtime" { return "generic HLDS runtime" }
+        "disposable_runtime" { return "existing disposable runtime" }
+        default { return $Kind }
+    }
+}
+
+function Get-TestbedRuntimeKeyEntryDefinitions {
+    return @(
+        [PSCustomObject]@{ RelativePath = "hlds.exe"; PathType = "Leaf"; AlwaysRequired = $true; Description = "selected hlds.exe" }
+        [PSCustomObject]@{ RelativePath = "hl.exe"; PathType = "Leaf"; AlwaysRequired = $false; Description = "stock hl.exe for client-attached sessions" }
+        [PSCustomObject]@{ RelativePath = "steam_appid.txt"; PathType = "Leaf"; AlwaysRequired = $false; Description = "Steam AppID helper" }
+        [PSCustomObject]@{ RelativePath = "SDL3.dll"; PathType = "Leaf"; AlwaysRequired = $false; Description = "current SDL runtime sidecar" }
+        [PSCustomObject]@{ RelativePath = "SDL2.dll"; PathType = "Leaf"; AlwaysRequired = $false; Description = "legacy SDL runtime sidecar" }
+        [PSCustomObject]@{ RelativePath = "steam_api.dll"; PathType = "Leaf"; AlwaysRequired = $true; Description = "Steam API sidecar" }
+        [PSCustomObject]@{ RelativePath = "tier0.dll"; PathType = "Leaf"; AlwaysRequired = $true; Description = "Valve tier0 sidecar" }
+        [PSCustomObject]@{ RelativePath = "vstdlib.dll"; PathType = "Leaf"; AlwaysRequired = $true; Description = "Valve vstdlib sidecar" }
+        [PSCustomObject]@{ RelativePath = "swds.dll"; PathType = "Leaf"; AlwaysRequired = $false; Description = "software renderer sidecar" }
+        [PSCustomObject]@{ RelativePath = "platform"; PathType = "Container"; AlwaysRequired = $false; Description = "platform sidecar directory" }
+        [PSCustomObject]@{ RelativePath = "bin"; PathType = "Container"; AlwaysRequired = $false; Description = "runtime sidecar directory" }
+        [PSCustomObject]@{ RelativePath = "valve"; PathType = "Container"; AlwaysRequired = $true; Description = "stock valve game content" }
+    )
+}
+
+function Get-HldsRuntimeProbe {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Root
+    )
+
+    $fullRoot = Get-FullPath -Path $Root
+    $exists = Test-Path -LiteralPath $fullRoot -PathType Container
+    $entryStates = New-Object System.Collections.Generic.List[object]
+
+    $steamAppIdPath = Join-Path $fullRoot "steam_appid.txt"
+    $steamAppId = $null
+    if ($exists -and (Test-LeafPath -Path $steamAppIdPath)) {
+        $steamAppId = ((Get-Content -LiteralPath $steamAppIdPath | Select-Object -First 1) -as [string])
+        if (-not [string]::IsNullOrWhiteSpace($steamAppId)) {
+            $steamAppId = $steamAppId.Trim()
+        }
+    }
+
+    $kind = if ($exists) { Get-HldsTemplateRootKind -Root $fullRoot } else { "missing_root" }
+    $hldsExe = Join-Path $fullRoot "hlds.exe"
+    $hlExe = Join-Path $fullRoot "hl.exe"
+    $hasClientExe = $exists -and (Test-LeafPath -Path $hlExe)
+
+    foreach ($definition in Get-TestbedRuntimeKeyEntryDefinitions) {
+        $entryPath = Join-Path $fullRoot $definition.RelativePath
+        $present = $false
+
+        if ($exists) {
+            if ($definition.PathType -eq "Container") {
+                $present = Test-Path -LiteralPath $entryPath -PathType Container
+            }
+            else {
+                $present = Test-LeafPath -Path $entryPath
+            }
+        }
+
+        $entryStates.Add([PSCustomObject]@{
+            RelativePath = $definition.RelativePath
+            PathType = $definition.PathType
+            Description = $definition.Description
+            AlwaysRequired = $definition.AlwaysRequired
+            Path = $entryPath
+            Present = $present
+        })
+    }
+
+    $missingBaseRequired = @(
+        $entryStates |
+        Where-Object { $_.AlwaysRequired -and (-not $_.Present) } |
+        Select-Object -ExpandProperty RelativePath
+    )
+
+    $suggestedSteamAppId = if (-not [string]::IsNullOrWhiteSpace($steamAppId)) {
+        $steamAppId
+    }
+    elseif ($kind -in @("cached_dedicated_server", "dedicated_server_install")) {
+        "90"
+    }
+    elseif ($hasClientExe) {
+        "70"
+    }
+    else {
+        $null
+    }
+
+    return [PSCustomObject]@{
+        Root = $fullRoot
+        Exists = $exists
+        Kind = $kind
+        KindLabel = if ($exists) { Get-HldsTemplateRootKindLabel -Kind $kind } else { "missing runtime root" }
+        IsDedicatedPreferred = $kind -in @("cached_dedicated_server", "dedicated_server_install")
+        HldsExe = if ($exists -and (Test-LeafPath -Path $hldsExe)) { $hldsExe } else { $null }
+        HlExe = if ($exists -and (Test-LeafPath -Path $hlExe)) { $hlExe } else { $null }
+        SteamAppIdPath = if ($exists) { $steamAppIdPath } else { $null }
+        SteamAppId = $steamAppId
+        SuggestedSteamAppId = $suggestedSteamAppId
+        EntryStates = $entryStates.ToArray()
+        MissingBaseRequired = $missingBaseRequired
+        IsRunnable = $exists -and ($missingBaseRequired.Count -eq 0)
+    }
+}
+
+function New-HldsTemplateCandidate {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Root,
+        [Parameter(Mandatory = $true)]
+        [string]$SelectionSource,
+        [Parameter(Mandatory = $true)]
+        [string]$Reason,
+        [Parameter(Mandatory = $true)]
+        [int]$Priority
+    )
+
+    $probe = Get-HldsRuntimeProbe -Root $Root
+
+    return [PSCustomObject]@{
+        Root = $probe.Root
+        SelectionSource = $SelectionSource
+        Reason = $Reason
+        Priority = $Priority
+        Probe = $probe
+    }
+}
+
+function Add-HldsTemplateCandidate {
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [System.Collections.Generic.List[object]]$Candidates,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [System.Collections.Generic.HashSet[string]]$SeenRoots,
+        [string]$Root,
+        [Parameter(Mandatory = $true)]
+        [string]$SelectionSource,
+        [Parameter(Mandatory = $true)]
+        [string]$Reason,
+        [Parameter(Mandatory = $true)]
+        [int]$Priority
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Root)) {
+        return
+    }
+
+    $fullRoot = Get-FullPath -Path $Root
+    if (-not (Test-Path -LiteralPath $fullRoot -PathType Container)) {
+        return
+    }
+
+    if ($SeenRoots.Contains($fullRoot)) {
+        return
+    }
+
+    $candidate = New-HldsTemplateCandidate -Root $fullRoot -SelectionSource $SelectionSource -Reason $Reason -Priority $Priority
+    if ($candidate.Probe.Kind -eq "disposable_runtime") {
+        return
+    }
+
+    [void]$SeenRoots.Add($fullRoot)
+    $Candidates.Add($candidate)
+}
+
+function Get-HldsTemplateSelection {
+    param(
+        [string]$ExplicitTemplateRoot,
+        [string]$ExplicitHldsExe,
+        [string]$ExplicitHlExe,
+        [string]$ExplicitSteamCmdExe,
+        [switch]$AllowSteamCmdDownload,
+        [switch]$ForceRefreshSteamCmdTemplate
+    )
+
+    Import-HLServerEnv
+
+    $candidates = New-Object System.Collections.Generic.List[object]
+    $seenRoots = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    $selectionWarnings = New-Object System.Collections.Generic.List[string]
+
+    $envTemplateRoot = [System.Environment]::GetEnvironmentVariable("HL_RUNTIME_TEMPLATE", "Process")
+    $envHldsExe = [System.Environment]::GetEnvironmentVariable("HLDS_EXE", "Process")
+    $envHlExe = [System.Environment]::GetEnvironmentVariable("HL_EXE", "Process")
+
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitTemplateRoot)) {
+        $fullPath = Get-FullPath -Path $ExplicitTemplateRoot
+        if (-not (Test-Path -LiteralPath $fullPath -PathType Container)) {
+            throw "Runtime template root was provided explicitly but does not exist: $fullPath"
+        }
+
+        Add-HldsTemplateCandidate -Candidates $candidates -SeenRoots $seenRoots -Root $fullPath -SelectionSource "parameter:TemplateRoot" -Reason "Using the explicit -TemplateRoot override." -Priority 1000
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($envTemplateRoot)) {
+        $fullPath = Get-FullPath -Path $envTemplateRoot
+        if (-not (Test-Path -LiteralPath $fullPath -PathType Container)) {
+            throw "HL_RUNTIME_TEMPLATE is set but does not exist: $fullPath"
+        }
+
+        Add-HldsTemplateCandidate -Candidates $candidates -SeenRoots $seenRoots -Root $fullPath -SelectionSource "env:HL_RUNTIME_TEMPLATE" -Reason "Using HL_RUNTIME_TEMPLATE from the process environment." -Priority 950
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitHldsExe)) {
+        $fullPath = Get-FullPath -Path $ExplicitHldsExe
+        if (-not (Test-LeafPath -Path $fullPath)) {
+            throw "HLDS executable was provided explicitly but does not exist: $fullPath"
+        }
+
+        Add-HldsTemplateCandidate -Candidates $candidates -SeenRoots $seenRoots -Root (Split-Path -Parent $fullPath) -SelectionSource "parameter:HldsExe" -Reason "Using the explicit -HldsExe override." -Priority 940
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($envHldsExe)) {
+        $fullPath = Get-FullPath -Path $envHldsExe
+        if (-not (Test-LeafPath -Path $fullPath)) {
+            throw "HLDS_EXE is set but does not exist: $fullPath"
+        }
+
+        Add-HldsTemplateCandidate -Candidates $candidates -SeenRoots $seenRoots -Root (Split-Path -Parent $fullPath) -SelectionSource "env:HLDS_EXE" -Reason "Using HLDS_EXE from the process environment." -Priority 930
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitHlExe)) {
+        $fullPath = Get-FullPath -Path $ExplicitHlExe
+        if (-not (Test-LeafPath -Path $fullPath)) {
+            throw "Half-Life executable was provided explicitly but does not exist: $fullPath"
+        }
+
+        $root = Split-Path -Parent $fullPath
+        Add-HldsTemplateCandidate -Candidates $candidates -SeenRoots $seenRoots -Root $root -SelectionSource "parameter:HlExe" -Reason "Using the explicit -HlExe override because it points at a runtime root." -Priority 920
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($envHlExe)) {
+        $fullPath = Get-FullPath -Path $envHlExe
+        if (-not (Test-LeafPath -Path $fullPath)) {
+            throw "HL_EXE is set but does not exist: $fullPath"
+        }
+
+        $root = Split-Path -Parent $fullPath
+        Add-HldsTemplateCandidate -Candidates $candidates -SeenRoots $seenRoots -Root $root -SelectionSource "env:HL_EXE" -Reason "Using HL_EXE from the process environment because it points at a runtime root." -Priority 910
+    }
+
+    $cachedTemplateRoot = Join-RepoPath "testbed\cache\hlds-template"
+    if (Test-Path -LiteralPath $cachedTemplateRoot -PathType Container) {
+        Add-HldsTemplateCandidate -Candidates $candidates -SeenRoots $seenRoots -Root $cachedTemplateRoot -SelectionSource "cache:hlds-template" -Reason "Using the cached dedicated HLDS template under testbed/cache." -Priority 900
+    }
+
+    foreach ($root in Get-SteamInstallRoots) {
+        Add-HldsTemplateCandidate -Candidates $candidates -SeenRoots $seenRoots -Root (Join-Path $root "steamapps\common\Half-Life Dedicated Server") -SelectionSource "auto:steam-dedicated" -Reason "Detected an installed Half-Life Dedicated Server runtime under Steam." -Priority 850
+    }
+
+    $steamCmdExe = Resolve-SteamCmdExe -ExplicitPath $ExplicitSteamCmdExe -AllowDownload:$AllowSteamCmdDownload
+    if ($steamCmdExe) {
+        $steamCmdTemplateRoot = Install-HldsTemplateFromSteamCmd -SteamCmdExe $steamCmdExe -ForceRefresh:$ForceRefreshSteamCmdTemplate
+        Add-HldsTemplateCandidate -Candidates $candidates -SeenRoots $seenRoots -Root $steamCmdTemplateRoot -SelectionSource "steamcmd" -Reason "Provisioned a dedicated HLDS template through SteamCMD into testbed/cache." -Priority 875
+    }
+
+    foreach ($candidate in Get-HldsAutoCandidates) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) {
+            continue
+        }
+
+        $fullCandidate = Get-FullPath -Path $candidate
+        if (-not (Test-LeafPath -Path $fullCandidate)) {
+            continue
+        }
+
+        $root = Split-Path -Parent $fullCandidate
+        $priority = if ($root -like "*Half-Life Dedicated Server") { 825 } else { 650 }
+        Add-HldsTemplateCandidate -Candidates $candidates -SeenRoots $seenRoots -Root $root -SelectionSource "auto:hlds" -Reason "Auto-detected hlds.exe in a local runtime root." -Priority $priority
+    }
+
+    foreach ($candidate in Get-HlAutoCandidates) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) {
+            continue
+        }
+
+        $fullCandidate = Get-FullPath -Path $candidate
+        if (-not (Test-LeafPath -Path $fullCandidate)) {
+            continue
+        }
+
+        Add-HldsTemplateCandidate -Candidates $candidates -SeenRoots $seenRoots -Root (Split-Path -Parent $fullCandidate) -SelectionSource "auto:hl" -Reason "Auto-detected hl.exe in a local Half-Life client install that also carries hlds.exe." -Priority 620
+    }
+
+    $viableCandidates = @(
+        $candidates |
+        Where-Object { $_.Probe.IsRunnable -and $_.Probe.HldsExe } |
+        Sort-Object @{ Expression = "Priority"; Descending = $true }, @{ Expression = { if ($_.Probe.IsDedicatedPreferred) { 1 } else { 0 } }; Descending = $true }, @{ Expression = "Root"; Descending = $false }
+    )
+
+    $selectedCandidate = $viableCandidates | Select-Object -First 1
+    if (-not $selectedCandidate) {
+        $details = if ($candidates.Count -gt 0) {
+            ($candidates | ForEach-Object {
+                $missing = if ($_.Probe.MissingBaseRequired.Count -gt 0) { "missing " + ($_.Probe.MissingBaseRequired -join ", ") } else { "not runnable" }
+                '{0} ({1}; {2})' -f $_.Root, $_.Probe.KindLabel, $missing
+            }) -join "; "
+        }
+        else {
+            "No candidate roots were discovered."
+        }
+
+        throw "Unable to resolve a viable HLDS runtime template. $details Set HL_RUNTIME_TEMPLATE or HLDS_EXE, install Half-Life Dedicated Server, or run doctor-testbed.ps1 -Repair."
+    }
+
+    if (($selectedCandidate.Probe.Kind -eq "half_life_client_install") -and (-not ($viableCandidates | Where-Object { $_.Probe.IsDedicatedPreferred }))) {
+        $selectionWarnings.Add("No dedicated HLDS template was available, so the selection fell back to a regular Half-Life install that happens to contain hlds.exe.")
+    }
+
+    return [PSCustomObject]@{
+        SelectedCandidate = $selectedCandidate
+        Candidates = $candidates.ToArray()
+        ViableCandidates = $viableCandidates
+        HasDedicatedCandidate = [bool]($viableCandidates | Where-Object { $_.Probe.IsDedicatedPreferred } | Select-Object -First 1)
+        Warnings = $selectionWarnings.ToArray()
+        SteamCmdExe = $steamCmdExe
+    }
 }
 
 function Resolve-HldsTemplateRoot {
@@ -639,36 +1032,596 @@ function Resolve-HldsTemplateRoot {
         [string]$ExplicitHldsExe,
         [string]$ExplicitHlExe,
         [string]$ExplicitSteamCmdExe,
-        [switch]$AllowSteamCmdDownload
+        [switch]$AllowSteamCmdDownload,
+        [switch]$ForceRefreshSteamCmdTemplate
     )
 
-    Import-HLServerEnv
+    $selection = Get-HldsTemplateSelection -ExplicitTemplateRoot $ExplicitTemplateRoot -ExplicitHldsExe $ExplicitHldsExe -ExplicitHlExe $ExplicitHlExe -ExplicitSteamCmdExe $ExplicitSteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload -ForceRefreshSteamCmdTemplate:$ForceRefreshSteamCmdTemplate
+    return $selection.SelectedCandidate.Root
+}
 
-    $templateRoot = Resolve-DirectoryPath -ExplicitPath $ExplicitTemplateRoot -EnvName "HL_RUNTIME_TEMPLATE" -DisplayName "Runtime template root"
-    if ($templateRoot) {
-        return $templateRoot
+function Get-TestbedRuntimeManifestPath {
+    param(
+        [string]$RuntimeRoot = (Get-TestbedRuntimeRoot)
+    )
+
+    return (Join-Path (Get-FullPath -Path $RuntimeRoot) ".hl-server-runtime.json")
+}
+
+function Read-TestbedRuntimeManifest {
+    param(
+        [string]$RuntimeRoot = (Get-TestbedRuntimeRoot)
+    )
+
+    $manifestPath = Get-TestbedRuntimeManifestPath -RuntimeRoot $RuntimeRoot
+    if (-not (Test-LeafPath -Path $manifestPath)) {
+        return $null
     }
 
-    $hldsExe = Resolve-HldsExe -ExplicitPath $ExplicitHldsExe
-    if ($hldsExe) {
-        return (Split-Path -Parent $hldsExe)
+    try {
+        return (Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json)
+    }
+    catch {
+        return [PSCustomObject]@{
+            Path = $manifestPath
+            ParseError = $_.Exception.Message
+        }
+    }
+}
+
+function Write-TestbedRuntimeManifest {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RuntimeRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$Configuration,
+        [Parameter(Mandatory = $true)]
+        $TemplateSelection,
+        [Parameter(Mandatory = $true)]
+        $MirrorResult,
+        [Parameter(Mandatory = $true)]
+        [string]$InstalledDllPath,
+        [string]$InstalledPdbPath,
+        [bool]$CreatedSteamAppIdFile = $false
+    )
+
+    $manifestPath = Get-TestbedRuntimeManifestPath -RuntimeRoot $RuntimeRoot
+    $selectedCandidate = $TemplateSelection.SelectedCandidate
+
+    $manifest = [ordered]@{
+        runtimeRoot = (Get-FullPath -Path $RuntimeRoot)
+        configuration = $Configuration
+        sourceRoot = $selectedCandidate.Root
+        sourceKind = $selectedCandidate.Probe.Kind
+        sourceKindLabel = $selectedCandidate.Probe.KindLabel
+        selectionSource = $selectedCandidate.SelectionSource
+        selectionReason = $selectedCandidate.Reason
+        sourceHldsExe = $selectedCandidate.Probe.HldsExe
+        sourceHlExe = $selectedCandidate.Probe.HlExe
+        sourceSteamAppId = $selectedCandidate.Probe.SteamAppId
+        suggestedSteamAppId = $selectedCandidate.Probe.SuggestedSteamAppId
+        createdSteamAppIdFile = $CreatedSteamAppIdFile
+        installedDllPath = $InstalledDllPath
+        installedPdbPath = $InstalledPdbPath
+        mirroredTopLevelEntries = @($MirrorResult.TopLevelEntries)
+        createdAt = (Get-Date -Format o)
     }
 
-    $hlExe = Resolve-HlExe -ExplicitPath $ExplicitHlExe
-    if ($hlExe) {
-        $hlRoot = Split-Path -Parent $hlExe
-        $embeddedHlds = Join-Path $hlRoot "hlds.exe"
-        if (Test-LeafPath -Path $embeddedHlds) {
-            return $hlRoot
+    $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding ASCII
+    return $manifestPath
+}
+
+function Get-TestbedRuntimeEntryComparison {
+    param(
+        [Parameter(Mandatory = $true)]
+        $SourceProbe,
+        [Parameter(Mandatory = $true)]
+        $RuntimeProbe
+    )
+
+    $comparisons = New-Object System.Collections.Generic.List[object]
+
+    foreach ($definition in Get-TestbedRuntimeKeyEntryDefinitions) {
+        $sourceState = $SourceProbe.EntryStates | Where-Object { $_.RelativePath -eq $definition.RelativePath } | Select-Object -First 1
+        $runtimeState = $RuntimeProbe.EntryStates | Where-Object { $_.RelativePath -eq $definition.RelativePath } | Select-Object -First 1
+        $sourcePresent = if ($sourceState) { [bool]$sourceState.Present } else { $false }
+        $runtimePresent = if ($runtimeState) { [bool]$runtimeState.Present } else { $false }
+        $expected = $definition.AlwaysRequired -or $sourcePresent
+
+        $comparisons.Add([PSCustomObject]@{
+            RelativePath = $definition.RelativePath
+            Description = $definition.Description
+            PathType = $definition.PathType
+            SourcePresent = $sourcePresent
+            RuntimePresent = $runtimePresent
+            Expected = $expected
+            MissingExpected = $expected -and (-not $runtimePresent)
+        })
+    }
+
+    return $comparisons.ToArray()
+}
+
+function Get-LatestHldsLaunchFailure {
+    $logsRoot = Get-TestbedLogsRoot
+    if (-not (Test-Path -LiteralPath $logsRoot -PathType Container)) {
+        return $null
+    }
+
+    $knownPatterns = @(
+        "Unable to initialize Steam",
+        'Failed to load "SDL3.dll"',
+        'Failed to load "SDL2.dll"'
+    )
+
+    foreach ($logFile in (Get-ChildItem -LiteralPath $logsRoot -File -Filter "hlds-*.log" | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 20)) {
+        $matches = New-Object System.Collections.Generic.List[string]
+
+        foreach ($pattern in $knownPatterns) {
+            if (Select-String -Path $logFile.FullName -Pattern $pattern -SimpleMatch -Quiet -ErrorAction SilentlyContinue) {
+                $matches.Add($pattern)
+            }
+        }
+
+        if ($matches.Count -gt 0) {
+            return [PSCustomObject]@{
+                Path = $logFile.FullName
+                LastWriteTimeUtc = $logFile.LastWriteTimeUtc
+                Matches = $matches.ToArray()
+                Summary = ($matches -join "; ")
+                Tail = @(Get-Content -LiteralPath $logFile.FullName -Tail 12)
+            }
         }
     }
 
-    $steamCmdExe = Resolve-SteamCmdExe -ExplicitPath $ExplicitSteamCmdExe -AllowDownload:$AllowSteamCmdDownload
-    if ($steamCmdExe) {
-        return (Install-HldsTemplateFromSteamCmd -SteamCmdExe $steamCmdExe)
+    return $null
+}
+
+function Get-TestbedDoctorReport {
+    param(
+        [ValidateSet("Debug", "Release")]
+        [string]$Configuration = "Debug",
+        [string]$ExplicitTemplateRoot,
+        [string]$ExplicitHldsExe,
+        [string]$ExplicitHlExe,
+        [string]$ExplicitSteamCmdExe,
+        [switch]$AllowSteamCmdDownload,
+        [switch]$ForceRefreshSteamCmdTemplate,
+        [switch]$IgnoreLatestLaunchFailure
+    )
+
+    $configuration = Get-ValidatedConfiguration -Configuration $Configuration
+    $runtimeRoot = Get-TestbedRuntimeRoot
+    $runtimeProbe = Get-HldsRuntimeProbe -Root $runtimeRoot
+    $runtimeManifest = Read-TestbedRuntimeManifest -RuntimeRoot $runtimeRoot
+    $buildDllPath = Get-HlDllPath -Configuration $configuration
+    $buildDllExists = Test-LeafPath -Path $buildDllPath
+
+    $selection = $null
+    $selectionError = $null
+
+    try {
+        $selection = Get-HldsTemplateSelection -ExplicitTemplateRoot $ExplicitTemplateRoot -ExplicitHldsExe $ExplicitHldsExe -ExplicitHlExe $ExplicitHlExe -ExplicitSteamCmdExe $ExplicitSteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload -ForceRefreshSteamCmdTemplate:$ForceRefreshSteamCmdTemplate
+    }
+    catch {
+        $selectionError = $_.Exception.Message
     }
 
-    throw "Unable to resolve an HLDS runtime template. Set HLDS_EXE or HL_RUNTIME_TEMPLATE, or provide STEAMCMD_EXE, or pass -AllowSteamCmdDownload."
+    $entryComparison = @()
+    if ($selection -and $selection.SelectedCandidate -and $runtimeProbe.Exists) {
+        $entryComparison = @(Get-TestbedRuntimeEntryComparison -SourceProbe $selection.SelectedCandidate.Probe -RuntimeProbe $runtimeProbe)
+    }
+
+    $issues = New-Object System.Collections.Generic.List[string]
+    $warnings = New-Object System.Collections.Generic.List[string]
+    $recommendations = New-Object System.Collections.Generic.List[string]
+    $classification = "healthy"
+    $needsRepair = $false
+
+    if (-not $buildDllExists) {
+        $warnings.Add("Build artifact not found at $buildDllPath.")
+        $recommendations.Add("Run .\scripts\build.ps1 -Configuration $configuration before attempting a repair.")
+    }
+
+    if ($selectionError) {
+        $classification = "insufficient template source"
+        $issues.Add($selectionError)
+        $recommendations.Add("Set HL_RUNTIME_TEMPLATE or HLDS_EXE to a valid runtime root, or run .\scripts\doctor-testbed.ps1 -Repair to provision a dedicated template into testbed/cache.")
+    }
+    elseif ($selection -and $selection.SelectedCandidate) {
+        foreach ($warning in @($selection.Warnings)) {
+            if (-not [string]::IsNullOrWhiteSpace($warning)) {
+                $warnings.Add($warning)
+            }
+        }
+
+        if (Test-PathsEqual -Left $selection.SelectedCandidate.Root -Right $runtimeRoot) {
+            $classification = "insufficient template source"
+            $issues.Add("The selected runtime template resolves to the disposable runtime itself. Choose a real install root or a cached template instead.")
+            $recommendations.Add("Clear HL_RUNTIME_TEMPLATE and HLDS_EXE if they point at testbed/runtime, then rerun the doctor.")
+        }
+    }
+
+    if ($classification -eq "healthy") {
+        if (-not $runtimeProbe.Exists) {
+            $classification = "stale disposable runtime"
+            $needsRepair = $true
+            $issues.Add("Disposable runtime root does not exist: $runtimeRoot")
+            $recommendations.Add("Run .\scripts\doctor-testbed.ps1 -Repair to rebuild testbed/runtime from the selected source.")
+        }
+        elseif ($runtimeManifest -and $runtimeManifest.PSObject.Properties["ParseError"]) {
+            $classification = "stale disposable runtime"
+            $needsRepair = $true
+            $issues.Add("Disposable runtime manifest could not be parsed: $($runtimeManifest.ParseError)")
+            $recommendations.Add("Run .\scripts\doctor-testbed.ps1 -Repair to rebuild the disposable runtime and rewrite the manifest.")
+        }
+        elseif (-not $runtimeManifest) {
+            $classification = "stale disposable runtime"
+            $needsRepair = $true
+            $issues.Add("Disposable runtime manifest is missing from testbed/runtime.")
+            $recommendations.Add("Run .\scripts\doctor-testbed.ps1 -Repair to refresh the disposable runtime.")
+        }
+        elseif ($runtimeManifest.sourceRoot -and $selection -and $selection.SelectedCandidate -and (-not (Test-PathsEqual -Left $runtimeManifest.sourceRoot -Right $selection.SelectedCandidate.Root))) {
+            $classification = "stale disposable runtime"
+            $needsRepair = $true
+            $issues.Add("Disposable runtime was mirrored from $($runtimeManifest.sourceRoot), but the current source selection resolves to $($selection.SelectedCandidate.Root).")
+            $recommendations.Add("Run .\scripts\doctor-testbed.ps1 -Repair to refresh testbed/runtime from the newly selected source.")
+        }
+        elseif ($runtimeManifest.configuration -and (-not $runtimeManifest.configuration.Equals($configuration, [System.StringComparison]::OrdinalIgnoreCase))) {
+            $classification = "stale disposable runtime"
+            $needsRepair = $true
+            $issues.Add("Disposable runtime was prepared for configuration $($runtimeManifest.configuration), not the requested $configuration build.")
+            $recommendations.Add("Run .\scripts\install-testbed.ps1 -Configuration $configuration to refresh the disposable runtime.")
+        }
+    }
+
+    if ($classification -eq "healthy" -and $runtimeProbe.Exists -and (-not $runtimeProbe.IsRunnable)) {
+        $classification = "missing executable dependency"
+        $needsRepair = $true
+        $issues.Add("Disposable runtime is missing required base entries: $($runtimeProbe.MissingBaseRequired -join ', ').")
+        $recommendations.Add("Run .\scripts\doctor-testbed.ps1 -Repair to refresh the mirrored executable-side dependencies.")
+    }
+
+    $missingExpectedEntries = @($entryComparison | Where-Object { $_.MissingExpected } | Select-Object -ExpandProperty RelativePath)
+    if ($classification -eq "healthy" -and $missingExpectedEntries.Count -gt 0) {
+        $classification = "missing executable dependency"
+        $needsRepair = $true
+        $issues.Add("Disposable runtime is missing entries that exist in the selected source: $($missingExpectedEntries -join ', ').")
+        $recommendations.Add("Run .\scripts\doctor-testbed.ps1 -Repair to refresh the mirrored executable-side dependencies.")
+    }
+
+    $latestLaunchFailure = if ($IgnoreLatestLaunchFailure) { $null } else { Get-LatestHldsLaunchFailure }
+    $manifestCreatedAtUtc = $null
+    if ($runtimeManifest -and $runtimeManifest.PSObject.Properties["createdAt"] -and (-not [string]::IsNullOrWhiteSpace([string]$runtimeManifest.createdAt))) {
+        try {
+            $manifestCreatedAtUtc = ([DateTimeOffset]::Parse([string]$runtimeManifest.createdAt)).UtcDateTime
+        }
+        catch {
+            $manifestCreatedAtUtc = $null
+        }
+    }
+
+    $latestFailureAppliesToCurrentRuntime = $latestLaunchFailure -and (($null -eq $manifestCreatedAtUtc) -or ($latestLaunchFailure.LastWriteTimeUtc -ge $manifestCreatedAtUtc))
+    if ($latestFailureAppliesToCurrentRuntime) {
+        if ($classification -eq "healthy") {
+            $classification = "unknown external Steam/runtime issue"
+            $issues.Add("Latest HLDS launch log still reports: $($latestLaunchFailure.Summary)")
+            if ($selection -and $selection.SelectedCandidate -and $selection.SelectedCandidate.Probe.Kind -eq "half_life_client_install" -and (-not $selection.HasDedicatedCandidate)) {
+                $recommendations.Add("Run .\scripts\doctor-testbed.ps1 -Repair to cache a dedicated HLDS template instead of relying on the regular Half-Life client install.")
+            }
+            else {
+                $recommendations.Add("Verify the selected runtime still launches outside the repo and that the local Steam install is healthy.")
+            }
+        }
+        else {
+            $warnings.Add("Latest HLDS launch log reports: $($latestLaunchFailure.Summary)")
+        }
+    }
+    elseif ($latestLaunchFailure) {
+        $warnings.Add("Ignoring older HLDS launch failure from $($latestLaunchFailure.Path) because the disposable runtime has been refreshed since then.")
+    }
+
+    return [PSCustomObject]@{
+        Configuration = $configuration
+        RuntimeRoot = $runtimeRoot
+        RuntimeProbe = $runtimeProbe
+        RuntimeManifest = $runtimeManifest
+        BuildDllPath = $buildDllPath
+        BuildDllExists = $buildDllExists
+        SourceSelection = $selection
+        SourceSelectionError = $selectionError
+        EntryComparison = $entryComparison
+        Classification = $classification
+        Issues = $issues.ToArray()
+        Warnings = $warnings.ToArray()
+        Recommendations = $recommendations.ToArray()
+        LatestLaunchFailure = $latestLaunchFailure
+        LatestLaunchFailureApplies = $latestFailureAppliesToCurrentRuntime
+        NeedsRepair = $needsRepair
+        IsHealthy = ($classification -eq "healthy")
+    }
+}
+
+function Write-TestbedDoctorSummary {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Report
+    )
+
+    $selection = if ($Report.SourceSelection) { $Report.SourceSelection.SelectedCandidate } else { $null }
+
+    Write-Step "Testbed runtime doctor"
+    Write-Host "Diagnosis           : $($Report.Classification)"
+    Write-Host "Configuration       : $($Report.Configuration)"
+    Write-Host "Disposable runtime  : $($Report.RuntimeRoot)"
+    Write-Host "Build hl.dll        : $(if ($Report.BuildDllExists) { $Report.BuildDllPath } else { 'missing' })"
+
+    if ($selection) {
+        Write-Host "Selected source     : $($selection.Root)"
+        Write-Host "Source kind         : $($selection.Probe.KindLabel)"
+        Write-Host "Selection reason    : $($selection.Reason)"
+        Write-Host "Selected hlds.exe   : $(if ($selection.Probe.HldsExe) { $selection.Probe.HldsExe } else { 'missing' })"
+        Write-Host "Selected hl.exe     : $(if ($selection.Probe.HlExe) { $selection.Probe.HlExe } else { 'not found' })"
+    }
+    elseif ($Report.SourceSelectionError) {
+        Write-Host "Selected source     : unavailable"
+        Write-Host "Selection reason    : $($Report.SourceSelectionError)"
+    }
+
+    $manifestPath = Get-TestbedRuntimeManifestPath -RuntimeRoot $Report.RuntimeRoot
+    Write-Host "Runtime manifest    : $(if (Test-LeafPath -Path $manifestPath) { $manifestPath } else { 'missing' })"
+
+    if ($Report.LatestLaunchFailure -and $Report.LatestLaunchFailureApplies) {
+        Write-Host "Latest blocker      : $($Report.LatestLaunchFailure.Summary)"
+        Write-Host "Latest blocker log  : $($Report.LatestLaunchFailure.Path)"
+    }
+
+    $entriesToPrint = if ($Report.EntryComparison.Count -gt 0) {
+        $Report.EntryComparison
+    }
+    else {
+        @(
+            $Report.RuntimeProbe.EntryStates | ForEach-Object {
+                [PSCustomObject]@{
+                    RelativePath = $_.RelativePath
+                    Description = $_.Description
+                    SourcePresent = $null
+                    RuntimePresent = $_.Present
+                    Expected = $_.AlwaysRequired
+                    MissingExpected = $_.AlwaysRequired -and (-not $_.Present)
+                }
+            }
+        )
+    }
+
+    foreach ($entry in $entriesToPrint) {
+        $status = if ($entry.RuntimePresent) {
+            "found"
+        }
+        elseif ($entry.Expected) {
+            "missing"
+        }
+        else {
+            "not present"
+        }
+
+        $sourceHint = if ($null -ne $entry.SourcePresent) {
+            "; source=" + $(if ($entry.SourcePresent) { "found" } else { "not present" })
+        }
+        else {
+            ""
+        }
+
+        Write-Host ("Key entry           : {0} -> {1}{2}" -f $entry.RelativePath, $status, $sourceHint)
+    }
+
+    foreach ($warning in @($Report.Warnings)) {
+        Write-Host "Warning             : $warning"
+    }
+
+    foreach ($issue in @($Report.Issues)) {
+        Write-Host "Issue               : $issue"
+    }
+
+    foreach ($recommendation in @($Report.Recommendations)) {
+        Write-Host "Remediation         : $recommendation"
+    }
+}
+
+function Get-TestbedDoctorFailureMessage {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Report
+    )
+
+    $issue = if ($Report.Issues.Count -gt 0) { $Report.Issues[0] } else { "The testbed runtime doctor reported '$($Report.Classification)'." }
+    return ("Testbed runtime diagnosis '{0}': {1}" -f $Report.Classification, $issue)
+}
+
+function Copy-RuntimeTemplateToDisposable {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SourceRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$RuntimeRoot
+    )
+
+    $topLevelEntries = New-Object System.Collections.Generic.List[string]
+
+    foreach ($item in (Get-ChildItem -LiteralPath $SourceRoot -Force | Sort-Object Name)) {
+        $topLevelEntries.Add($item.Name)
+        Copy-Item -LiteralPath $item.FullName -Destination $RuntimeRoot -Recurse -Force
+    }
+
+    return [PSCustomObject]@{
+        SourceRoot = $SourceRoot
+        RuntimeRoot = $RuntimeRoot
+        TopLevelEntries = $topLevelEntries.ToArray()
+    }
+}
+
+function Ensure-DisposableRuntimeKeyEntries {
+    param(
+        [Parameter(Mandatory = $true)]
+        $SourceProbe,
+        [Parameter(Mandatory = $true)]
+        [string]$RuntimeRoot
+    )
+
+    $createdSteamAppIdFile = $false
+
+    foreach ($definition in Get-TestbedRuntimeKeyEntryDefinitions) {
+        $sourcePath = Join-Path $SourceProbe.Root $definition.RelativePath
+        $runtimePath = Join-Path $RuntimeRoot $definition.RelativePath
+        $sourceState = $SourceProbe.EntryStates | Where-Object { $_.RelativePath -eq $definition.RelativePath } | Select-Object -First 1
+        $sourcePresent = if ($sourceState) { [bool]$sourceState.Present } else { $false }
+
+        if (-not $sourcePresent) {
+            continue
+        }
+
+        if ($definition.PathType -eq "Container") {
+            if (-not (Test-Path -LiteralPath $runtimePath -PathType Container)) {
+                Copy-Item -LiteralPath $sourcePath -Destination $RuntimeRoot -Recurse -Force
+            }
+        }
+        elseif (-not (Test-LeafPath -Path $runtimePath)) {
+            Ensure-Directory -Path (Split-Path -Parent $runtimePath)
+            Copy-Item -LiteralPath $sourcePath -Destination $runtimePath -Force
+        }
+    }
+
+    $runtimeSteamAppIdPath = Join-Path $RuntimeRoot "steam_appid.txt"
+    if ((-not (Test-LeafPath -Path $runtimeSteamAppIdPath)) -and (-not [string]::IsNullOrWhiteSpace($SourceProbe.SuggestedSteamAppId))) {
+        Set-Content -LiteralPath $runtimeSteamAppIdPath -Value $SourceProbe.SuggestedSteamAppId -Encoding ASCII
+        $createdSteamAppIdFile = $true
+    }
+
+    return [PSCustomObject]@{
+        CreatedSteamAppIdFile = $createdSteamAppIdFile
+    }
+}
+
+function Get-TestbedRuntimeProcesses {
+    param(
+        [string]$RuntimeRoot = (Get-TestbedRuntimeRoot)
+    )
+
+    $fullRuntimeRoot = Get-FullPath -Path $RuntimeRoot
+    $processes = New-Object System.Collections.Generic.List[object]
+
+    foreach ($process in (Get-Process -ErrorAction SilentlyContinue)) {
+        $processPath = $null
+
+        try {
+            $processPath = $process.Path
+        }
+        catch {
+            $processPath = $null
+        }
+
+        if ([string]::IsNullOrWhiteSpace($processPath)) {
+            continue
+        }
+
+        $fullProcessPath = Get-FullPath -Path $processPath
+        if ($fullProcessPath.StartsWith($fullRuntimeRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $processes.Add([PSCustomObject]@{
+                Id = $process.Id
+                ProcessName = $process.ProcessName
+                Path = $fullProcessPath
+            })
+        }
+    }
+
+    return $processes.ToArray()
+}
+
+function Install-TestbedRuntime {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Configuration,
+        [Parameter(Mandatory = $true)]
+        [string]$BuiltDllPath,
+        [string]$BuiltPdbPath,
+        [string]$ExplicitTemplateRoot,
+        [string]$ExplicitHldsExe,
+        [string]$ExplicitHlExe,
+        [string]$ExplicitSteamCmdExe,
+        [switch]$AllowSteamCmdDownload,
+        [switch]$ForceTemplateRefresh
+    )
+
+    $configuration = Get-ValidatedConfiguration -Configuration $Configuration
+    $selection = Get-HldsTemplateSelection -ExplicitTemplateRoot $ExplicitTemplateRoot -ExplicitHldsExe $ExplicitHldsExe -ExplicitHlExe $ExplicitHlExe -ExplicitSteamCmdExe $ExplicitSteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload -ForceRefreshSteamCmdTemplate:$ForceTemplateRefresh
+    $selectedCandidate = $selection.SelectedCandidate
+    $runtimeRoot = Get-TestbedRuntimeRoot
+    $testbedRoot = Get-TestbedRoot
+
+    if (Test-PathsEqual -Left $selectedCandidate.Root -Right $runtimeRoot) {
+        throw "The selected runtime template resolves to the disposable runtime itself: $runtimeRoot"
+    }
+
+    Write-Step "Preparing disposable runtime from $($selectedCandidate.Root)"
+    Write-Host "Template source kind: $($selectedCandidate.Probe.KindLabel)"
+    Write-Host "Template selection  : $($selectedCandidate.Reason)"
+    Write-Host "Selected hlds.exe   : $($selectedCandidate.Probe.HldsExe)"
+    Write-Host "Selected hl.exe     : $(if ($selectedCandidate.Probe.HlExe) { $selectedCandidate.Probe.HlExe } else { 'not found' })"
+
+    foreach ($warning in @($selection.Warnings)) {
+        Write-Host "Template warning    : $warning"
+    }
+
+    $runtimeProcesses = @(Get-TestbedRuntimeProcesses -RuntimeRoot $runtimeRoot)
+    if ($runtimeProcesses.Count -gt 0) {
+        $details = $runtimeProcesses | ForEach-Object { '{0} (PID {1})' -f $_.Path, $_.Id }
+        throw "Cannot refresh the disposable runtime while it is still in use: $($details -join '; '). Stop the existing testbed HLDS/HL processes and retry."
+    }
+
+    Reset-DisposableDirectory -Path $runtimeRoot -AllowedRoot $testbedRoot
+    $mirrorResult = Copy-RuntimeTemplateToDisposable -SourceRoot $selectedCandidate.Root -RuntimeRoot $runtimeRoot
+    $runtimeFixups = Ensure-DisposableRuntimeKeyEntries -SourceProbe $selectedCandidate.Probe -RuntimeRoot $runtimeRoot
+
+    $runtimeValveDlls = Join-Path $runtimeRoot "valve\dlls"
+    Ensure-Directory -Path $runtimeValveDlls
+    Copy-Item -LiteralPath $BuiltDllPath -Destination (Join-Path $runtimeValveDlls "hl.dll") -Force
+
+    if (-not [string]::IsNullOrWhiteSpace($BuiltPdbPath) -and (Test-LeafPath -Path $BuiltPdbPath)) {
+        Copy-Item -LiteralPath $BuiltPdbPath -Destination (Join-Path $runtimeValveDlls "hl.pdb") -Force
+    }
+
+    $markerPath = Join-Path $runtimeRoot ".hl-server-testbed.txt"
+    @"
+Disposable runtime prepared by hl-server.
+Template root: $($selectedCandidate.Root)
+Template reason: $($selectedCandidate.Reason)
+Installed hl.dll: $BuiltDllPath
+Timestamp: $(Get-Date -Format o)
+"@ | Set-Content -LiteralPath $markerPath -Encoding ASCII
+
+    $manifestPath = Write-TestbedRuntimeManifest -RuntimeRoot $runtimeRoot -Configuration $configuration -TemplateSelection $selection -MirrorResult $mirrorResult -InstalledDllPath $BuiltDllPath -InstalledPdbPath $BuiltPdbPath -CreatedSteamAppIdFile:$runtimeFixups.CreatedSteamAppIdFile
+    $runtimeProbe = Get-HldsRuntimeProbe -Root $runtimeRoot
+    $entryComparison = Get-TestbedRuntimeEntryComparison -SourceProbe $selectedCandidate.Probe -RuntimeProbe $runtimeProbe
+    $missingExpectedEntries = @($entryComparison | Where-Object { $_.MissingExpected } | Select-Object -ExpandProperty RelativePath)
+
+    if (-not $runtimeProbe.IsRunnable) {
+        throw "Disposable runtime is missing required entries after mirroring: $($runtimeProbe.MissingBaseRequired -join ', ')"
+    }
+
+    if ($missingExpectedEntries.Count -gt 0) {
+        throw "Disposable runtime is missing entries that exist in the selected source after mirroring: $($missingExpectedEntries -join ', ')"
+    }
+
+    return [PSCustomObject]@{
+        RuntimeRoot = $runtimeRoot
+        TemplateSelection = $selection
+        RuntimeProbe = $runtimeProbe
+        ManifestPath = $manifestPath
+        MarkerPath = $markerPath
+        InstalledDllPath = (Join-Path $runtimeValveDlls "hl.dll")
+        InstalledPdbPath = if (Test-LeafPath -Path (Join-Path $runtimeValveDlls "hl.pdb")) { Join-Path $runtimeValveDlls "hl.pdb" } else { $null }
+        CreatedSteamAppIdFile = $runtimeFixups.CreatedSteamAppIdFile
+    }
 }
 
 function Get-HldsArgumentList {
@@ -1381,6 +2334,90 @@ function Assert-UdpPortAvailable {
     }
 }
 
+function Get-HldsRuntimeSteamAppId {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RuntimeRoot
+    )
+
+    $steamAppIdPath = Join-Path (Get-FullPath -Path $RuntimeRoot) "steam_appid.txt"
+    if (-not (Test-LeafPath -Path $steamAppIdPath)) {
+        return $null
+    }
+
+    $value = ((Get-Content -LiteralPath $steamAppIdPath | Select-Object -First 1) -as [string])
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        return $null
+    }
+
+    return $value.Trim()
+}
+
+function Push-HldsRuntimeEnvironment {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RuntimeRoot
+    )
+
+    $steamAppId = Get-HldsRuntimeSteamAppId -RuntimeRoot $RuntimeRoot
+    $state = [PSCustomObject]@{
+        SteamAppId = [System.Environment]::GetEnvironmentVariable("SteamAppId", "Process")
+        SteamGameId = [System.Environment]::GetEnvironmentVariable("SteamGameId", "Process")
+        EffectiveSteamAppId = $steamAppId
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($steamAppId)) {
+        [System.Environment]::SetEnvironmentVariable("SteamAppId", $steamAppId, "Process")
+        [System.Environment]::SetEnvironmentVariable("SteamGameId", $steamAppId, "Process")
+    }
+
+    return $state
+}
+
+function Pop-HldsRuntimeEnvironment {
+    param(
+        [Parameter(Mandatory = $true)]
+        $State
+    )
+
+    [System.Environment]::SetEnvironmentVariable("SteamAppId", $State.SteamAppId, "Process")
+    [System.Environment]::SetEnvironmentVariable("SteamGameId", $State.SteamGameId, "Process")
+}
+
+function Write-HldsLaunchMetadata {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RuntimeRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$HldsExe,
+        [Parameter(Mandatory = $true)]
+        [string[]]$ArgumentList,
+        [Parameter(Mandatory = $true)]
+        [string]$Timestamp,
+        [string]$ServerCfgName,
+        [string]$SteamAppId
+    )
+
+    $logsRoot = Get-TestbedLogsRoot
+    Ensure-Directory -Path $logsRoot
+
+    $metadataPath = Join-Path $logsRoot ("hlds-" + $Timestamp + "-launch.txt")
+    $lines = New-Object System.Collections.Generic.List[string]
+
+    $lines.Add(("Timestamp: {0}" -f (Get-Date -Format o)))
+    $lines.Add(("Executable: {0}" -f $HldsExe))
+    $lines.Add(("Working directory: {0}" -f $RuntimeRoot))
+    $lines.Add(("Runtime root: {0}" -f $RuntimeRoot))
+    $lines.Add(("SteamAppId: {0}" -f $(if ([string]::IsNullOrWhiteSpace($SteamAppId)) { "<unset>" } else { $SteamAppId })))
+    if (-not [string]::IsNullOrWhiteSpace($ServerCfgName)) {
+        $lines.Add(("Server cfg: {0}" -f $ServerCfgName))
+    }
+
+    $lines.Add(("Arguments: {0}" -f ($ArgumentList -join " ")))
+    Set-Content -LiteralPath $metadataPath -Value $lines -Encoding ASCII
+    return $metadataPath
+}
+
 function Start-HldsDetached {
     param(
         [Parameter(Mandatory = $true)]
@@ -1413,16 +2450,26 @@ function Start-HldsDetached {
     $stdoutLog = Join-Path $logsRoot ("hlds-" + $timestamp + "-stdout.log")
     $stderrLog = Join-Path $logsRoot ("hlds-" + $timestamp + "-stderr.log")
     $serverCfgName = Write-HldsLaunchCvarConfig -RuntimeRoot $runtimeRoot -Cvars (Get-HldsLaunchCvars -SetCvar $SetCvar -Cvars $Cvars)
+    $argumentList = Get-HldsArgumentList -Map $Map -Port $Port -MaxPlayers $MaxPlayers -ServerCfgName $serverCfgName
+    $environmentState = Push-HldsRuntimeEnvironment -RuntimeRoot $runtimeRoot
 
-    $process = Start-Process -FilePath $hldsExe -WorkingDirectory $runtimeRoot -ArgumentList (Get-HldsArgumentList -Map $Map -Port $Port -MaxPlayers $MaxPlayers -ServerCfgName $serverCfgName) -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -PassThru
+    try {
+        $launchMetadataPath = Write-HldsLaunchMetadata -RuntimeRoot $runtimeRoot -HldsExe $hldsExe -ArgumentList $argumentList -Timestamp $timestamp -ServerCfgName $serverCfgName -SteamAppId $environmentState.EffectiveSteamAppId
+        $process = Start-Process -FilePath $hldsExe -WorkingDirectory $runtimeRoot -WindowStyle Hidden -ArgumentList $argumentList -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -PassThru
+    }
+    finally {
+        Pop-HldsRuntimeEnvironment -State $environmentState
+    }
 
     return [PSCustomObject]@{
         Process = $process
         RuntimeRoot = $runtimeRoot
         StdOutLog = $stdoutLog
         StdErrLog = $stderrLog
+        RuntimeLogsRoot = Join-Path $runtimeRoot "logs"
         QConsoleLog = Join-Path $runtimeRoot "qconsole.log"
         ValveQConsoleLog = Join-Path $runtimeRoot "valve\qconsole.log"
+        LaunchMetadataPath = $launchMetadataPath
     }
 }
 
@@ -1456,13 +2503,17 @@ function Invoke-HldsForeground {
     $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $stdoutLog = Join-Path $logsRoot ("hlds-" + $timestamp + "-stdout.log")
     $serverCfgName = Write-HldsLaunchCvarConfig -RuntimeRoot $runtimeRoot -Cvars (Get-HldsLaunchCvars -SetCvar $SetCvar -Cvars $Cvars)
+    $argumentList = Get-HldsArgumentList -Map $Map -Port $Port -MaxPlayers $MaxPlayers -ServerCfgName $serverCfgName
+    $environmentState = Push-HldsRuntimeEnvironment -RuntimeRoot $runtimeRoot
 
     Push-Location $runtimeRoot
     try {
-        & $hldsExe @(Get-HldsArgumentList -Map $Map -Port $Port -MaxPlayers $MaxPlayers -ServerCfgName $serverCfgName) 2>&1 | Tee-Object -FilePath $stdoutLog
+        Write-HldsLaunchMetadata -RuntimeRoot $runtimeRoot -HldsExe $hldsExe -ArgumentList $argumentList -Timestamp $timestamp -ServerCfgName $serverCfgName -SteamAppId $environmentState.EffectiveSteamAppId | Out-Null
+        & $hldsExe @argumentList 2>&1 | Tee-Object -FilePath $stdoutLog
         return $stdoutLog
     }
     finally {
+        Pop-HldsRuntimeEnvironment -State $environmentState
         Pop-Location
     }
 }
@@ -1476,6 +2527,7 @@ function Get-HldsLogCandidates {
     return @(
         $LaunchInfo.StdOutLog,
         $LaunchInfo.StdErrLog,
+        $LaunchInfo.RuntimeLogsRoot,
         $LaunchInfo.QConsoleLog,
         $LaunchInfo.ValveQConsoleLog
     )
@@ -1514,8 +2566,22 @@ function Wait-ForLogPattern {
 
     while ((Get-Date) -lt $deadline) {
         foreach ($path in $Paths) {
-            if (-not [string]::IsNullOrWhiteSpace($path) -and (Test-LeafPath -Path $path)) {
-                if (Select-String -Path $path -Pattern $Pattern -SimpleMatch -Quiet -ErrorAction SilentlyContinue) {
+            if ([string]::IsNullOrWhiteSpace($path)) {
+                continue
+            }
+
+            if (Test-Path -LiteralPath $path -PathType Container) {
+                $candidatePaths = @(Get-ChildItem -LiteralPath $path -File -Filter "L*.log" | Select-Object -ExpandProperty FullName)
+            }
+            elseif (Test-LeafPath -Path $path) {
+                $candidatePaths = @($path)
+            }
+            else {
+                $candidatePaths = @()
+            }
+
+            foreach ($candidatePath in $candidatePaths) {
+                if (Select-String -Path $candidatePath -Pattern $Pattern -SimpleMatch -Quiet -ErrorAction SilentlyContinue) {
                     return $true
                 }
             }
