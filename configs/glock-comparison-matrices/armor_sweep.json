@@ -1,0 +1,25 @@
+{
+  "name": "armor_sweep",
+  "description": "Manual comparison helper for exercising the same Glock profile across unarmored, armored, and protected-head dummy states. It organizes evidence collection, not authoritative balance conclusions.",
+  "defaults": {
+    "map": "crossfire",
+    "glockProfile": "baseline"
+  },
+  "steps": [
+    {
+      "name": "unarmored",
+      "labTargetProfile": "unarmored",
+      "operatorNote": "Capture a clean unarmored reference pass with at least one headshot attempt."
+    },
+    {
+      "name": "vest",
+      "labTargetProfile": "vest",
+      "operatorNote": "Compare torso hits against the unarmored pass and log at least one moving shot."
+    },
+    {
+      "name": "vest_headprotected",
+      "labTargetProfile": "vest_headprotected",
+      "operatorNote": "Attempt torso and head shots so the protected-head path and lethal-headshot evidence can be reviewed."
+    }
+  ]
+}

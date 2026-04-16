@@ -28,6 +28,9 @@ cvar_t sv_exp_move_spread_scale = {"sv_exp_move_spread_scale", "0.0", FCVAR_SERV
 cvar_t sv_exp_first_shot_accuracy = {"sv_exp_first_shot_accuracy", "0", FCVAR_SERVER};
 cvar_t sv_exp_spread_recovery = {"sv_exp_spread_recovery", "0.0", FCVAR_SERVER};
 cvar_t sv_exp_glock_profile_name = {"sv_exp_glock_profile_name", "default", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
+cvar_t sv_exp_session_tag = {"sv_exp_session_tag", "", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
+cvar_t sv_exp_matrix_name = {"sv_exp_matrix_name", "", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
+cvar_t sv_exp_matrix_step = {"sv_exp_matrix_step", "", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
 cvar_t sv_exp_glock_primary_base_spread = {"sv_exp_glock_primary_base_spread", "0.01", FCVAR_SERVER};
 cvar_t sv_exp_glock_primary_ground_move_penalty = {"sv_exp_glock_primary_ground_move_penalty", "0.08", FCVAR_SERVER};
 cvar_t sv_exp_glock_primary_air_move_penalty = {"sv_exp_glock_primary_air_move_penalty", "0.12", FCVAR_SERVER};
@@ -98,6 +101,11 @@ const char *GetNonEmptyCvarString(const cvar_t &cvar, const char *fallback)
     }
 
     return cvar.string;
+}
+
+const char *GetOptionalCvarString(const cvar_t &cvar)
+{
+    return cvar.string != NULL ? cvar.string : "";
 }
 
 const char *GetCurrentMapName()
@@ -517,6 +525,9 @@ void RegisterFutureGameplayCvars()
     CVAR_REGISTER(&sv_exp_first_shot_accuracy);
     CVAR_REGISTER(&sv_exp_spread_recovery);
     CVAR_REGISTER(&sv_exp_glock_profile_name);
+    CVAR_REGISTER(&sv_exp_session_tag);
+    CVAR_REGISTER(&sv_exp_matrix_name);
+    CVAR_REGISTER(&sv_exp_matrix_step);
     CVAR_REGISTER(&sv_exp_glock_primary_base_spread);
     CVAR_REGISTER(&sv_exp_glock_primary_ground_move_penalty);
     CVAR_REGISTER(&sv_exp_glock_primary_air_move_penalty);
@@ -576,6 +587,21 @@ float ExpSpreadRecoverySeconds()
 const char *ExpGlockProfileName()
 {
     return GetNonEmptyCvarString(sv_exp_glock_profile_name, "default");
+}
+
+const char *ExpSessionTag()
+{
+    return GetOptionalCvarString(sv_exp_session_tag);
+}
+
+const char *ExpMatrixName()
+{
+    return GetOptionalCvarString(sv_exp_matrix_name);
+}
+
+const char *ExpMatrixStep()
+{
+    return GetOptionalCvarString(sv_exp_matrix_step);
 }
 
 float ExpGlockPrimaryBaseSpread()

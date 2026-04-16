@@ -1,0 +1,89 @@
+{
+  "analyzedLogPath": "scripts/fixtures/comparison/armor_sweep-vest_headprotected.log",
+  "session": {
+    "timestamp": "2026-04-16T12:10:00",
+    "map": "fixture_range",
+    "game": "valve",
+    "status": "ready",
+    "file": "scripts/fixtures/comparison/armor_sweep-vest_headprotected.log",
+    "profileName": "baseline",
+    "targetProfileName": "vest_headprotected",
+    "sessionTag": "fixture-armor-sweep-03-vest_headprotected",
+    "matrixName": "armor_sweep",
+    "matrixStep": "vest_headprotected"
+  },
+  "metadata": {
+    "sessionTag": "fixture-armor-sweep-03-vest_headprotected",
+    "matrixName": "armor_sweep",
+    "matrixStep": "vest_headprotected",
+    "glockProfile": "baseline",
+    "labTargetProfile": "vest_headprotected"
+  },
+  "counters": {
+    "acceptedShots": 6,
+    "rejectedShots": 2,
+    "hitEvents": 5,
+    "killEvents": 1,
+    "dummyHits": 5,
+    "dummyKills": 1,
+    "dummyHeadshotHits": 2,
+    "dummyHeadshotKills": 1,
+    "dummyLethalHeadshotEvidence": 1,
+    "armoredDummyHits": 5,
+    "protectedDummyHeadshotHits": 2,
+    "protectedDummyHeadshotKills": 1
+  },
+  "stats": {
+    "appliedDamage": {
+      "Min": 5.0,
+      "Average": 20.5,
+      "Max": 75.0
+    }
+  },
+  "signals": {
+    "tapFireHoldRejections": true,
+    "movementPenaltyPositive": true,
+    "dummyHeadshotHitsPresent": true,
+    "armoredDummyHitsPresent": true,
+    "protectedDummyHeadshotHitsPresent": true,
+    "dummyLethalHeadshotEvidencePresent": true,
+    "lethalHeadshotEvidencePresent": true
+  },
+  "comparisonSummary": {
+    "sessionTag": "fixture-armor-sweep-03-vest_headprotected",
+    "matrixName": "armor_sweep",
+    "matrixStep": "vest_headprotected",
+    "glockProfile": "baseline",
+    "labTargetProfile": "vest_headprotected",
+    "acceptedShotCount": 6,
+    "rejectedShotCount": 2,
+    "hitCount": 5,
+    "killCount": 1,
+    "dummyHitCount": 5,
+    "dummyKillCount": 1,
+    "dummyHeadshotHitCount": 2,
+    "dummyHeadshotKillCount": 1,
+    "dummyLethalHeadshotEvidenceCount": 1,
+    "armoredDummyHitCount": 5,
+    "protectedDummyHeadshotHitCount": 2,
+    "protectedDummyHeadshotKillCount": 1,
+    "appliedDamage": {
+      "min": 5.0,
+      "average": 20.5,
+      "max": 75.0
+    },
+    "evidence": {
+      "tapFireRejection": true,
+      "movementPenalty": true,
+      "dummyHeadshotPath": true,
+      "armoredDummyPath": true,
+      "protectedHeadDummyPath": true,
+      "lethalHeadshotPath": true
+    },
+    "missingSignalNotes": []
+  },
+  "observations": [
+    "Synthetic protected-head armored comparison fixture."
+  ],
+  "warnings": []
+}

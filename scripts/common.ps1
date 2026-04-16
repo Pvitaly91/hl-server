@@ -300,6 +300,82 @@ function Resolve-DirectoryPath {
     return $null
 }
 
+function Get-TestbedSessionClientExe {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RuntimeRoot
+    )
+
+    $runtimeClient = Join-Path $RuntimeRoot "hl.exe"
+    if (Test-LeafPath -Path $runtimeClient) {
+        return $runtimeClient
+    }
+
+    return (Resolve-HlExe)
+}
+
+function Get-ObjectPropertyValue {
+    param(
+        $InputObject,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Names
+    )
+
+    if ($null -eq $InputObject) {
+        return $null
+    }
+
+    foreach ($name in $Names) {
+        $property = $InputObject.PSObject.Properties[$name]
+        if ($property) {
+            return $property.Value
+        }
+    }
+
+    return $null
+}
+
+function Get-OptionalObjectString {
+    param(
+        $InputObject,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Names
+    )
+
+    $value = Get-ObjectPropertyValue -InputObject $InputObject -Names $Names
+    if ($null -eq $value) {
+        return $null
+    }
+
+    $text = [string]$value
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        return $null
+    }
+
+    return $text.Trim()
+}
+
+function Test-FilesystemFriendlyName {
+    param(
+        [string]$Name
+    )
+
+    return (-not [string]::IsNullOrWhiteSpace($Name)) -and ($Name -match '^[A-Za-z0-9][A-Za-z0-9_-]*$')
+}
+
+function Assert-FilesystemFriendlyName {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [Parameter(Mandatory = $true)]
+        [string]$Label
+    )
+
+    if (-not (Test-FilesystemFriendlyName -Name $Name)) {
+        throw "$Label '$Name' must match ^[A-Za-z0-9][A-Za-z0-9_-]*$."
+    }
+}
+
 function Get-SteamInstallRoots {
     $roots = New-Object System.Collections.Generic.List[string]
 
@@ -653,6 +729,30 @@ function Get-GlockLabDummyLaunchAssignments {
     )
 }
 
+function Get-SessionMetadataLaunchAssignments {
+    param(
+        [string]$SessionTag,
+        [string]$MatrixName,
+        [string]$MatrixStep
+    )
+
+    $assignments = New-Object System.Collections.Generic.List[string]
+
+    if (-not [string]::IsNullOrWhiteSpace($SessionTag)) {
+        $assignments.Add(("sv_exp_session_tag={0}" -f $SessionTag.Trim()))
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($MatrixName)) {
+        $assignments.Add(("sv_exp_matrix_name={0}" -f $MatrixName.Trim()))
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($MatrixStep)) {
+        $assignments.Add(("sv_exp_matrix_step={0}" -f $MatrixStep.Trim()))
+    }
+
+    return $assignments.ToArray()
+}
+
 function ConvertTo-LaunchAssignments {
     param(
         [Parameter(Mandatory = $true)]
@@ -849,12 +949,198 @@ function Get-GlockLabTargetLaunchAssignments {
     return @("sv_exp_glock_lab_target_profile_name=$($target.Name)") + @($target.Assignments)
 }
 
+function Get-GlockComparisonMatricesRoot {
+    return (Join-RepoPath "configs\glock-comparison-matrices")
+}
+
+function ConvertTo-GlockComparisonMatrixStep {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$MatrixName,
+        [Parameter(Mandatory = $true)]
+        [string]$MatrixPath,
+        [Parameter(Mandatory = $true)]
+        $StepData,
+        $Defaults,
+        [Parameter(Mandatory = $true)]
+        [int]$Index
+    )
+
+    $stepName = Get-OptionalObjectString -InputObject $StepData -Names @("name", "tag", "stepName", "step")
+    if ([string]::IsNullOrWhiteSpace($stepName)) {
+        throw "Glock comparison matrix '$MatrixPath' step #$Index must define a non-empty 'name'."
+    }
+
+    Assert-FilesystemFriendlyName -Name $stepName -Label ("Glock comparison matrix step name in '$MatrixName'")
+
+    $profileName = Get-OptionalObjectString -InputObject $StepData -Names @("glockProfile", "glockProfileName", "profile")
+    if ([string]::IsNullOrWhiteSpace($profileName)) {
+        $profileName = Get-OptionalObjectString -InputObject $Defaults -Names @("glockProfile", "glockProfileName", "profile")
+    }
+
+    if ([string]::IsNullOrWhiteSpace($profileName)) {
+        throw "Glock comparison matrix '$MatrixPath' step '$stepName' must define a Glock profile name directly or via defaults."
+    }
+
+    $labTargetProfileName = Get-OptionalObjectString -InputObject $StepData -Names @("labTargetProfile", "labTargetProfileName", "targetProfile")
+    if ([string]::IsNullOrWhiteSpace($labTargetProfileName)) {
+        $labTargetProfileName = Get-OptionalObjectString -InputObject $Defaults -Names @("labTargetProfile", "labTargetProfileName", "targetProfile")
+    }
+
+    if ([string]::IsNullOrWhiteSpace($labTargetProfileName)) {
+        throw "Glock comparison matrix '$MatrixPath' step '$stepName' must define a lab target profile name directly or via defaults."
+    }
+
+    $map = Get-OptionalObjectString -InputObject $StepData -Names @("map", "mapOverride")
+    if ([string]::IsNullOrWhiteSpace($map)) {
+        $map = Get-OptionalObjectString -InputObject $Defaults -Names @("map", "mapOverride")
+    }
+    if ([string]::IsNullOrWhiteSpace($map)) {
+        $map = "crossfire"
+    }
+
+    $operatorNote = Get-OptionalObjectString -InputObject $StepData -Names @("operatorNote", "note", "checkFocus")
+    if ([string]::IsNullOrWhiteSpace($operatorNote)) {
+        $operatorNote = Get-OptionalObjectString -InputObject $Defaults -Names @("operatorNote", "note", "checkFocus")
+    }
+
+    $assignments = New-Object System.Collections.Generic.List[string]
+    $defaultExtraCvars = Get-ObjectPropertyValue -InputObject $Defaults -Names @("extraCvars", "cvars")
+    if ($null -ne $defaultExtraCvars) {
+        foreach ($assignment in (ConvertTo-LaunchAssignments -Cvars $defaultExtraCvars -SourceLabel "Glock comparison matrix defaults")) {
+            $assignments.Add($assignment)
+        }
+    }
+
+    $stepExtraCvars = Get-ObjectPropertyValue -InputObject $StepData -Names @("extraCvars", "cvars")
+    if ($null -ne $stepExtraCvars) {
+        foreach ($assignment in (ConvertTo-LaunchAssignments -Cvars $stepExtraCvars -SourceLabel ("Glock comparison matrix step '{0}'" -f $stepName))) {
+            $assignments.Add($assignment)
+        }
+    }
+
+    $profile = Get-GlockProfile -Name $profileName
+    $target = Get-GlockLabTarget -Name $labTargetProfileName
+
+    return [PSCustomObject]@{
+        Name = $stepName
+        Map = $map
+        OperatorNote = $operatorNote
+        GlockProfileName = $profile.Name
+        GlockProfile = $profile
+        LabTargetProfileName = $target.Name
+        LabTargetProfile = $target
+        Assignments = $assignments.ToArray()
+    }
+}
+
+function Get-GlockComparisonMatrices {
+    $matricesRoot = Get-GlockComparisonMatricesRoot
+    if (-not (Test-Path -LiteralPath $matricesRoot -PathType Container)) {
+        throw "Glock comparison matrices directory was not found: $matricesRoot"
+    }
+
+    $matrices = New-Object System.Collections.Generic.List[object]
+
+    foreach ($matrixFile in (Get-ChildItem -LiteralPath $matricesRoot -File -Filter "*.json" | Sort-Object BaseName, Name)) {
+        try {
+            $rawJson = Get-Content -LiteralPath $matrixFile.FullName -Raw
+            $matrixData = $rawJson | ConvertFrom-Json
+        }
+        catch {
+            throw "Failed to parse Glock comparison matrix '$($matrixFile.FullName)': $($_.Exception.Message)"
+        }
+
+        $matrixName = Get-OptionalObjectString -InputObject $matrixData -Names @("name")
+        $description = Get-OptionalObjectString -InputObject $matrixData -Names @("description")
+
+        if ([string]::IsNullOrWhiteSpace($matrixName)) {
+            throw "Glock comparison matrix '$($matrixFile.FullName)' must define a non-empty 'name'."
+        }
+
+        Assert-FilesystemFriendlyName -Name $matrixName -Label "Glock comparison matrix name"
+
+        if ([string]::IsNullOrWhiteSpace($description)) {
+            throw "Glock comparison matrix '$($matrixFile.FullName)' must define a non-empty 'description'."
+        }
+
+        if ($matrixFile.BaseName -ne $matrixName) {
+            throw "Glock comparison matrix filename '$($matrixFile.Name)' must match matrix name '$matrixName'."
+        }
+
+        $defaults = Get-ObjectPropertyValue -InputObject $matrixData -Names @("defaults")
+        $stepData = @(Get-ObjectPropertyValue -InputObject $matrixData -Names @("steps"))
+        if ($stepData.Count -eq 0) {
+            throw "Glock comparison matrix '$($matrixFile.FullName)' must define a non-empty 'steps' array."
+        }
+
+        $stepNames = New-Object System.Collections.Generic.HashSet[string] ([System.StringComparer]::OrdinalIgnoreCase)
+        $steps = New-Object System.Collections.Generic.List[object]
+        $stepIndex = 0
+
+        foreach ($entry in $stepData) {
+            $stepIndex += 1
+            $step = ConvertTo-GlockComparisonMatrixStep -MatrixName $matrixName -MatrixPath $matrixFile.FullName -StepData $entry -Defaults $defaults -Index $stepIndex
+            if (-not $stepNames.Add($step.Name)) {
+                throw "Glock comparison matrix '$($matrixFile.FullName)' contains a duplicate step name '$($step.Name)'."
+            }
+
+            $steps.Add($step)
+        }
+
+        $matrices.Add([PSCustomObject]@{
+            Name = $matrixName
+            Description = $description
+            Path = $matrixFile.FullName
+            Defaults = $defaults
+            Steps = $steps.ToArray()
+            StepCount = $steps.Count
+        })
+    }
+
+    return $matrices.ToArray()
+}
+
+function Get-GlockComparisonMatrix {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    $matrices = @(Get-GlockComparisonMatrices)
+    $match = $matrices | Where-Object { $_.Name.Equals($Name, [System.StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1
+    if ($match) {
+        return $match
+    }
+
+    $available = $matrices | Select-Object -ExpandProperty Name
+    $availableText = if ($available.Count -gt 0) { ($available -join ", ") } else { "none" }
+    throw "Unknown Glock comparison matrix '$Name'. Available matrices: $availableText"
+}
+
 function Get-WeaponDebugLogsRoot {
     return (Get-TestbedLogsRoot)
 }
 
 function Get-WeaponDebugReportsRoot {
     return (Join-Path (Get-WeaponDebugLogsRoot) "reports")
+}
+
+function Get-GlockComparisonReportsRoot {
+    return (Join-Path (Get-WeaponDebugReportsRoot) "glock-comparison-matrices")
+}
+
+function Get-LatestGlockComparisonReportDirectory {
+    $reportsRoot = Get-GlockComparisonReportsRoot
+    if (-not (Test-Path -LiteralPath $reportsRoot -PathType Container)) {
+        return $null
+    }
+
+    return (
+        Get-ChildItem -LiteralPath $reportsRoot -Directory |
+        Sort-Object LastWriteTimeUtc, Name |
+        Select-Object -Last 1
+    )
 }
 
 function Get-LatestWeaponDebugLog {

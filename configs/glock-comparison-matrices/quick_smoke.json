@@ -1,0 +1,21 @@
+{
+  "name": "quick_smoke",
+  "description": "Small manual comparison helper for verifying the Glock lab matrix tooling. It helps structure a quick pass, not prove gameplay truth by itself.",
+  "defaults": {
+    "map": "crossfire"
+  },
+  "steps": [
+    {
+      "name": "baseline_unarmored",
+      "glockProfile": "baseline",
+      "labTargetProfile": "unarmored",
+      "operatorNote": "Take one careful recovered shot, then exercise hold-to-fire rejection and one moving shot."
+    },
+    {
+      "name": "cs_tight_headprotected",
+      "glockProfile": "cs_tight",
+      "labTargetProfile": "vest_headprotected",
+      "operatorNote": "Focus on one deliberate headshot attempt and at least one torso versus head comparison."
+    }
+  ]
+}

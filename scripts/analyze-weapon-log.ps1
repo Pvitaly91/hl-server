@@ -5,6 +5,7 @@ param(
     [switch]$ExportJson,
     [switch]$ExportCsv,
     [string]$OutputDir,
+    [switch]$PassThru,
     [switch]$RequireAccepted,
     [switch]$RequireRejections,
     [switch]$RequireFirstShot,
@@ -89,7 +90,7 @@ function Parse-WeaponLogLine {
     if($null -ne $movePenalty -and $null -ne $speedRatio -and $speedRatio -gt 0){ $movePenaltyRate=$movePenalty/$speedRatio }
     return [PSCustomObject]@{
         LineNumber=$LineNumber; Prefix=$prefix; Type=$type; Timestamp=Field $values "ts"; Map=Field $values "map"; Event=Field $values "event"; Status=Field $values "status"; Game=Field $values "game"; LogFile=Field $values "file";
-        ProfileName=Field $values "profile"; TargetProfileName=Fields $values @("target_profile","targetProfile","sv_exp_glock_lab_target_profile_name");
+        ProfileName=Field $values "profile"; TargetProfileName=Fields $values @("target_profile","targetProfile","sv_exp_glock_lab_target_profile_name"); SessionTag=Fields $values @("session_tag","sessionTag","sv_exp_session_tag"); MatrixName=Fields $values @("matrix_name","matrixName","sv_exp_matrix_name"); MatrixStep=Fields $values @("matrix_step","matrixStep","sv_exp_matrix_step");
         TapFire=ToBool (Field $values "tapfire"); MoveSpreadScale=ToNum (Field $values "move_scale"); FirstShotEnabled=ToBool (Field $values "firstshot_enabled"); SpreadRecovery=ToNum (Field $values "recovery");
         BaseSpread=ToNum (Field $values "base"); GroundMovePenalty=ToNum (Field $values "ground_move_penalty"); AirMovePenalty=ToNum (Field $values "air_move_penalty"); DuckPenaltyScale=ToNum (Field $values "duck_penalty_scale");
         FirstShotSpeedThreshold=ToNum (Field $values "firstshot_speed"); MaxSpread=ToNum (Field $values "max_spread"); PrimaryDamageSetting=ToNum (Field $values "sv_exp_glock_primary_damage"); HeadshotScaleSetting=ToNum (Field $values "sv_exp_glock_primary_headshot_scale"); HeadshotLethalSetting=ToBool (Field $values "sv_exp_glock_primary_headshot_lethal");
@@ -222,6 +223,56 @@ $signals = [ordered]@{
     armoredDummyHitsPresent = ($armoredDummyHits.Count -gt 0); protectedDummyHeadshotHitsPresent = ($protectedDummyHeadshotHits.Count -gt 0); protectedDummyHeadshotKillsPresent = ($protectedDummyHeadshotKills.Count -gt 0); dummyLethalHeadshotEvidencePresent = ($dummyLethal.Count -gt 0); dummyDrivenLiveFiringEvidencePresent = $dummyDriven; dummyUnarmoredEvidencePresent = ($unarmoredEvidence.Count -gt 0); dummyArmoredEvidencePresent = ($armoredEvidence.Count -gt 0)
 }
 
+$comparisonMissingSignals = New-Object System.Collections.ArrayList
+if (-not $signals.tapFireHoldRejections) { [void]$comparisonMissingSignals.Add("No tap-fire rejection evidence was logged for this step.") }
+if (-not $signals.movementPenaltyPositive) { [void]$comparisonMissingSignals.Add("No accepted shot with move_penalty > 0 was logged for this step.") }
+if (-not $signals.dummyHeadshotHitsPresent) { [void]$comparisonMissingSignals.Add("No dummy headshot hit evidence was logged for this step.") }
+if (-not $signals.armoredDummyHitsPresent) { [void]$comparisonMissingSignals.Add("No armored dummy hit evidence was logged for this step.") }
+if (-not $signals.protectedDummyHeadshotHitsPresent) { [void]$comparisonMissingSignals.Add("No protected-head dummy headshot evidence was logged for this step.") }
+if (-not ($signals.dummyLethalHeadshotEvidencePresent -or $signals.lethalHeadshotEvidencePresent)) { [void]$comparisonMissingSignals.Add("No lethal-headshot evidence was logged for this step.") }
+
+$metadata = [ordered]@{
+    sessionTag = if ($session) { $session.SessionTag } else { $null }
+    matrixName = if ($session) { $session.MatrixName } else { $null }
+    matrixStep = if ($session) { $session.MatrixStep } else { $null }
+    glockProfile = if ($session) { $session.ProfileName } else { $null }
+    labTargetProfile = $targetProfile
+}
+
+$comparisonSummary = [ordered]@{
+    sessionTag = $metadata.sessionTag
+    matrixName = $metadata.matrixName
+    matrixStep = $metadata.matrixStep
+    glockProfile = $metadata.glockProfile
+    labTargetProfile = $metadata.labTargetProfile
+    acceptedShotCount = $accepted.Count
+    rejectedShotCount = $rejected.Count
+    hitCount = $hits.Count
+    killCount = $kills.Count
+    dummyHitCount = $dummyHits.Count
+    dummyKillCount = $dummyKills.Count
+    dummyHeadshotHitCount = $dummyHeadshotHits.Count
+    dummyHeadshotKillCount = $dummyHeadshotKills.Count
+    dummyLethalHeadshotEvidenceCount = $dummyLethal.Count
+    armoredDummyHitCount = $armoredDummyHits.Count
+    protectedDummyHeadshotHitCount = $protectedDummyHeadshotHits.Count
+    protectedDummyHeadshotKillCount = $protectedDummyHeadshotKills.Count
+    appliedDamage = [ordered]@{
+        min = if ($appliedDamageStats) { $appliedDamageStats.Min } else { $null }
+        average = if ($appliedDamageStats) { $appliedDamageStats.Average } else { $null }
+        max = if ($appliedDamageStats) { $appliedDamageStats.Max } else { $null }
+    }
+    evidence = [ordered]@{
+        tapFireRejection = $signals.tapFireHoldRejections
+        movementPenalty = $signals.movementPenaltyPositive
+        dummyHeadshotPath = $signals.dummyHeadshotHitsPresent
+        armoredDummyPath = $signals.armoredDummyHitsPresent
+        protectedHeadDummyPath = $signals.protectedDummyHeadshotHitsPresent
+        lethalHeadshotPath = ($signals.dummyLethalHeadshotEvidencePresent -or $signals.lethalHeadshotEvidencePresent)
+    }
+    missingSignalNotes = @($comparisonMissingSignals)
+}
+
 if ($RequireAccepted -and -not $signals.acceptedShots) { [void]$assertions.Add("Required signal missing: accepted Glock primary shots.") }
 if ($RequireRejections -and -not $signals.tapFireHoldRejections) { [void]$assertions.Add("Required signal missing: tap-fire hold rejection lines.") }
 if ($RequireFirstShot -and -not $signals.firstShotAccepted) { [void]$assertions.Add("Required signal missing: accepted events with firstshot=1.") }
@@ -242,10 +293,12 @@ if ($RequireDummyLethalHeadshotEvidence -and -not $signals.dummyLethalHeadshotEv
 
 $report = [ordered]@{
     analyzedLogPath = $log.FullName
-    session = if ($session) { [ordered]@{ timestamp = $session.Timestamp; map = $session.Map; game = $session.Game; status = $session.Status; file = $session.LogFile; profileName = $session.ProfileName; targetProfileName = $targetProfile; featureFlags = [ordered]@{ tapFire = $session.TapFire; moveSpreadScale = $session.MoveSpreadScale; firstShotAccuracy = $session.FirstShotEnabled; spreadRecovery = $session.SpreadRecovery }; tuning = [ordered]@{ baseSpread = $session.BaseSpread; groundMovePenalty = $session.GroundMovePenalty; airMovePenalty = $session.AirMovePenalty; duckPenaltyScale = $session.DuckPenaltyScale; firstShotSpeedThreshold = $session.FirstShotSpeedThreshold; maxSpread = $session.MaxSpread; primaryDamage = $session.PrimaryDamageSetting; headshotScale = $session.HeadshotScaleSetting; headshotLethal = $session.HeadshotLethalSetting }; labDummy = [ordered]@{ enabled = $session.LabDummyEnabled; health = $session.LabDummyHealth; armor = $session.LabDummyArmorSetting; headProtected = $session.LabDummyHeadProtectedSetting; armorHealthFraction = $session.LabDummyArmorHealthFraction; armorDrainScale = $session.LabDummyArmorDrainScale; autorespawn = $session.LabDummyAutoRespawn; respawnDelay = $session.LabDummyRespawnDelay; spawnDistance = $session.LabDummySpawnDistance; model = $session.LabDummyModel } } } else { $null }
+    session = if ($session) { [ordered]@{ timestamp = $session.Timestamp; map = $session.Map; game = $session.Game; status = $session.Status; file = $session.LogFile; profileName = $session.ProfileName; targetProfileName = $targetProfile; sessionTag = $session.SessionTag; matrixName = $session.MatrixName; matrixStep = $session.MatrixStep; featureFlags = [ordered]@{ tapFire = $session.TapFire; moveSpreadScale = $session.MoveSpreadScale; firstShotAccuracy = $session.FirstShotEnabled; spreadRecovery = $session.SpreadRecovery }; tuning = [ordered]@{ baseSpread = $session.BaseSpread; groundMovePenalty = $session.GroundMovePenalty; airMovePenalty = $session.AirMovePenalty; duckPenaltyScale = $session.DuckPenaltyScale; firstShotSpeedThreshold = $session.FirstShotSpeedThreshold; maxSpread = $session.MaxSpread; primaryDamage = $session.PrimaryDamageSetting; headshotScale = $session.HeadshotScaleSetting; headshotLethal = $session.HeadshotLethalSetting }; labDummy = [ordered]@{ enabled = $session.LabDummyEnabled; health = $session.LabDummyHealth; armor = $session.LabDummyArmorSetting; headProtected = $session.LabDummyHeadProtectedSetting; armorHealthFraction = $session.LabDummyArmorHealthFraction; armorDrainScale = $session.LabDummyArmorDrainScale; autorespawn = $session.LabDummyAutoRespawn; respawnDelay = $session.LabDummyRespawnDelay; spawnDistance = $session.LabDummySpawnDistance; model = $session.LabDummyModel } } } else { $null }
+    metadata = $metadata
     counters = [ordered]@{ parsedEventCount = $events.Count; acceptedShots = $accepted.Count; rejectedShots = $rejected.Count; hitEvents = $hits.Count; killEvents = $kills.Count; headshotHits = $headshotHits.Count; headshotKills = $headshotKills.Count; lethalHeadshotEvidence = $lethalEvents.Count; dummySpawns = $dummySpawns.Count; dummyRespawns = $dummyRespawns.Count; dummyClears = $dummyClears.Count; dummyHits = $dummyHits.Count; dummyKills = $dummyKills.Count; dummyHeadshotHits = $dummyHeadshotHits.Count; dummyHeadshotKills = $dummyHeadshotKills.Count; armoredDummyHits = $armoredDummyHits.Count; protectedDummyHeadshotHits = $protectedDummyHeadshotHits.Count; protectedDummyHeadshotKills = $protectedDummyHeadshotKills.Count; dummyLethalHeadshotEvidence = $dummyLethal.Count; firstShotAccepted = $firstShotAccepted.Count; acceptedMovePenaltyPositive = $movePenaltyAccepted.Count; acceptedGrounded = $groundedAccepted.Count; acceptedAirborne = $airborneAccepted.Count; acceptedDucking = $duckingAccepted.Count }
     stats = [ordered]@{ spread = $spreadStats; movementPenalty = $moveStats; horizontalSpeed = $speedStats; standingMovePenaltyRate = $standingRateStats; crouchMovePenaltyRate = $crouchRateStats; appliedDamage = $appliedDamageStats; hitgroupCounts = $hitgroupCounts; dummyAppliedDamage = $dummyAppliedDamageStats; dummyHitgroupCounts = $dummyHitgroupCounts; dummyRawDamage = $rawDamageStats; dummyDamageToHealth = $damageToHealthStats; dummyDamageAbsorbed = $damageAbsorbedStats; dummyArmorDrain = $armorDrainStats }
     signals = $signals
+    comparisonSummary = $comparisonSummary
     observations = @($observations)
     warnings = @($warnings)
 }
@@ -264,6 +317,9 @@ Write-Host "  log path                 : $($log.FullName)"
 if ($session) {
     Write-Host "  session                  : ts=$($session.Timestamp) map=$($session.Map) game=$($session.Game) status=$($session.Status)"
     if (-not [string]::IsNullOrWhiteSpace($session.ProfileName)) { Write-Host "  profile                  : $($session.ProfileName)" }
+    if (-not [string]::IsNullOrWhiteSpace($session.SessionTag)) { Write-Host "  session tag              : $($session.SessionTag)" }
+    if (-not [string]::IsNullOrWhiteSpace($session.MatrixName)) { Write-Host "  matrix name              : $($session.MatrixName)" }
+    if (-not [string]::IsNullOrWhiteSpace($session.MatrixStep)) { Write-Host "  matrix step              : $($session.MatrixStep)" }
     Write-Host "  target profile           : $(if ([string]::IsNullOrWhiteSpace($targetProfile)) { 'n/a' } else { $targetProfile })"
     if ($null -ne $session.BaseSpread -or $null -ne $session.GroundMovePenalty -or $null -ne $session.AirMovePenalty -or $null -ne $session.DuckPenaltyScale -or $null -ne $session.FirstShotSpeedThreshold -or $null -ne $session.MaxSpread) { Write-Host "  tuning                   : base=$(FNum $session.BaseSpread 4) ground=$(FNum $session.GroundMovePenalty 4) air=$(FNum $session.AirMovePenalty 4) duck=$(FNum $session.DuckPenaltyScale 4) firstshot_speed=$(FNum $session.FirstShotSpeedThreshold 1) max_spread=$(FNum $session.MaxSpread 4)" }
     if ($null -ne $session.PrimaryDamageSetting -or $null -ne $session.HeadshotScaleSetting -or $null -ne $session.HeadshotLethalSetting) { Write-Host "  damage tuning            : damage=$(FNum $session.PrimaryDamageSetting 4) headshot_scale=$(FNum $session.HeadshotScaleSetting 4) headshot_lethal=$(FBool $session.HeadshotLethalSetting)" }
@@ -312,3 +368,11 @@ if ($warnings.Count -eq 0) { Write-Host "  - none" } else { foreach ($w in $warn
 if ($exports.Count -gt 0) { Write-Host ""; Write-Host "Exports"; foreach ($k in $exports.Keys) { Write-Host "  $k : $($exports[$k])" } }
 Write-Host ""; Write-Host "Evidence only: this summarizes logged server-authoritative telemetry. Armored-dummy evidence is not proof of exact PvP or exact player-armor parity."
 if ($assertions.Count -gt 0) { Write-Host ""; Write-Host "Assertion failures"; foreach ($a in $assertions) { Write-Host "  - $a" }; exit 2 }
+
+if ($PassThru) {
+    return [PSCustomObject]@{
+        LogPath = $log.FullName
+        Report = $report
+        Exports = [PSCustomObject]$exports
+    }
+}

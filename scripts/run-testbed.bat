@@ -16,6 +16,9 @@ if /I "%MODE%"=="glock-lab-target" goto mode_glock_lab_target
 if /I "%MODE%"=="glock-lab-profile" goto mode_glock_lab_profile
 if /I "%MODE%"=="glock-profiles" goto mode_glock_profiles
 if /I "%MODE%"=="glock-profile" goto mode_glock_profile
+if /I "%MODE%"=="glock-matrices" goto mode_glock_matrices
+if /I "%MODE%"=="glock-matrix" goto mode_glock_matrix
+if /I "%MODE%"=="glock-compare" goto mode_glock_compare
 if /I "%MODE%"=="glock-report" goto mode_glock_report
 if /I "%MODE%"=="experimental-debug" goto mode_experimental_debug
 if /I "%MODE%"=="experimental" goto mode_experimental
@@ -70,6 +73,25 @@ goto collect_args
 
 :mode_glock_profile
 set "RUN_SWITCHES=-EnableExperimentalGlock -EnableExperimentalGlockDebug -GlockProfile"
+shift
+goto collect_args
+
+:mode_glock_matrices
+set "TARGET_SCRIPT=%SCRIPT_DIR%list-glock-comparison-matrices.ps1"
+set "DEFAULT_ARGS="
+shift
+goto collect_args
+
+:mode_glock_matrix
+set "TARGET_SCRIPT=%SCRIPT_DIR%run-glock-comparison-matrix.ps1"
+set "RUN_SWITCHES=-Matrix"
+set "DEFAULT_ARGS="
+shift
+goto collect_args
+
+:mode_glock_compare
+set "TARGET_SCRIPT=%SCRIPT_DIR%compare-weapon-reports.ps1"
+set "DEFAULT_ARGS="
 shift
 goto collect_args
 

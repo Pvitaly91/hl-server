@@ -7,10 +7,16 @@ param(
     [string]$Map = "crossfire",
     [string]$GlockProfile,
     [string]$LabTargetProfile,
+    [string[]]$SetCvar = @(),
+    [string]$SessionTag,
+    [string]$MatrixName,
+    [string]$MatrixStep,
     [switch]$LabDummy,
     [switch]$NoClient,
     [switch]$NoTail,
     [switch]$AnalyzeLatestOnExit,
+    [switch]$PassThru,
+    [switch]$SkipChecklist,
     [switch]$DetachedServer = $true,
     [int]$TimeoutSeconds = 45
 )
@@ -54,20 +60,6 @@ function Wait-ForSessionWeaponDebugLog {
     }
 
     return $null
-}
-
-function Get-SessionClientExe {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$RuntimeRoot
-    )
-
-    $runtimeClient = Join-Path $RuntimeRoot "hl.exe"
-    if (Test-LeafPath -Path $runtimeClient) {
-        return $runtimeClient
-    }
-
-    return (Resolve-HlExe)
 }
 
 function Start-WeaponLogTailWindow {
@@ -226,11 +218,13 @@ Write-Step $(if ($useLabDummy) { "Installing disposable runtime for the Glock la
 & "$PSScriptRoot\install-testbed.ps1" -Configuration $configuration
 
 Write-Step $(if ($useLabDummy) { "Launching disposable HLDS in experimental-debug lab mode" } else { "Launching disposable HLDS in experimental-debug mode" })
+$sessionMetadataCvars = @(Get-SessionMetadataLaunchAssignments -SessionTag $SessionTag -MatrixName $MatrixName -MatrixStep $MatrixStep)
+$effectiveSetCvars = @($sessionMetadataCvars) + @($SetCvar)
 if ([string]::IsNullOrWhiteSpace($GlockProfile)) {
-    $launchInfo = & "$PSScriptRoot\run-server.ps1" -Configuration $configuration -Map $Map -Port $resolvedPort -MaxPlayers $maxPlayers -Detached -EnableExperimentalGlock -EnableExperimentalGlockDebug -EnableGlockLabDummy:$useLabDummy -LabTargetProfile $LabTargetProfile -PassThru
+    $launchInfo = & "$PSScriptRoot\run-server.ps1" -Configuration $configuration -Map $Map -Port $resolvedPort -MaxPlayers $maxPlayers -Detached -EnableExperimentalGlock -EnableExperimentalGlockDebug -EnableGlockLabDummy:$useLabDummy -LabTargetProfile $LabTargetProfile -SetCvar $effectiveSetCvars -PassThru
 }
 else {
-    $launchInfo = & "$PSScriptRoot\run-server.ps1" -Configuration $configuration -Map $Map -Port $resolvedPort -MaxPlayers $maxPlayers -Detached -EnableExperimentalGlock -EnableExperimentalGlockDebug -EnableGlockLabDummy:$useLabDummy -GlockProfile $GlockProfile -LabTargetProfile $LabTargetProfile -PassThru
+    $launchInfo = & "$PSScriptRoot\run-server.ps1" -Configuration $configuration -Map $Map -Port $resolvedPort -MaxPlayers $maxPlayers -Detached -EnableExperimentalGlock -EnableExperimentalGlockDebug -EnableGlockLabDummy:$useLabDummy -GlockProfile $GlockProfile -LabTargetProfile $LabTargetProfile -SetCvar $effectiveSetCvars -PassThru
 }
 
 $weaponLog = Wait-ForSessionWeaponDebugLog -PreviousLatestLog $previousWeaponLog -TimeoutSeconds $TimeoutSeconds -Process $launchInfo.Process
@@ -264,7 +258,7 @@ $connectAddress = "127.0.0.1:$resolvedPort"
 $clientLaunchStatus = "disabled by -NoClient"
 
 if (-not $NoClient) {
-    $clientExe = Get-SessionClientExe -RuntimeRoot $runtimeRoot
+    $clientExe = Get-TestbedSessionClientExe -RuntimeRoot $runtimeRoot
     if ($clientExe) {
         & "$PSScriptRoot\run-client.ps1" -ConnectAddress $connectAddress -HlExe $clientExe
         $clientLaunchStatus = "launch requested via $clientExe"
@@ -275,8 +269,33 @@ if (-not $NoClient) {
     }
 }
 
-Write-Checklist -Configuration $configuration -Port $resolvedPort -Map $Map -ConnectAddress $connectAddress -RuntimeRoot $runtimeRoot -ServerLogPath $launchInfo.StdOutLog -GlockProfile $GlockProfile -LabTargetProfile $LabTargetProfile -WeaponLogPath $(if ($weaponLog) { $weaponLog.FullName } else { $null }) -TailWindowRequested $tailWindowRequested -ClientLaunchStatus $clientLaunchStatus -LabDummy:$useLabDummy
+if (-not $SkipChecklist) {
+    Write-Checklist -Configuration $configuration -Port $resolvedPort -Map $Map -ConnectAddress $connectAddress -RuntimeRoot $runtimeRoot -ServerLogPath $launchInfo.StdOutLog -GlockProfile $GlockProfile -LabTargetProfile $LabTargetProfile -WeaponLogPath $(if ($weaponLog) { $weaponLog.FullName } else { $null }) -TailWindowRequested $tailWindowRequested -ClientLaunchStatus $clientLaunchStatus -LabDummy:$useLabDummy
+}
 
 if ($AnalyzeLatestOnExit) {
     Invoke-AnalyzeLatestWeaponLog -WeaponLogPath $(if ($weaponLog) { $weaponLog.FullName } else { $null })
+}
+
+if ($PassThru) {
+    return [PSCustomObject]@{
+        Configuration = $configuration
+        Map = $Map
+        Port = $resolvedPort
+        ConnectAddress = $connectAddress
+        RuntimeRoot = $runtimeRoot
+        ServerLogPath = $launchInfo.StdOutLog
+        ServerErrorLogPath = $launchInfo.StdErrLog
+        WeaponLogPath = if ($weaponLog) { $weaponLog.FullName } else { $null }
+        TailWindowRequested = $tailWindowRequested
+        ClientLaunchStatus = $clientLaunchStatus
+        GlockProfile = if ([string]::IsNullOrWhiteSpace($GlockProfile)) { "default" } else { $GlockProfile }
+        LabTargetProfile = if ([string]::IsNullOrWhiteSpace($LabTargetProfile)) { "default" } else { $LabTargetProfile }
+        LabDummy = $useLabDummy
+        SessionTag = $SessionTag
+        MatrixName = $MatrixName
+        MatrixStep = $MatrixStep
+        LaunchInfo = $launchInfo
+        Process = $launchInfo.Process
+    }
 }

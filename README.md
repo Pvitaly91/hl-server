@@ -280,6 +280,63 @@ The Glock lab dummy is a one-player testing aid, not a perfect substitute for re
 
 The lab dummy armor model is experimental and dummy-only. It is useful for comparing unarmored versus armored or head-protected target states, but it is not guaranteed exact parity with real player armor. Head-protected lethal-headshot evidence against the dummy proves only that the logged dummy armor model ran for that target state.
 
+## Glock comparison matrices
+
+Checked-in manual comparison matrices live under `configs/glock-comparison-matrices/`.
+
+List the available matrices:
+
+```powershell
+.\scripts\list-glock-comparison-matrices.ps1
+```
+
+Run a named matrix in the guided lab flow:
+
+```powershell
+.\scripts\run-glock-comparison-matrix.ps1 -Matrix quick_smoke -Configuration Debug
+```
+
+Run the same matrix in no-client auto-advance mode for tooling verification only:
+
+```powershell
+.\scripts\run-glock-comparison-matrix.ps1 -Matrix quick_smoke -Configuration Debug -NoClient -NoTail -AutoAdvance -MaxSteps 1
+```
+
+Compare analyzer JSON outputs directly:
+
+```powershell
+.\scripts\compare-weapon-reports.ps1 -ReportDir .\scripts\fixtures\comparison -ExportMarkdown -ExportCsv -ExportJson
+```
+
+Use the BAT aliases from `cmd.exe` or Explorer:
+
+```bat
+scripts\run-testbed.bat glock-matrices
+scripts\run-testbed.bat glock-matrix quick_smoke
+scripts\run-testbed.bat glock-matrix quick_smoke -NoClient -NoTail -AutoAdvance -MaxSteps 1
+scripts\run-testbed.bat glock-compare -ReportDir .\scripts\fixtures\comparison
+```
+
+`scripts\run-testbed.bat glock-compare` with no extra arguments will compare the latest generated matrix report directory if one exists. Otherwise it tells you to pass `-ReportDir` or `-ReportPaths`.
+
+The matrix runner writes all generated artifacts under the disposable reports area:
+
+- per-step analyzer JSON and CSV:
+  `testbed/logs/reports/glock-comparison-matrices/<matrix>-<timestamp>/steps/<step>/`
+- consolidated matrix comparison JSON, CSV, and Markdown:
+  `testbed/logs/reports/glock-comparison-matrices/<matrix>-<timestamp>/`
+
+Example comparison summary produced from the synthetic fixtures:
+
+```text
+MatrixStep         Profile  Target             Acc Rej DHits DKills ProtHS AvgDmg Signals
+unarmored          baseline unarmored            4   1     3      1      0 23.00  tap:Y move:Y hs:Y armor:N prot:N lethal:Y
+vest               baseline vest                 5   1     4      1      0 14.00  tap:Y move:Y hs:Y armor:Y prot:N lethal:N
+vest_headprotected baseline vest_headprotected   6   2     5      1      2 20.50  tap:Y move:Y hs:Y armor:Y prot:Y lethal:Y
+```
+
+The matrix runner structures a reproducible manual checklist, per-step tagging, and report aggregation. It does not generate gameplay evidence by itself. In `-AutoAdvance` mode it is only validating the tooling path, not live Glock behavior.
+
 Tail the newest disposable weapon debug log in PowerShell:
 
 ```powershell

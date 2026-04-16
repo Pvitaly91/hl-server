@@ -54,6 +54,22 @@ This keeps the stock runtime on `-game valve`, keeps all debug writes inside the
 
 The Glock tuning coefficients now live behind typed accessors in `src/future_gameplay_hooks.cpp`, so changing presets or launch-time overrides no longer requires recompiling the weapon logic.
 
+## Session and matrix metadata cvars
+
+The session and matrix tags also live behind typed accessors in `src/future_gameplay_hooks.cpp`.
+
+- `sv_exp_session_tag`
+  Default empty string.
+  Human-readable session tag for a single launch or matrix step.
+- `sv_exp_matrix_name`
+  Default empty string.
+  Human-readable matrix identifier for grouped comparison runs.
+- `sv_exp_matrix_step`
+  Default empty string.
+  Human-readable step tag inside the selected matrix.
+
+These are metadata-only cvars. They do not change gameplay behavior by themselves. When set, the session header written to `[weaponlog]` includes them so later analyzer exports can correlate per-step artifacts across multiple sessions.
+
 ## Glock lab dummy cvars
 
 The one-player Glock lab dummy also lives behind typed accessors in `src/future_gameplay_hooks.cpp`.
@@ -186,6 +202,37 @@ Each lab target profile file contains:
 
 The descriptions intentionally say "experimental" because the lab target profiles are one-player testing aids, not exact PvP armor presets.
 
+## Glock comparison matrices
+
+Checked-in manual comparison matrices now live under `configs/glock-comparison-matrices/` as small JSON files.
+
+Current examples:
+
+- `quick_smoke`
+  Minimal manual sanity pass for launch, tagging, and report aggregation.
+- `armor_sweep`
+  Same Glock profile across unarmored, armored, and protected-head dummy states.
+- `profile_sweep`
+  Multiple Glock profiles against one consistent target profile.
+
+Each matrix file contains:
+
+- `name`
+- `description`
+- optional `defaults`
+- ordered `steps`
+
+Each step can define:
+
+- `name`
+- `glockProfile`
+- `labTargetProfile`
+- optional `operatorNote`
+- optional `map`
+- optional `extraCvars`
+
+The current matrix runner is intentionally Glock-lab-specific. It reuses the existing one-click session, analyzer, and report exports instead of trying to become a generic tournament harness.
+
 ## What the Glock telemetry proves
 
 The current telemetry is server-authoritative and stock-client-compatible:
@@ -197,6 +244,7 @@ The current telemetry is server-authoritative and stock-client-compatible:
 - it records which authoritative Glock primary hits and kills were observed after damage resolution
 - it marks when a hit or kill victim was the lab dummy through `victim_kind=dummy` and `victim_class=glock_lab_dummy`
 - it records which lab target profile and dummy-armor coefficients were active in the session
+- it records the optional session tag, matrix name, and matrix step on the session header when the matrix runner or another caller sets them
 - it records whether dummy armor actually applied on a logged hit plus how much raw damage was absorbed versus forwarded to health
 - it records whether the explicit headshot-lethal path was merely configured or actually applied on a logged hit
 - it proves the disposable runtime is still running on the stock `valve` game content with no custom client DLL requirement
@@ -217,7 +265,7 @@ Launch and smoke verification are automated. Actual weapon feel still requires m
 The telemetry now uses a stable, single-line, parser-friendly prefix plus `key=value` fields:
 
 - session header
-  `[weaponlog] type=session ts=... map=... event=weapon_debug_session status=ready game=valve file="..." profile="..." ... sv_exp_glock_lab_target_profile_name="vest_headprotected" sv_exp_glock_lab_dummy_armor=100.0 sv_exp_glock_lab_dummy_head_protected=1 sv_exp_glock_lab_dummy_armor_health_fraction=0.500 sv_exp_glock_lab_dummy_armor_drain_scale=1.000`
+  `[weaponlog] type=session ts=... map=... event=weapon_debug_session status=ready game=valve file="..." profile="..." ... sv_exp_glock_lab_target_profile_name="vest_headprotected" sv_exp_glock_lab_dummy_armor=100.0 sv_exp_glock_lab_dummy_head_protected=1 sv_exp_glock_lab_dummy_armor_health_fraction=0.500 sv_exp_glock_lab_dummy_armor_drain_scale=1.000 session_tag="armor_sweep-20260416-01-unarmored" matrix_name="armor_sweep" matrix_step="unarmored"`
 - accepted primary shot
   `[weaponlog] type=accepted ts=... map=... player="..." entindex=... userid=... weapon=glock fire=primary ...`
 - rejected tap-fire hold
@@ -234,6 +282,18 @@ The telemetry now uses a stable, single-line, parser-friendly prefix plus `key=v
 The line remains human-readable, but the stable prefix and `type=` field make it fast to parse. The current analyzer is also backward-compatible with older unprefixed `key=value` Glock logs so earlier manual sessions are still usable.
 
 The session header now exposes the active profile name and the actual tuning values that the server used for that run. That makes it possible to compare telemetry evidence against the real launch profile instead of relying on memory or handwritten notes.
+
+The analyzer now preserves those tags in exported JSON through:
+
+- `session.sessionTag`
+- `session.matrixName`
+- `session.matrixStep`
+- `metadata.sessionTag`
+- `metadata.matrixName`
+- `metadata.matrixStep`
+- `comparisonSummary`
+
+`comparisonSummary` also flattens the key counters, damage stats, evidence booleans, and missing-signal notes that the multi-session aggregation script uses.
 
 For dummy-driven sessions, the authoritative dummy configuration that matters for evidence review is the lifecycle telemetry itself:
 
@@ -257,6 +317,24 @@ For dummy-driven sessions, the authoritative dummy configuration that matters fo
 The corresponding BAT alias is `scripts\run-testbed.bat glock-session`.
 
 The one-player range variant is `scripts\run-testbed.bat glock-lab`, or `scripts\run-glock-test-session.ps1 -LabDummy`.
+
+The comparison-matrix layer sits above that same one-click session flow:
+
+- `scripts/run-glock-comparison-matrix.ps1` loads a checked-in matrix, launches each step in order, tags the session with `sv_exp_session_tag`, `sv_exp_matrix_name`, and `sv_exp_matrix_step`, prints a comparison-oriented checklist, and exports per-step analyzer JSON and CSV.
+- `scripts/compare-weapon-reports.ps1` reads those analyzer JSON outputs, prints a concise step/session comparison table, and can export consolidated JSON, CSV, and Markdown.
+
+This helps validate:
+
+- that the right Glock preset and dummy target profile were actually used for each step
+- that tap-fire rejection, movement penalty, dummy headshot, armored dummy, protected-head dummy, and lethal-headshot evidence appeared or did not appear for each step
+- that repeated manual runs can be tagged and aggregated without hand-editing notes
+
+It still does not validate by itself:
+
+- subjective stock-client feel
+- whether the operator actually aimed or moved the way they intended unless the log proves it
+- exact real-player or exact PvP armor behavior
+- any conclusion that still depends on real opponents, map pressure, or broader balance context
 
 That path keeps the same disposable runtime flow, but it also:
 

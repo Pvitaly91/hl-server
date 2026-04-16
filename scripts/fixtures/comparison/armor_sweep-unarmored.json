@@ -1,0 +1,92 @@
+{
+  "analyzedLogPath": "scripts/fixtures/comparison/armor_sweep-unarmored.log",
+  "session": {
+    "timestamp": "2026-04-16T12:00:00",
+    "map": "fixture_range",
+    "game": "valve",
+    "status": "ready",
+    "file": "scripts/fixtures/comparison/armor_sweep-unarmored.log",
+    "profileName": "baseline",
+    "targetProfileName": "unarmored",
+    "sessionTag": "fixture-armor-sweep-01-unarmored",
+    "matrixName": "armor_sweep",
+    "matrixStep": "unarmored"
+  },
+  "metadata": {
+    "sessionTag": "fixture-armor-sweep-01-unarmored",
+    "matrixName": "armor_sweep",
+    "matrixStep": "unarmored",
+    "glockProfile": "baseline",
+    "labTargetProfile": "unarmored"
+  },
+  "counters": {
+    "acceptedShots": 4,
+    "rejectedShots": 1,
+    "hitEvents": 3,
+    "killEvents": 1,
+    "dummyHits": 3,
+    "dummyKills": 1,
+    "dummyHeadshotHits": 1,
+    "dummyHeadshotKills": 1,
+    "dummyLethalHeadshotEvidence": 1,
+    "armoredDummyHits": 0,
+    "protectedDummyHeadshotHits": 0,
+    "protectedDummyHeadshotKills": 0
+  },
+  "stats": {
+    "appliedDamage": {
+      "Min": 8.0,
+      "Average": 23.0,
+      "Max": 40.0
+    }
+  },
+  "signals": {
+    "tapFireHoldRejections": true,
+    "movementPenaltyPositive": true,
+    "dummyHeadshotHitsPresent": true,
+    "armoredDummyHitsPresent": false,
+    "protectedDummyHeadshotHitsPresent": false,
+    "dummyLethalHeadshotEvidencePresent": true,
+    "lethalHeadshotEvidencePresent": true
+  },
+  "comparisonSummary": {
+    "sessionTag": "fixture-armor-sweep-01-unarmored",
+    "matrixName": "armor_sweep",
+    "matrixStep": "unarmored",
+    "glockProfile": "baseline",
+    "labTargetProfile": "unarmored",
+    "acceptedShotCount": 4,
+    "rejectedShotCount": 1,
+    "hitCount": 3,
+    "killCount": 1,
+    "dummyHitCount": 3,
+    "dummyKillCount": 1,
+    "dummyHeadshotHitCount": 1,
+    "dummyHeadshotKillCount": 1,
+    "dummyLethalHeadshotEvidenceCount": 1,
+    "armoredDummyHitCount": 0,
+    "protectedDummyHeadshotHitCount": 0,
+    "protectedDummyHeadshotKillCount": 0,
+    "appliedDamage": {
+      "min": 8.0,
+      "average": 23.0,
+      "max": 40.0
+    },
+    "evidence": {
+      "tapFireRejection": true,
+      "movementPenalty": true,
+      "dummyHeadshotPath": true,
+      "armoredDummyPath": false,
+      "protectedHeadDummyPath": false,
+      "lethalHeadshotPath": true
+    },
+    "missingSignalNotes": [
+      "No armored dummy hit evidence was logged for this step.",
+      "No protected-head dummy headshot evidence was logged for this step."
+    ]
+  },
+  "observations": [
+    "Synthetic unarmored comparison fixture."
+  ],
+  "warnings": []
+}

@@ -168,6 +168,20 @@ std::string SanitizeLogValue(const char *value)
     return sanitized;
 }
 
+void AppendOptionalQuotedTelemetryField(std::string *line, const char *key, const char *value)
+{
+    if (line == NULL || key == NULL || key[0] == '\0' || value == NULL || value[0] == '\0')
+    {
+        return;
+    }
+
+    *line += " ";
+    *line += key;
+    *line += "=\"";
+    *line += SanitizeLogValue(value);
+    *line += "\"";
+}
+
 float GetFallbackHitgroupScale(CBaseEntity *pVictim, int hitgroup)
 {
     const bool fPlayerVictim = pVictim != NULL && pVictim->IsPlayer();
@@ -726,7 +740,11 @@ void EnsureWeaponDebugLogOpen()
         ExpGlockLabDummyHeadProtected() ? 1 : 0,
         ExpGlockLabDummyArmorHealthFraction(),
         ExpGlockLabDummyArmorDrainScale());
-    WriteTelemetryLine(sessionLine);
+    std::string sessionTelemetryLine = sessionLine;
+    AppendOptionalQuotedTelemetryField(&sessionTelemetryLine, "session_tag", ExpSessionTag());
+    AppendOptionalQuotedTelemetryField(&sessionTelemetryLine, "matrix_name", ExpMatrixName());
+    AppendOptionalQuotedTelemetryField(&sessionTelemetryLine, "matrix_step", ExpMatrixStep());
+    WriteTelemetryLine(sessionTelemetryLine.c_str());
 }
 }
 

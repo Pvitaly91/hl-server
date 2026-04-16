@@ -1,0 +1,25 @@
+{
+  "name": "profile_sweep",
+  "description": "Manual comparison helper for running multiple checked-in Glock profiles against one consistent target. It is for side-by-side operator review, not automated gameplay validation.",
+  "defaults": {
+    "map": "crossfire",
+    "labTargetProfile": "vest"
+  },
+  "steps": [
+    {
+      "name": "baseline",
+      "glockProfile": "baseline",
+      "operatorNote": "Use this as the reference pass before comparing tighter or more mobile tuning."
+    },
+    {
+      "name": "cs_tight",
+      "glockProfile": "cs_tight",
+      "operatorNote": "Focus on deliberate tap-fire and one careful headshot attempt against the same target state."
+    },
+    {
+      "name": "cs_mobile",
+      "glockProfile": "cs_mobile",
+      "operatorNote": "Compare moving-shot behavior against the baseline and tighter passes."
+    }
+  ]
+}
