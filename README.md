@@ -48,6 +48,77 @@ To smoke-test the whole flow non-interactively:
 .\scripts\smoke-test.ps1 -Configuration Debug -AllowSteamCmdDownload
 ```
 
+## Live BAT launchers
+
+These BAT files are the ready-to-run entry points for live disposable-server testing from Explorer or `cmd.exe`. They stay on `-game valve`, run the disposable-runtime doctor with repair before launching, keep writes inside `testbed/`, and then delegate to the existing PowerShell session flows.
+
+Launch the default Glock live lab:
+
+```bat
+scripts\play-glock-live.bat
+```
+
+Launch the default MP5 live lab:
+
+```bat
+scripts\play-mp5-live.bat
+```
+
+Open the menu launcher:
+
+```bat
+scripts\play-live-test.bat
+```
+
+Show the latest all-weapon analyzer summary:
+
+```bat
+scripts\show-latest-log-analysis.bat
+```
+
+Show the latest Glock-focused analyzer summary:
+
+```bat
+scripts\show-latest-glock-analysis.bat
+```
+
+Show the latest MP5-focused analyzer summary:
+
+```bat
+scripts\show-latest-mp5-analysis.bat
+```
+
+Use the new aliases from the existing BAT dispatcher:
+
+```bat
+scripts\run-testbed.bat play-glock
+scripts\run-testbed.bat play-mp5
+scripts\run-testbed.bat play-menu
+```
+
+Defaults:
+
+- `scripts\play-glock-live.bat` launches the Glock lab with preset `cs_tight` and target profile `vest_headprotected`.
+- `scripts\play-mp5-live.bat` launches the MP5 lab with preset `cs_burst` and target profile `vest`.
+- You can override the defaults, for example:
+
+```bat
+scripts\play-glock-live.bat -Preset cs_mobile -TargetProfile unarmored
+scripts\play-mp5-live.bat -Preset cs_mobile -TargetProfile vest_headprotected
+```
+
+What to expect from the live launchers:
+
+- the disposable runtime is repaired or refreshed first
+- HLDS starts against `testbed/runtime/` on `-game valve`
+- a stock client launch is requested when a valid `hl.exe` is available
+- the one-player lab dummy appears for the live session flow
+- logs are written under `testbed/logs/`
+- analyzer output remains under `testbed/logs/reports/`
+- the console prints the connect target, active preset, active target profile, and the log locations
+
+If `hl.exe` is not found, the live BAT wrappers stop before the session hand-off and print the remediation path. Set `HL_EXE` in `.env`, pass `-HlExe D:\Steam\steamapps\common\Half-Life\hl.exe`, or use a runtime template that already mirrors `hl.exe` into `testbed/runtime/`.
+
 ## Runtime doctor
 
 Inspect the currently selected runtime source and the disposable runtime:
@@ -711,14 +782,19 @@ No script writes into the user's real Steam `valve` folder.
 - `scripts/install-testbed.ps1` prepares the disposable runtime and installs the built `hl.dll`.
 - `scripts/doctor-testbed.ps1` diagnoses the selected runtime source, the disposable runtime, and common Windows startup blockers such as Steam initialization or missing executable-side DLL issues, and `-Repair` can refresh the runtime plus provision a dedicated HLDS cache.
 - `scripts/run-server.ps1` launches HLDS against the disposable runtime with `-game valve`, defaults to `crossfire`, accepts `-EnableExperimentalGlock`, `-EnableExperimentalGlockDebug`, `-GlockProfile <name>`, and `-LabTargetProfile <name>` for server-only Glock tuning plus dummy-target selection, and still supports launch-time overrides through `-SetCvar @('name=value', ...)` or `-Cvars @{ name = 'value' }`.
+- `scripts/play-live-session.ps1` is the shared live BAT helper that runs the doctor repair flow, verifies that a stock client is available for live visual testing unless `-NoClient` is explicitly requested, prints the disposable log locations, and then delegates to the existing Glock or MP5 session script.
 - `scripts/run-glock-test-session.ps1` reinstalls the disposable runtime, launches the experimental-debug Glock server, waits for readiness, optionally opens a tail window for the exact weapon log, optionally launches a stock client, prints the manual checklist with the connect address and log paths, accepts `-GlockProfile <name>` and `-LabTargetProfile <name>`, and can hand off to the analyzer with `-AnalyzeLatestOnExit`.
+- `scripts/run-mp5-test-session.ps1` mirrors the same detached live-session flow for the MP5 experiment, including client launch, dummy-target support, checklist output, and optional analyzer hand-off.
 - `scripts/list-glock-profiles.ps1` lists the checked-in versioned Glock presets from `configs/glock-presets/`.
 - `scripts/list-glock-lab-targets.ps1` lists the checked-in lab target profiles from `configs/glock-lab-targets/`.
 - `scripts/list-weapon-comparison-matrices.ps1` lists the checked-in mixed Glock-plus-MP5 comparison matrices from `configs/weapon-comparison-matrices/`.
 - `scripts/run-weapon-comparison-matrix.ps1` dispatches mixed matrix steps to the existing Glock or MP5 session scripts, stamps normalized session metadata, exports per-step analyzer artifacts, and writes one consolidated mixed comparison report set under `testbed/logs/reports/weapon-comparison-matrices/`.
 - `scripts/compare-weapon-reports.ps1` aggregates analyzer JSON from Glock-only or mixed Glock-plus-MP5 sessions, prints a concise comparison table, and can export normalized JSON, CSV, and Markdown summaries.
 - `scripts/analyze-weapon-log.ps1` analyzes the newest or a specific `weapon-debug-*.log`, prints a concise evidence summary including session profile and target-profile metadata when present, optionally exports JSON and CSV under `testbed/logs/reports/`, and can fail non-zero when required armored-dummy telemetry signals are missing.
-- `scripts/run-testbed.bat` is a thin convenience wrapper over the PowerShell scripts that defaults to a detached Debug disposable launch, maps `experimental` and `experimental-debug` to the corresponding server switches, maps `glock-session` to the one-click manual session helper, maps `glock-report` to `scripts/analyze-weapon-log.ps1`, maps `glock-profiles`, `glock-lab-targets`, and `weapon-matrices` to the listing helpers, maps `glock-profile <name>` to a detached experimental-debug launch with that preset, maps `glock-lab-target <name>` to a one-player dummy session with that target profile, maps `weapon-matrix <name>` and `weapon-compare` to the mixed comparison helpers, and keeps argument forwarding thin.
+- `scripts/show-latest-analysis.ps1` is the shared analyzer BAT helper that loads the newest disposable `weapon-debug-*.log`, prints the log and reports locations, and reruns the existing analyzer with `all`, `glock`, or `mp5` filtering.
+- `scripts/play-glock-live.bat`, `scripts/play-mp5-live.bat`, and `scripts/play-live-test.bat` are Explorer-friendly live launchers for stock-client-attached disposable sessions.
+- `scripts/show-latest-log-analysis.bat`, `scripts/show-latest-glock-analysis.bat`, and `scripts/show-latest-mp5-analysis.bat` are thin BAT entry points for the latest analyzer summaries.
+- `scripts/run-testbed.bat` is a thin convenience wrapper over the PowerShell scripts that defaults to a detached Debug disposable launch, maps `experimental` and `experimental-debug` to the corresponding server switches, maps `glock-session` to the one-click manual session helper, maps `glock-report` to `scripts/analyze-weapon-log.ps1`, maps `glock-profiles`, `glock-lab-targets`, and `weapon-matrices` to the listing helpers, maps `glock-profile <name>` to a detached experimental-debug launch with that preset, maps `glock-lab-target <name>` to a one-player dummy session with that target profile, maps `weapon-matrix <name>` and `weapon-compare` to the mixed comparison helpers, adds `play-glock`, `play-mp5`, and `play-menu` aliases for the new BAT launchers, and keeps argument forwarding thin.
 - `scripts/tail-weapon-log.ps1` finds the newest `testbed/logs/weapon-debug-*.log` file, or follows a specific log passed through `-Path`, prints a helpful message if none exists, and can either follow the log or dump it once with `-NoFollow`.
 - `scripts/run-client.ps1` optionally launches a stock Half-Life client on `-game valve` and connects to `127.0.0.1`.
 - `scripts/smoke-test.ps1` validates the end-to-end bootstrap non-interactively and can verify experimental cvar values from launch-time overrides.

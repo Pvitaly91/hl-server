@@ -156,3 +156,5 @@ If you need a stock client for attached sessions while using the cached dedicate
 ```powershell
 $env:HL_EXE = 'D:\Steam\steamapps\common\Half-Life\hl.exe'
 ```
+
+The new live BAT launchers (`scripts\play-glock-live.bat`, `scripts\play-mp5-live.bat`, and `scripts\play-live-test.bat`) enforce that requirement for client-attached play. If no stock `hl.exe` is available after the repair pass, they stop with a clear remediation message instead of silently starting a server-only visual-test launcher.

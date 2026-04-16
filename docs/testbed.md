@@ -38,6 +38,53 @@ It also records a small `hlds-*-launch.txt` file so the working directory, execu
 
 That preserves stock client compatibility while still swapping in the custom server DLL.
 
+## Live BAT launchers
+
+For Explorer or `cmd.exe` usage, the repo now includes thin BAT wrappers that call the existing PowerShell flows without duplicating the launch logic:
+
+- `scripts\play-glock-live.bat`
+- `scripts\play-mp5-live.bat`
+- `scripts\play-live-test.bat`
+- `scripts\show-latest-log-analysis.bat`
+- `scripts\show-latest-glock-analysis.bat`
+- `scripts\show-latest-mp5-analysis.bat`
+
+The live launchers always:
+
+- run `doctor-testbed.ps1 -Repair -BuildIfMissing` first
+- keep the disposable runtime on `-game valve`
+- print the requested connect target, active preset, active target profile, `testbed/logs/`, and `testbed/logs/reports/`
+- require a stock `hl.exe` for client-attached play unless `-NoClient` is explicitly forwarded
+- delegate the actual session startup to `run-glock-test-session.ps1` or `run-mp5-test-session.ps1`
+
+Default live presets:
+
+- Glock: `cs_tight` against `vest_headprotected`
+- MP5: `cs_burst` against `vest`
+
+You can override those defaults from `cmd.exe`, for example:
+
+```bat
+scripts\play-glock-live.bat -Preset cs_mobile -TargetProfile unarmored
+scripts\play-mp5-live.bat -Preset cs_mobile -TargetProfile vest_headprotected
+```
+
+The menu wrapper exposes common combinations directly:
+
+```bat
+scripts\play-live-test.bat
+```
+
+The existing dispatcher also exposes the live launchers:
+
+```bat
+scripts\run-testbed.bat play-glock
+scripts\run-testbed.bat play-mp5
+scripts\run-testbed.bat play-menu
+```
+
+If the repo cannot find a stock `hl.exe`, the live BAT helper fails before the session hand-off and tells you to set `HL_EXE` in `.env`, pass `-HlExe`, or point the disposable runtime template at a tree that already contains `hl.exe`.
+
 ## Smoke test signal
 
 The smoke test confirms startup by searching the server logs for the placeholder `sv_exp_*` cvars registered from `src/future_gameplay_hooks.cpp` during `GameDLLInit`. That proves the server started far enough to load the custom `hl.dll`, not merely that the binary exists on disk.
