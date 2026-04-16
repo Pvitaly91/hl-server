@@ -650,6 +650,10 @@ function Get-WeaponDebugLogsRoot {
     return (Get-TestbedLogsRoot)
 }
 
+function Get-WeaponDebugReportsRoot {
+    return (Join-Path (Get-WeaponDebugLogsRoot) "reports")
+}
+
 function Get-LatestWeaponDebugLog {
     $logsRoot = Get-WeaponDebugLogsRoot
     if (-not (Test-Path -LiteralPath $logsRoot -PathType Container)) {

@@ -12,6 +12,10 @@ if /I "%MODE%"=="glock-session" (
     set "TARGET_SCRIPT=%SCRIPT_DIR%run-glock-test-session.ps1"
     set "DEFAULT_ARGS="
     shift
+) else if /I "%MODE%"=="glock-report" (
+    set "TARGET_SCRIPT=%SCRIPT_DIR%analyze-weapon-log.ps1"
+    set "DEFAULT_ARGS="
+    shift
 ) else if /I "%MODE%"=="experimental-debug" (
     set "RUN_SWITCHES=-EnableExperimentalGlock -EnableExperimentalGlockDebug"
     shift

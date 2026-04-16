@@ -47,6 +47,19 @@ The telemetry does not prove player feel:
 
 Launch and smoke verification are automated. Actual weapon feel still requires manual in-game testing against the stock Steam Half-Life client.
 
+## Stable telemetry shape
+
+The telemetry now uses a stable, single-line, parser-friendly prefix plus `key=value` fields:
+
+- session header
+  `[weaponlog] type=session ts=... map=... event=weapon_debug_session status=ready game=valve file="..."`
+- accepted primary shot
+  `[weaponlog] type=accepted ts=... map=... player="..." entindex=... userid=... weapon=glock fire=primary ...`
+- rejected tap-fire hold
+  `[weaponlog] type=rejected ts=... map=... player="..." entindex=... userid=... weapon=glock fire=primary reason=tapfire_hold_blocked ...`
+
+The line remains human-readable, but the stable prefix and `type=` field make it fast to parse. The current analyzer is also backward-compatible with older unprefixed `key=value` Glock logs so earlier manual sessions are still usable.
+
 ## One-click manual Glock session
 
 `scripts/run-glock-test-session.ps1` exists to collapse the manual validation path into one disposable flow:
@@ -57,8 +70,32 @@ Launch and smoke verification are automated. Actual weapon feel still requires m
 - surface the server log path and the current `weapon-debug-*.log` path
 - optionally open a tail window and launch a stock client that auto-connects
 - print the compact checklist that a human still has to execute in-game
+- optionally pause for a manual stop point and run `scripts/analyze-weapon-log.ps1` against the latest weapon log when `-AnalyzeLatestOnExit` is requested
 
 The corresponding BAT alias is `scripts\run-testbed.bat glock-session`.
+
+## Telemetry analysis
+
+`scripts/analyze-weapon-log.ps1` turns the manual Glock telemetry into a reviewable report.
+
+It infers:
+
+- whether accepted shots were logged
+- whether tap-fire hold rejections were logged
+- whether first-shot accepted events occurred
+- whether accepted shots with `move_penalty > 0` occurred
+- whether a later accepted event returned to `firstshot=1` after earlier non-firstshot accepted shots
+- whether grounded crouch-moving accepted shots look like lower movement-penalty candidates than comparable grounded standing movement
+- summary statistics for spread, movement penalty, and horizontal speed
+
+It cannot infer:
+
+- subjective stock-client feel
+- prediction smoothness or viewmodel timing
+- whether the player intentionally executed the exact movement pattern you wanted unless the telemetry clearly reflects it
+- whether a single crouch-moving sample is enough to prove balance quality
+
+That distinction matters. The analyzer summarizes evidence from logs; it does not replace a human in-game firing pass.
 
 ## Manual checklist summary
 
@@ -102,16 +139,18 @@ That boundary is deliberate. Once a change must alter client-side prediction, pr
 
 ## Verification boundary
 
-Keep these three layers separate when evaluating the Glock work:
+Keep these four layers separate when evaluating the Glock work:
 
 - launch verification
   the disposable runtime started, stayed on `-game valve`, chose the expected map and port, and exposed the expected log paths
-- telemetry verification
+- telemetry generation
   the server produced the session-ready header plus accepted and rejected Glock lines that reflect the server-authoritative decision path
-- manual in-game firing verification
+- telemetry analysis
+  `scripts/analyze-weapon-log.ps1` parsed the log, summarized the observed signals, and reported which expected cases were or were not present in that telemetry
+- manual in-game validation
   a human joined with a stock client and actually fired the Glock to compare standing, moving, recovery, and crouch-moving cases
 
-Only the third layer speaks to real in-game behavior. The first two layers prove setup and server authority, not prediction feel.
+Only the fourth layer speaks to real in-game behavior. The first three layers prove setup, telemetry generation, and evidence review, not prediction feel.
 
 ## Disposable launch entry points
 
@@ -123,8 +162,12 @@ Only the third layer speaks to real in-game behavior. The first two layers prove
   Experimental Glock launch plus `sv_exp_debug_weaponlog 1` and `sv_exp_debug_weaponlog_rejections 1`.
 - `scripts/run-testbed.bat glock-session`
   One-click manual Glock session: disposable reinstall, experimental-debug launch, readiness wait, optional tail window, optional stock-client auto-connect, and printed checklist.
+- `scripts/run-testbed.bat glock-report`
+  Analyze the newest disposable Glock telemetry log, with optional forwarded export or assertion switches.
 - `scripts/run-glock-test-session.ps1`
-  PowerShell entry point for the same one-click manual session flow.
+  PowerShell entry point for the same one-click manual session flow, plus an optional `-AnalyzeLatestOnExit` handoff after a manual stop point.
+- `scripts/analyze-weapon-log.ps1`
+  PowerShell analyzer for the newest or a specific `weapon-debug-*.log`, including concise summary output, JSON/CSV exports, and optional signal assertions.
 - `scripts/tail-weapon-log.ps1`
   Follows the newest disposable Glock telemetry log, or a specific path passed through `-Path`, or dumps it once with `-NoFollow`.
 
@@ -140,4 +183,4 @@ MP5 and shotgun work should reuse the same pattern instead of inventing a new on
 4. log single-line, server-authoritative accepted and rejected events that are easy to grep in `testbed/logs/`
 5. keep the experiment compatible with the stock `-game valve` client until client prediction or presentation changes are genuinely required
 
-For MP5, that likely means primary-fire cadence, movement spread, and recoil-oriented telemetry at the exact server fire decision point. For shotgun, it means the same for buckshot spread, recovery timing, and pellet-count related diagnostics, again without moving speculative logic into the client.
+For MP5, that likely means primary-fire cadence, movement spread, recoil-oriented telemetry, and the same analyzer/report/export pattern so manual sessions stay measurable. For shotgun, it means the same for buckshot spread, recovery timing, pellet-count diagnostics, and rejection/acceptance evidence, again without moving speculative logic into the client.

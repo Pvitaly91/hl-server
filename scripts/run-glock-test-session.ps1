@@ -7,6 +7,7 @@ param(
     [string]$Map = "crossfire",
     [switch]$NoClient,
     [switch]$NoTail,
+    [switch]$AnalyzeLatestOnExit,
     [switch]$DetachedServer = $true,
     [int]$TimeoutSeconds = 45
 )
@@ -145,6 +146,28 @@ function Write-Checklist {
     Write-Host "Telemetry proves the server-authoritative decision path, not client prediction or weapon feel."
 }
 
+function Invoke-AnalyzeLatestWeaponLog {
+    param(
+        [string]$WeaponLogPath
+    )
+
+    $analysisScript = Join-Path $PSScriptRoot "analyze-weapon-log.ps1"
+    $analysisArguments = @()
+
+    if (-not [string]::IsNullOrWhiteSpace($WeaponLogPath) -and (Test-LeafPath -Path $WeaponLogPath)) {
+        $analysisArguments += @("-Path", $WeaponLogPath)
+    }
+    else {
+        $analysisArguments += "-Latest"
+    }
+
+    Write-Host ""
+    Write-Host "Press Enter after the manual firing pass to analyze the latest Glock telemetry log."
+    [void](Read-Host)
+
+    & $analysisScript @analysisArguments
+}
+
 $configuration = Get-ValidatedConfiguration -Configuration $Configuration
 
 if (-not $DetachedServer) {
@@ -208,3 +231,7 @@ if (-not $NoClient) {
 }
 
 Write-Checklist -Configuration $configuration -Port $resolvedPort -Map $Map -ConnectAddress $connectAddress -RuntimeRoot $runtimeRoot -ServerLogPath $launchInfo.StdOutLog -WeaponLogPath $(if ($weaponLog) { $weaponLog.FullName } else { $null }) -TailWindowRequested $tailWindowRequested -ClientLaunchStatus $clientLaunchStatus
+
+if ($AnalyzeLatestOnExit) {
+    Invoke-AnalyzeLatestWeaponLog -WeaponLogPath $(if ($weaponLog) { $weaponLog.FullName } else { $null })
+}

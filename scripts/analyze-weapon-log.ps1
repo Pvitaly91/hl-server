@@ -1,0 +1,524 @@
+[CmdletBinding(DefaultParameterSetName = "Latest")]
+param(
+    [Parameter(ParameterSetName = "Path", Mandatory = $true)]
+    [string]$Path,
+
+    [Parameter(ParameterSetName = "Latest")]
+    [switch]$Latest,
+
+    [switch]$ExportJson,
+    [switch]$ExportCsv,
+    [string]$OutputDir,
+    [switch]$RequireAccepted,
+    [switch]$RequireRejections,
+    [switch]$RequireFirstShot,
+    [switch]$RequireMovePenalty,
+    [switch]$RequireCrouchMoveEvidence
+)
+
+$ErrorActionPreference = "Stop"
+. "$PSScriptRoot\common.ps1"
+Import-HLServerEnv
+
+function Resolve-AnalysisTargetLog {
+    if ($PSCmdlet.ParameterSetName -eq "Path") {
+        $resolvedPath = Get-FullPath -Path $Path
+        if (-not (Test-LeafPath -Path $resolvedPath)) {
+            throw "Weapon debug log was not found: $resolvedPath"
+        }
+
+        return (Get-Item -LiteralPath $resolvedPath)
+    }
+
+    $latestLog = Get-LatestWeaponDebugLog
+    if (-not $latestLog) {
+        throw "No weapon debug log was found under $(Get-WeaponDebugLogsRoot). Generate telemetry first or pass -Path."
+    }
+
+    return $latestLog
+}
+
+function Get-WeaponLogValue {
+    param(
+        [System.Collections.IDictionary]$Values,
+        [string]$Name
+    )
+
+    if ($Values -and $Values.Contains($Name)) {
+        return [string]$Values[$Name]
+    }
+
+    return $null
+}
+
+function Convert-WeaponLogNullableInt {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value) -or $Value -eq "na") {
+        return $null
+    }
+
+    return [int]::Parse($Value, [System.Globalization.CultureInfo]::InvariantCulture)
+}
+
+function Convert-WeaponLogNullableDouble {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value) -or $Value -eq "na") {
+        return $null
+    }
+
+    return [double]::Parse($Value, [System.Globalization.CultureInfo]::InvariantCulture)
+}
+
+function Convert-WeaponLogNullableBool {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value) -or $Value -eq "na") {
+        return $null
+    }
+
+    switch ($Value) {
+        "1" { return $true }
+        "0" { return $false }
+        default { return [bool]::Parse($Value) }
+    }
+}
+
+function Format-WeaponLogNumber {
+    param(
+        [AllowNull()]$Value,
+        [int]$Digits
+    )
+
+    if ($null -eq $Value) {
+        return "n/a"
+    }
+
+    return ([double]$Value).ToString(("F{0}" -f $Digits), [System.Globalization.CultureInfo]::InvariantCulture)
+}
+
+function Get-NumericStats {
+    param([object[]]$Values)
+
+    $filtered = @($Values | Where-Object { $null -ne $_ })
+    if ($filtered.Count -eq 0) {
+        return $null
+    }
+
+    $measure = $filtered | Measure-Object -Minimum -Maximum -Average
+    return [PSCustomObject]@{
+        Count   = [int]$measure.Count
+        Min     = [double]$measure.Minimum
+        Average = [double]$measure.Average
+        Max     = [double]$measure.Maximum
+    }
+}
+
+function Parse-WeaponLogLine {
+    param(
+        [string]$Line,
+        [int]$LineNumber
+    )
+
+    $trimmedLine = $Line.Trim()
+    if ([string]::IsNullOrWhiteSpace($trimmedLine)) {
+        return $null
+    }
+
+    $prefix = $null
+    if ($trimmedLine.StartsWith("[")) {
+        $closingIndex = $trimmedLine.IndexOf("]")
+        if ($closingIndex -gt 0) {
+            $prefix = $trimmedLine.Substring(1, $closingIndex - 1)
+            $trimmedLine = $trimmedLine.Substring($closingIndex + 1).TrimStart()
+        }
+    }
+
+    $matches = [System.Text.RegularExpressions.Regex]::Matches(
+        $trimmedLine,
+        '(?<key>[A-Za-z0-9_]+)=(?:"(?<quoted>[^"]*)"|(?<value>\S+))')
+    if ($matches.Count -eq 0) {
+        return $null
+    }
+
+    $values = [ordered]@{}
+    foreach ($match in $matches) {
+        $key = $match.Groups["key"].Value
+        $value = if ($match.Groups["quoted"].Success) { $match.Groups["quoted"].Value } else { $match.Groups["value"].Value }
+        $values[$key] = $value
+    }
+
+    $type = Get-WeaponLogValue -Values $values -Name "type"
+    if ([string]::IsNullOrWhiteSpace($type)) {
+        if ((Get-WeaponLogValue -Values $values -Name "event") -eq "weapon_debug_session") {
+            $type = "session"
+        }
+        elseif (-not [string]::IsNullOrWhiteSpace((Get-WeaponLogValue -Values $values -Name "reason"))) {
+            $type = "rejected"
+        }
+        elseif ((Get-WeaponLogValue -Values $values -Name "weapon") -eq "glock" -and (Get-WeaponLogValue -Values $values -Name "fire") -eq "primary") {
+            $type = "accepted"
+        }
+        else {
+            $type = "unknown"
+        }
+    }
+    else {
+        $type = $type.ToLowerInvariant()
+    }
+
+    $speed = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "speed2d")
+    $maxSpeed = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "maxspeed")
+    $speedRatio = $null
+    if ($null -ne $speed -and $null -ne $maxSpeed -and $maxSpeed -gt 0.0) {
+        $speedRatio = [Math]::Min([Math]::Max(($speed / $maxSpeed), 0.0), 1.0)
+    }
+
+    $movementPenalty = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "move_penalty")
+    $movementPenaltyRate = $null
+    if ($null -ne $movementPenalty -and $null -ne $speedRatio -and $speedRatio -gt 0.0) {
+        $movementPenaltyRate = $movementPenalty / $speedRatio
+    }
+
+    return [PSCustomObject]@{
+        LineNumber           = $LineNumber
+        Prefix               = $prefix
+        Type                 = $type
+        Timestamp            = Get-WeaponLogValue -Values $values -Name "ts"
+        Map                  = Get-WeaponLogValue -Values $values -Name "map"
+        Event                = Get-WeaponLogValue -Values $values -Name "event"
+        Status               = Get-WeaponLogValue -Values $values -Name "status"
+        Game                 = Get-WeaponLogValue -Values $values -Name "game"
+        LogFile              = Get-WeaponLogValue -Values $values -Name "file"
+        Player               = Get-WeaponLogValue -Values $values -Name "player"
+        EntIndex             = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "entindex")
+        UserId               = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "userid")
+        Weapon               = Get-WeaponLogValue -Values $values -Name "weapon"
+        Fire                 = Get-WeaponLogValue -Values $values -Name "fire"
+        Reason               = Get-WeaponLogValue -Values $values -Name "reason"
+        Experimental         = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "experimental")
+        TapFire              = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "tapfire")
+        FirstShot            = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "firstshot")
+        Spread               = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "spread")
+        BaseSpread           = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "base")
+        MovementPenalty      = $movementPenalty
+        HorizontalSpeed      = $speed
+        MaxSpeed             = $maxSpeed
+        SpeedRatio           = $speedRatio
+        MovementPenaltyRate  = $movementPenaltyRate
+        Grounded             = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "grounded")
+        Ducking              = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "ducking")
+        DeltaPrevious        = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "delta_prev")
+        Clip                 = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "clip")
+        RawLine              = $Line
+    }
+}
+
+$targetLog = Resolve-AnalysisTargetLog
+$parsedEvents = @()
+$warnings = New-Object System.Collections.ArrayList
+$observations = New-Object System.Collections.ArrayList
+$assertionFailures = New-Object System.Collections.ArrayList
+
+$lineNumber = 0
+foreach ($line in (Get-Content -LiteralPath $targetLog.FullName)) {
+    $lineNumber += 1
+    $parsedEvent = Parse-WeaponLogLine -Line $line -LineNumber $lineNumber
+    if ($parsedEvent -and $parsedEvent.Type -ne "unknown") {
+        $parsedEvents += $parsedEvent
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($line)) {
+        [void]$warnings.Add("Skipped non-telemetry line $lineNumber because it did not match the expected single-line key=value format.")
+    }
+}
+
+$sessionEvent = @($parsedEvents | Where-Object { $_.Type -eq "session" } | Select-Object -First 1)
+$session = if ($sessionEvent.Count -gt 0) { $sessionEvent[0] } else { $null }
+$acceptedEvents = @($parsedEvents | Where-Object { $_.Type -eq "accepted" })
+$rejectedEvents = @($parsedEvents | Where-Object { $_.Type -eq "rejected" })
+
+$firstShotAccepted = @($acceptedEvents | Where-Object { $_.FirstShot -eq $true })
+$movePenaltyAccepted = @($acceptedEvents | Where-Object { $null -ne $_.MovementPenalty -and $_.MovementPenalty -gt 0.0 })
+$groundedAccepted = @($acceptedEvents | Where-Object { $_.Grounded -eq $true })
+$airborneAccepted = @($acceptedEvents | Where-Object { $_.Grounded -eq $false })
+$duckingAccepted = @($acceptedEvents | Where-Object { $_.Ducking -eq $true })
+$standingMoveAccepted = @(
+    $acceptedEvents |
+    Where-Object {
+        $_.Grounded -eq $true -and
+        $_.Ducking -eq $false -and
+        $null -ne $_.MovementPenalty -and $_.MovementPenalty -gt 0.0 -and
+        $null -ne $_.MovementPenaltyRate
+    }
+)
+$crouchMoveAccepted = @(
+    $acceptedEvents |
+    Where-Object {
+        $_.Grounded -eq $true -and
+        $_.Ducking -eq $true -and
+        $null -ne $_.MovementPenalty -and $_.MovementPenalty -gt 0.0 -and
+        $null -ne $_.MovementPenaltyRate
+    }
+)
+
+$spreadStats = Get-NumericStats -Values ($acceptedEvents | Select-Object -ExpandProperty Spread)
+$movementPenaltyStats = Get-NumericStats -Values ($acceptedEvents | Select-Object -ExpandProperty MovementPenalty)
+$speedStats = Get-NumericStats -Values ($acceptedEvents | Select-Object -ExpandProperty HorizontalSpeed)
+$standingPenaltyRateStats = Get-NumericStats -Values ($standingMoveAccepted | Select-Object -ExpandProperty MovementPenaltyRate)
+$crouchPenaltyRateStats = Get-NumericStats -Values ($crouchMoveAccepted | Select-Object -ExpandProperty MovementPenaltyRate)
+
+$recoveryReturnedFirstShot = $false
+$recoveryEvent = $null
+$seenNonFirstShotAccepted = $false
+foreach ($acceptedEvent in $acceptedEvents) {
+    if ($acceptedEvent.FirstShot -eq $false) {
+        $seenNonFirstShotAccepted = $true
+        continue
+    }
+
+    if ($acceptedEvent.FirstShot -eq $true -and $seenNonFirstShotAccepted) {
+        $recoveryReturnedFirstShot = $true
+        $recoveryEvent = $acceptedEvent
+        break
+    }
+}
+
+$crouchMoveEvidence = $false
+$crouchComparisonFound = $false
+foreach ($crouchEvent in $crouchMoveAccepted) {
+    foreach ($standingEvent in $standingMoveAccepted) {
+        if ($null -eq $crouchEvent.SpeedRatio -or $null -eq $standingEvent.SpeedRatio) {
+            continue
+        }
+
+        if ($crouchEvent.SpeedRatio -ge $standingEvent.SpeedRatio -and $crouchEvent.MovementPenalty -lt $standingEvent.MovementPenalty) {
+            $crouchMoveEvidence = $true
+            $crouchComparisonFound = $true
+            break
+        }
+    }
+
+    if ($crouchMoveEvidence) {
+        break
+    }
+}
+
+if (-not $crouchMoveEvidence -and $standingPenaltyRateStats -and $crouchPenaltyRateStats -and $crouchPenaltyRateStats.Average -lt $standingPenaltyRateStats.Average) {
+    $crouchMoveEvidence = $true
+}
+
+if ($acceptedEvents.Count -gt 0) {
+    [void]$observations.Add(("Accepted Glock primary shots were present ({0})." -f $acceptedEvents.Count))
+}
+else {
+    [void]$warnings.Add("No accepted Glock primary shots were found in the analyzed log.")
+}
+
+if ($rejectedEvents.Count -gt 0) {
+    [void]$observations.Add(("Tap-fire hold rejection lines were present ({0}); that is evidence the manual run exercised the rejection path." -f $rejectedEvents.Count))
+}
+else {
+    [void]$warnings.Add("No rejection lines were found, so this log does not show tap-fire hold blocking evidence.")
+}
+
+if ($firstShotAccepted.Count -gt 0) {
+    [void]$observations.Add(("First-shot accepted events were present ({0})." -f $firstShotAccepted.Count))
+}
+else {
+    [void]$warnings.Add("No accepted events with firstshot=1 were found.")
+}
+
+if ($movePenaltyAccepted.Count -gt 0) {
+    [void]$observations.Add(("Accepted movement-penalty events were present ({0}) with move_penalty > 0." -f $movePenaltyAccepted.Count))
+}
+else {
+    [void]$warnings.Add("No accepted events with move_penalty > 0 were found.")
+}
+
+if ($recoveryReturnedFirstShot) {
+    $deltaText = if ($null -ne $recoveryEvent.DeltaPrevious) { (" after delta_prev={0}s" -f (Format-WeaponLogNumber -Value $recoveryEvent.DeltaPrevious -Digits 3)) } else { "" }
+    [void]$observations.Add(("Later accepted events returned to firstshot=1 after earlier non-firstshot accepted shots{0}, which is evidence that recovery restored the first-shot gate." -f $deltaText))
+}
+elseif ($firstShotAccepted.Count -gt 0 -and $acceptedEvents.Count -gt 1) {
+    [void]$warnings.Add("The log shows first-shot accepted events, but it does not clearly show a later return to firstshot=1 after a non-firstshot accepted event.")
+}
+
+if ($standingMoveAccepted.Count -gt 0 -and $crouchMoveAccepted.Count -gt 0) {
+    $standingRateText = Format-WeaponLogNumber -Value $standingPenaltyRateStats.Average -Digits 4
+    $crouchRateText = Format-WeaponLogNumber -Value $crouchPenaltyRateStats.Average -Digits 4
+
+    if ($crouchMoveEvidence) {
+        [void]$observations.Add(("Grounded crouch-moving accepted shots showed lower normalized movement-penalty candidates than grounded standing moving shots (avg penalty-rate {0} vs {1}). This is evidence, not proof, of crouch-move penalty reduction." -f $crouchRateText, $standingRateText))
+    }
+    else {
+        [void]$warnings.Add(("Grounded crouch-moving accepted shots were present, but this log did not show lower crouch normalized movement-penalty candidates than grounded standing movement (avg penalty-rate {0} vs {1})." -f $crouchRateText, $standingRateText))
+    }
+}
+elseif ($crouchMoveAccepted.Count -eq 0) {
+    [void]$warnings.Add("No grounded crouch-moving accepted shots with move_penalty > 0 were found, so crouch-move reduction cannot be evaluated from this log.")
+}
+else {
+    [void]$warnings.Add("No comparable grounded standing moving accepted shots were found, so crouch-move reduction cannot be evaluated from this log.")
+}
+
+if (-not $session) {
+    [void]$warnings.Add("No session header line was parsed. The analyzer can still summarize accepted and rejected events, but launch metadata is missing.")
+}
+
+$signals = [ordered]@{
+    acceptedShots                      = ($acceptedEvents.Count -gt 0)
+    tapFireHoldRejections              = ($rejectedEvents.Count -gt 0)
+    firstShotAccepted                  = ($firstShotAccepted.Count -gt 0)
+    movementPenaltyPositive            = ($movePenaltyAccepted.Count -gt 0)
+    recoveryReturnedFirstShot          = $recoveryReturnedFirstShot
+    crouchMovePenaltyReductionCandidate = $crouchMoveEvidence
+}
+
+if ($RequireAccepted -and -not $signals.acceptedShots) {
+    [void]$assertionFailures.Add("Required signal missing: accepted Glock primary shots.")
+}
+
+if ($RequireRejections -and -not $signals.tapFireHoldRejections) {
+    [void]$assertionFailures.Add("Required signal missing: tap-fire hold rejection lines.")
+}
+
+if ($RequireFirstShot -and -not $signals.firstShotAccepted) {
+    [void]$assertionFailures.Add("Required signal missing: accepted events with firstshot=1.")
+}
+
+if ($RequireMovePenalty -and -not $signals.movementPenaltyPositive) {
+    [void]$assertionFailures.Add("Required signal missing: accepted events with move_penalty > 0.")
+}
+
+if ($RequireCrouchMoveEvidence -and -not $signals.crouchMovePenaltyReductionCandidate) {
+    [void]$assertionFailures.Add("Required signal missing: crouch-moving accepted shots that suggest lower movement penalty than standing movement.")
+}
+
+$report = [ordered]@{
+    analyzedLogPath = $targetLog.FullName
+    session = if ($session) {
+        [ordered]@{
+            timestamp = $session.Timestamp
+            map = $session.Map
+            game = $session.Game
+            event = $session.Event
+            status = $session.Status
+            file = $session.LogFile
+        }
+    }
+    else {
+        $null
+    }
+    counters = [ordered]@{
+        parsedEventCount = $parsedEvents.Count
+        acceptedShots = $acceptedEvents.Count
+        rejectedShots = $rejectedEvents.Count
+        firstShotAccepted = $firstShotAccepted.Count
+        acceptedMovePenaltyPositive = $movePenaltyAccepted.Count
+        acceptedGrounded = $groundedAccepted.Count
+        acceptedAirborne = $airborneAccepted.Count
+        acceptedDucking = $duckingAccepted.Count
+        acceptedStandingMoving = $standingMoveAccepted.Count
+        acceptedCrouchMoving = $crouchMoveAccepted.Count
+    }
+    stats = [ordered]@{
+        spread = $spreadStats
+        movementPenalty = $movementPenaltyStats
+        horizontalSpeed = $speedStats
+        standingMovePenaltyRate = $standingPenaltyRateStats
+        crouchMovePenaltyRate = $crouchPenaltyRateStats
+    }
+    signals = $signals
+    observations = @($observations)
+    warnings = @($warnings)
+}
+
+$exportedFiles = [ordered]@{}
+if ($ExportJson -or $ExportCsv) {
+    $resolvedOutputDir = if ([string]::IsNullOrWhiteSpace($OutputDir)) {
+        Get-WeaponDebugReportsRoot
+    }
+    else {
+        Get-FullPath -Path $OutputDir
+    }
+
+    Ensure-Directory -Path $resolvedOutputDir
+    $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+
+    if ($ExportJson) {
+        $jsonPath = Join-Path $resolvedOutputDir ("weapon-report-" + $timestamp + ".json")
+        $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $jsonPath -Encoding UTF8
+        $exportedFiles.json = $jsonPath
+    }
+
+    if ($ExportCsv) {
+        $csvPath = Join-Path $resolvedOutputDir ("weapon-events-" + $timestamp + ".csv")
+        $parsedEvents | Export-Csv -LiteralPath $csvPath -NoTypeInformation -Encoding UTF8
+        $exportedFiles.csv = $csvPath
+    }
+}
+
+Write-Host "Weapon log analysis"
+Write-Host "  log path                 : $($targetLog.FullName)"
+
+if ($session) {
+    Write-Host "  session                  : ts=$($session.Timestamp) map=$($session.Map) game=$($session.Game) status=$($session.Status)"
+}
+else {
+    Write-Host "  session                  : missing"
+}
+
+Write-Host "  accepted shots           : $($acceptedEvents.Count)"
+Write-Host "  rejected shots           : $($rejectedEvents.Count)"
+Write-Host "  first-shot accepted      : $($firstShotAccepted.Count)"
+Write-Host "  accepted move_penalty>0  : $($movePenaltyAccepted.Count)"
+Write-Host "  accepted grounded        : $($groundedAccepted.Count)"
+Write-Host "  accepted airborne        : $($airborneAccepted.Count)"
+Write-Host "  accepted ducking         : $($duckingAccepted.Count)"
+Write-Host "  spread min/avg/max       : $(Format-WeaponLogNumber -Value $(if ($spreadStats) { $spreadStats.Min } else { $null }) -Digits 4) / $(Format-WeaponLogNumber -Value $(if ($spreadStats) { $spreadStats.Average } else { $null }) -Digits 4) / $(Format-WeaponLogNumber -Value $(if ($spreadStats) { $spreadStats.Max } else { $null }) -Digits 4)"
+Write-Host "  move penalty min/avg/max : $(Format-WeaponLogNumber -Value $(if ($movementPenaltyStats) { $movementPenaltyStats.Min } else { $null }) -Digits 4) / $(Format-WeaponLogNumber -Value $(if ($movementPenaltyStats) { $movementPenaltyStats.Average } else { $null }) -Digits 4) / $(Format-WeaponLogNumber -Value $(if ($movementPenaltyStats) { $movementPenaltyStats.Max } else { $null }) -Digits 4)"
+Write-Host "  speed2d min/avg/max      : $(Format-WeaponLogNumber -Value $(if ($speedStats) { $speedStats.Min } else { $null }) -Digits 1) / $(Format-WeaponLogNumber -Value $(if ($speedStats) { $speedStats.Average } else { $null }) -Digits 1) / $(Format-WeaponLogNumber -Value $(if ($speedStats) { $speedStats.Max } else { $null }) -Digits 1)"
+
+Write-Host ""
+Write-Host "Observations"
+if ($observations.Count -eq 0) {
+    Write-Host "  - No notable observations were derived from the parsed telemetry."
+}
+else {
+    foreach ($observation in $observations) {
+        Write-Host "  - $observation"
+    }
+}
+
+Write-Host ""
+Write-Host "Warnings"
+if ($warnings.Count -eq 0) {
+    Write-Host "  - none"
+}
+else {
+    foreach ($warning in $warnings) {
+        Write-Host "  - $warning"
+    }
+}
+
+if ($exportedFiles.Count -gt 0) {
+    Write-Host ""
+    Write-Host "Exports"
+    foreach ($exportType in $exportedFiles.Keys) {
+        Write-Host "  $exportType : $($exportedFiles[$exportType])"
+    }
+}
+
+Write-Host ""
+Write-Host "Evidence only: this summarizes logged server-authoritative telemetry, not subjective stock-client feel."
+
+if ($assertionFailures.Count -gt 0) {
+    Write-Host ""
+    Write-Host "Assertion failures"
+    foreach ($failure in $assertionFailures) {
+        Write-Host "  - $failure"
+    }
+
+    exit 2
+}
