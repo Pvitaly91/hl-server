@@ -17,6 +17,9 @@ cvar_t sv_exp_glock_primary_air_move_penalty = {"sv_exp_glock_primary_air_move_p
 cvar_t sv_exp_glock_primary_duck_penalty_scale = {"sv_exp_glock_primary_duck_penalty_scale", "0.75", FCVAR_SERVER};
 cvar_t sv_exp_glock_primary_first_shot_speed_threshold = {"sv_exp_glock_primary_first_shot_speed_threshold", "40.0", FCVAR_SERVER};
 cvar_t sv_exp_glock_primary_max_spread = {"sv_exp_glock_primary_max_spread", "0.2", FCVAR_SERVER};
+cvar_t sv_exp_glock_primary_damage = {"sv_exp_glock_primary_damage", "8.0", FCVAR_SERVER};
+cvar_t sv_exp_glock_primary_headshot_scale = {"sv_exp_glock_primary_headshot_scale", "3.0", FCVAR_SERVER};
+cvar_t sv_exp_glock_primary_headshot_lethal = {"sv_exp_glock_primary_headshot_lethal", "0", FCVAR_SERVER};
 cvar_t sv_exp_debug_weaponlog = {"sv_exp_debug_weaponlog", "0", FCVAR_SERVER};
 cvar_t sv_exp_debug_weaponlog_rejections = {"sv_exp_debug_weaponlog_rejections", "0", FCVAR_SERVER};
 
@@ -58,6 +61,9 @@ void RegisterFutureGameplayCvars()
     CVAR_REGISTER(&sv_exp_glock_primary_duck_penalty_scale);
     CVAR_REGISTER(&sv_exp_glock_primary_first_shot_speed_threshold);
     CVAR_REGISTER(&sv_exp_glock_primary_max_spread);
+    CVAR_REGISTER(&sv_exp_glock_primary_damage);
+    CVAR_REGISTER(&sv_exp_glock_primary_headshot_scale);
+    CVAR_REGISTER(&sv_exp_glock_primary_headshot_lethal);
     CVAR_REGISTER(&sv_exp_debug_weaponlog);
     CVAR_REGISTER(&sv_exp_debug_weaponlog_rejections);
 
@@ -122,6 +128,21 @@ float ExpGlockPrimaryFirstShotSpeedThreshold()
 float ExpGlockPrimaryMaxSpread()
 {
     return GetNonNegativeCvarValue(sv_exp_glock_primary_max_spread);
+}
+
+float ExpGlockPrimaryDamage()
+{
+    return GetNonNegativeCvarValue(sv_exp_glock_primary_damage);
+}
+
+float ExpGlockPrimaryHeadshotScale()
+{
+    return GetNonNegativeCvarValue(sv_exp_glock_primary_headshot_scale);
+}
+
+bool ExpGlockPrimaryHeadshotLethal()
+{
+    return sv_exp_glock_primary_headshot_lethal.value != 0.0f;
 }
 
 bool ExpDebugWeaponLogEnabled()

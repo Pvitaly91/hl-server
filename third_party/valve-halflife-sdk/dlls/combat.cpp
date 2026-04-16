@@ -29,6 +29,7 @@
 #include "animation.h"
 #include "weapons.h"
 #include "func_break.h"
+#include "weapon_debug_logger.h"
 
 extern DLL_GLOBAL Vector		g_vecAttackDir;
 extern DLL_GLOBAL int			g_iSkillLevel;
@@ -1329,29 +1330,32 @@ void CBaseMonster :: TraceAttack( entvars_t *pevAttacker, float flDamage, Vector
 	{
 		m_LastHitGroup = ptr->iHitgroup;
 
-		switch ( ptr->iHitgroup )
+		if (!ApplyActiveGlockPrimaryTraceDamage(this, pevAttacker, ptr->iHitgroup, &flDamage))
 		{
-		case HITGROUP_GENERIC:
-			break;
-		case HITGROUP_HEAD:
-			flDamage *= gSkillData.monHead;
-			break;
-		case HITGROUP_CHEST:
-			flDamage *= gSkillData.monChest;
-			break;
-		case HITGROUP_STOMACH:
-			flDamage *= gSkillData.monStomach;
-			break;
-		case HITGROUP_LEFTARM:
-		case HITGROUP_RIGHTARM:
-			flDamage *= gSkillData.monArm;
-			break;
-		case HITGROUP_LEFTLEG:
-		case HITGROUP_RIGHTLEG:
-			flDamage *= gSkillData.monLeg;
-			break;
-		default:
-			break;
+			switch ( ptr->iHitgroup )
+			{
+			case HITGROUP_GENERIC:
+				break;
+			case HITGROUP_HEAD:
+				flDamage *= gSkillData.monHead;
+				break;
+			case HITGROUP_CHEST:
+				flDamage *= gSkillData.monChest;
+				break;
+			case HITGROUP_STOMACH:
+				flDamage *= gSkillData.monStomach;
+				break;
+			case HITGROUP_LEFTARM:
+			case HITGROUP_RIGHTARM:
+				flDamage *= gSkillData.monArm;
+				break;
+			case HITGROUP_LEFTLEG:
+			case HITGROUP_RIGHTLEG:
+				flDamage *= gSkillData.monLeg;
+				break;
+			default:
+				break;
+			}
 		}
 
 		SpawnBlood(ptr->vecEndPos, BloodColor(), flDamage);// a little surface blood.
@@ -1549,7 +1553,7 @@ Vector CBaseEntity::FireBulletsPlayer ( ULONG cShots, Vector vecSrc, Vector vecD
 			{
 			default:
 			case BULLET_PLAYER_9MM:		
-				pEntity->TraceAttack(pevAttacker, gSkillData.plrDmg9MM, vecDir, &tr, DMG_BULLET); 
+				pEntity->TraceAttack(pevAttacker, GetActiveGlockPrimaryBaseDamage(pevAttacker, gSkillData.plrDmg9MM), vecDir, &tr, DMG_BULLET); 
 				break;
 
 			case BULLET_PLAYER_MP5:		
@@ -1581,6 +1585,7 @@ Vector CBaseEntity::FireBulletsPlayer ( ULONG cShots, Vector vecSrc, Vector vecD
 		UTIL_BubbleTrail( vecSrc, tr.vecEndPos, (flDistance * tr.flFraction) / 64.0 );
 	}
 	ApplyMultiDamage(pev, pevAttacker);
+	FinalizeActiveGlockPrimaryHitTelemetry();
 
 	return Vector( x * vecSpread.x, y * vecSpread.y, 0.0 );
 }

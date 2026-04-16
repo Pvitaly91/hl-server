@@ -1,6 +1,9 @@
 #pragma once
 
+#include "extdll.h"
+
 class CBasePlayer;
+class CBaseEntity;
 
 struct GlockAcceptedShotTelemetry
 {
@@ -29,3 +32,8 @@ struct GlockRejectedShotTelemetry
 void EnsureWeaponDebugLogReady();
 void LogAcceptedGlockPrimaryShot(CBasePlayer *pPlayer, const GlockAcceptedShotTelemetry &telemetry);
 void LogRejectedGlockPrimaryHold(CBasePlayer *pPlayer, const GlockRejectedShotTelemetry &telemetry);
+void BeginGlockPrimaryShotContext(CBasePlayer *pPlayer);
+void EndGlockPrimaryShotContext();
+float GetActiveGlockPrimaryBaseDamage(entvars_t *pevAttacker, float fallbackDamage);
+bool ApplyActiveGlockPrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAttacker, int hitgroup, float *pDamage);
+void FinalizeActiveGlockPrimaryHitTelemetry();

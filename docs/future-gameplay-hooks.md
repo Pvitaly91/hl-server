@@ -7,6 +7,7 @@
 - `third_party/valve-halflife-sdk/dlls/game.cpp` calls it during `GameDLLInit` to register typed experimental cvars.
 - `third_party/valve-halflife-sdk/dlls/client.cpp` now calls it from `StartFrame` so debug-only runtime helpers can arm themselves after launch-time cvars are applied.
 - `third_party/valve-halflife-sdk/dlls/wpn_shared/hl_wpn_glock.cpp` is still the only weapon-specific gameplay patch site for the current Glock experiment.
+- `third_party/valve-halflife-sdk/dlls/combat.cpp` and `third_party/valve-halflife-sdk/dlls/player.cpp` carry the smallest safe server-side damage and post-hit telemetry hooks for this Glock-specific pass.
 - `src/weapon_debug_logger.cpp` is the local, non-vendored logger that mirrors telemetry to the server console and a disposable `testbed/logs/weapon-debug-<timestamp>.log` file.
 
 This keeps the stock runtime on `-game valve`, keeps all debug writes inside the disposable testbed, and avoids any client DLL dependency.
@@ -37,6 +38,13 @@ This keeps the stock runtime on `-game valve`, keeps all debug writes inside the
   Maximum horizontal speed for first-shot accuracy qualification.
 - `sv_exp_glock_primary_max_spread`
   Clamp ceiling for experimental Glock primary spread.
+- `sv_exp_glock_primary_damage`
+  Experimental Glock primary base bullet damage used only by the server-side experimental primary path.
+- `sv_exp_glock_primary_headshot_scale`
+  Head hitgroup multiplier for the experimental Glock primary path. Other hitgroups still use the stock HL skill-data multipliers in this pass.
+- `sv_exp_glock_primary_headshot_lethal`
+  `0` keeps the experimental path on explicit damage and hitgroup scaling only.
+  `1` allows the server to raise a Glock primary headshot's pre-armor damage high enough to force a lethal result for the current target snapshot, and the telemetry explicitly marks when that path actually ran.
 - `sv_exp_debug_weaponlog`
   Default `0` keeps telemetry fully quiet.
   `1` logs accepted Glock primary shots for the current server-authoritative experiment.
@@ -53,17 +61,23 @@ Checked-in Glock tuning presets live under `configs/glock-presets/` as small JSO
 Current examples:
 
 - `baseline.json`
-  Matches the current experimental Glock tuning defaults as closely as practical.
+  Stays close to the current experimental Glock spread tuning and stock Half-Life Glock damage multipliers.
 - `cs_tight.json`
-  Experimental tighter, more deliberate tuning with harsher movement penalties.
+  Experimental tighter, more deliberate tuning with harsher movement penalties plus optional lethal-headshot server logic for deliberate headshot trials.
 - `cs_mobile.json`
-  Experimental more mobile tuning with lighter movement penalties.
+  Experimental more mobile tuning with lighter movement penalties and a milder headshot damage profile than the tighter preset.
 
 Each preset file contains:
 
 - `name`
 - `description`
 - `cvars`
+
+The `cvars` block now version-controls both spread/recovery tuning and lethality tuning, including:
+
+- `sv_exp_glock_primary_damage`
+- `sv_exp_glock_primary_headshot_scale`
+- `sv_exp_glock_primary_headshot_lethal`
 
 The launcher merge order is:
 
@@ -75,18 +89,22 @@ This keeps tuning iteration versioned, reviewable, and server-side while staying
 
 ## What the Glock telemetry proves
 
-The new telemetry is server-authoritative and stock-client-compatible:
+The current telemetry is server-authoritative and stock-client-compatible:
 
 - it proves which authoritative Glock primary shots were accepted
 - it proves when the tap-fire hold gate rejected a primary attempt
-- it records the server-side spread inputs used for that decision path
+- it records the spread/recovery inputs that produced those shot-attempt decisions
+- it records which authoritative Glock primary hits and kills were observed after damage resolution
+- it records whether the explicit headshot-lethal path was merely configured or actually applied on a logged hit
 - it proves the disposable runtime is still running on the stock `valve` game content with no custom client DLL requirement
 
-The telemetry does not prove player feel:
+The telemetry still has important limits:
 
-- it does not prove that the stock client prediction visually matches the server timing
-- it does not prove subjective weapon feel, pacing, or readability
-- it does not replace manual in-game firing passes for cadence and feel validation
+- it does not prove subjective stock-client feel, pacing, or readability
+- it does not prove exact Counter-Strike parity
+- it does not prove that every headshot is universally one-shot outside the logged target state
+- it does not bypass Half-Life armor rules; lethal-headshot behavior is still evaluated against the server's health and armor snapshot for the specific victim
+- it only proves what the server observed for that hitgroup and that damage path, not the player's intent
 
 Launch and smoke verification are automated. Actual weapon feel still requires manual in-game testing against the stock Steam Half-Life client.
 
@@ -95,11 +113,15 @@ Launch and smoke verification are automated. Actual weapon feel still requires m
 The telemetry now uses a stable, single-line, parser-friendly prefix plus `key=value` fields:
 
 - session header
-  `[weaponlog] type=session ts=... map=... event=weapon_debug_session status=ready game=valve file="..." profile="..." tapfire=... move_scale=... firstshot_enabled=... recovery=... base=... ground_move_penalty=... air_move_penalty=... duck_penalty_scale=... firstshot_speed=... max_spread=...`
+  `[weaponlog] type=session ts=... map=... event=weapon_debug_session status=ready game=valve file="..." profile="..." tapfire=... move_scale=... firstshot_enabled=... recovery=... base=... ground_move_penalty=... air_move_penalty=... duck_penalty_scale=... firstshot_speed=... max_spread=... sv_exp_glock_primary_damage=... sv_exp_glock_primary_headshot_scale=... sv_exp_glock_primary_headshot_lethal=...`
 - accepted primary shot
   `[weaponlog] type=accepted ts=... map=... player="..." entindex=... userid=... weapon=glock fire=primary ...`
 - rejected tap-fire hold
   `[weaponlog] type=rejected ts=... map=... player="..." entindex=... userid=... weapon=glock fire=primary reason=tapfire_hold_blocked ...`
+- hit result
+  `[weaponlog] type=hit ts=... map=... attacker="..." victim="..." weapon=glock fire=primary hitgroup=... applied_damage=... headshot=... headshot_lethal_active=... headshot_lethal_applied=...`
+- kill result
+  `[weaponlog] type=kill ts=... map=... attacker="..." victim="..." weapon=glock fire=primary hitgroup=... applied_damage=... headshot=... headshot_lethal_active=... headshot_lethal_applied=...`
 
 The line remains human-readable, but the stable prefix and `type=` field make it fast to parse. The current analyzer is also backward-compatible with older unprefixed `key=value` Glock logs so earlier manual sessions are still usable.
 
@@ -123,16 +145,28 @@ The corresponding BAT alias is `scripts\run-testbed.bat glock-session`.
 
 `scripts/analyze-weapon-log.ps1` turns the manual Glock telemetry into a reviewable report.
 
-It infers:
+It summarizes:
 
 - which Glock profile metadata and tuning values were present in the session header
 - whether accepted shots were logged
 - whether tap-fire hold rejections were logged
+- whether hit and kill lines were logged
+- whether any hit lines were headshots
+- whether any kill lines were headshot kills
+- whether any hit line explicitly recorded `headshot_lethal_applied=1`
 - whether first-shot accepted events occurred
 - whether accepted shots with `move_penalty > 0` occurred
 - whether a later accepted event returned to `firstshot=1` after earlier non-firstshot accepted shots
 - whether grounded crouch-moving accepted shots look like lower movement-penalty candidates than comparable grounded standing movement
-- summary statistics for spread, movement penalty, and horizontal speed
+- summary statistics for spread, movement penalty, horizontal speed, and applied damage
+- per-hitgroup counts when hit telemetry is present
+
+It can assert non-zero on missing evidence through:
+
+- `-RequireHits`
+- `-RequireKills`
+- `-RequireHeadshotKills`
+- `-RequireLethalHeadshotEvidence`
 
 It cannot infer:
 
@@ -140,8 +174,21 @@ It cannot infer:
 - prediction smoothness or viewmodel timing
 - whether the player intentionally executed the exact movement pattern you wanted unless the telemetry clearly reflects it
 - whether a single crouch-moving sample is enough to prove balance quality
+- whether a kill alone means the lethal-headshot path ran; that requires explicit telemetry such as `headshot_lethal_applied=1`
+- whether a logged lethal headshot proves every target state is one-shot; armor and current health still matter
 
 That distinction matters. The analyzer summarizes evidence from logs; it does not replace a human in-game firing pass.
+
+## Telemetry layers
+
+Keep these layers separate when reading the reports:
+
+- shot-attempt telemetry
+  Accepted and rejected lines explain whether the authoritative Glock primary path fired at all, plus the spread and gating inputs behind that decision.
+- hit and kill telemetry
+  Hit and kill lines explain what the authoritative server observed after trace and damage resolution, including hitgroup, applied damage, and whether the explicit lethal-headshot path ran.
+- subjective feel validation
+  A human still has to fire the stock client and judge cadence, readability, responsiveness, and prediction feel.
 
 Tuning and telemetry evidence are still separate from feel testing:
 
@@ -168,16 +215,27 @@ This checklist is intentionally honest. It validates the authoritative telemetry
 
 ## Glock telemetry hook location
 
-The Glock telemetry itself lives in two places:
+The Glock telemetry itself lives in three places:
 
 - `third_party/valve-halflife-sdk/dlls/wpn_shared/hl_wpn_glock.cpp`
-  The accepted-shot and tap-fire rejection decisions are logged exactly where the server decides whether Glock primary fire proceeds.
+  The accepted-shot and tap-fire rejection decisions are logged exactly where the server decides whether Glock primary fire proceeds, and this file now brackets experimental Glock primary shots with a narrow hit-telemetry context.
 - `src/weapon_debug_logger.cpp`
   Formats single-line telemetry, resolves the disposable `testbed/logs/` path from the loaded `hl.dll`, writes the one-time session header, and keeps console logging alive even if the file cannot be opened.
+- `third_party/valve-halflife-sdk/dlls/combat.cpp` and `third_party/valve-halflife-sdk/dlls/player.cpp`
+  The experimental Glock hit and kill telemetry finalizes after the stock server damage path resolves. Those are the smallest practical hook points for hitgroup-aware damage scaling and post-damage telemetry in this pass.
 
 The accepted-shot line includes timestamp, map, player identity, fire mode, experiment/tap-fire/first-shot flags, spread values, movement inputs, grounded or ducking state, time since the previous accepted primary shot when known, and clip ammo after the shot.
 
 The rejection line includes timestamp, player identity, the `tapfire_hold_blocked` reason, and the movement and stance inputs that explain why the blocked evaluation happened.
+
+The hit and kill lines include timestamp, map, attacker and victim identity, hitgroup, applied damage, pre/post health when available, pre/post armor for player victims when available, active profile metadata, and whether the explicit lethal-headshot logic was configured or actually applied.
+
+This is still an honest approximation layer:
+
+- armor handling follows the standard Half-Life server damage rules
+- hitgroups only reflect what the authoritative trace path reported for that hit
+- the current implementation is Glock-primary-specific rather than a general weapon damage system
+- "lethal headshot evidence" means the server raised that hit's pre-armor damage through the dedicated path and marked it explicitly, not that every future headshot will behave identically
 
 ## Stock client compatibility boundary
 
@@ -197,7 +255,7 @@ Keep these four layers separate when evaluating the Glock work:
 - launch verification
   the disposable runtime started, stayed on `-game valve`, chose the expected map and port, and exposed the expected log paths
 - telemetry generation
-  the server produced the session-ready header plus accepted and rejected Glock lines that reflect the server-authoritative decision path
+  the server produced the session-ready header plus accepted, rejected, hit, and kill Glock lines that reflect the server-authoritative decision and damage paths
 - telemetry analysis
   `scripts/analyze-weapon-log.ps1` parsed the log, summarized the observed signals, and reported which expected cases were or were not present in that telemetry
 - manual in-game validation
@@ -215,6 +273,8 @@ Only the fourth layer speaks to real in-game behavior. The first three layers pr
   Experimental Glock launch plus `sv_exp_debug_weaponlog 1` and `sv_exp_debug_weaponlog_rejections 1`.
 - `scripts/run-testbed.bat glock-session`
   One-click manual Glock session: disposable reinstall, experimental-debug launch, readiness wait, optional tail window, optional stock-client auto-connect, and printed checklist.
+- `scripts/run-testbed.bat glock-session-profile <name>`
+  Same one-click manual session flow, but injects `-GlockProfile <name>` without making the BAT wrapper responsible for the real launch logic.
 - `scripts/run-testbed.bat glock-report`
   Analyze the newest disposable Glock telemetry log, with optional forwarded export or assertion switches.
 - `scripts/run-glock-test-session.ps1`

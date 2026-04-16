@@ -13,7 +13,11 @@ param(
     [switch]$RequireRejections,
     [switch]$RequireFirstShot,
     [switch]$RequireMovePenalty,
-    [switch]$RequireCrouchMoveEvidence
+    [switch]$RequireCrouchMoveEvidence,
+    [switch]$RequireHits,
+    [switch]$RequireKills,
+    [switch]$RequireHeadshotKills,
+    [switch]$RequireLethalHeadshotEvidence
 )
 
 $ErrorActionPreference = "Stop"
@@ -98,6 +102,20 @@ function Format-WeaponLogNumber {
     return ([double]$Value).ToString(("F{0}" -f $Digits), [System.Globalization.CultureInfo]::InvariantCulture)
 }
 
+function Format-WeaponLogBool {
+    param([AllowNull()][bool]$Value)
+
+    if ($null -eq $Value) {
+        return "n/a"
+    }
+
+    if ($Value) {
+        return "1"
+    }
+
+    return "0"
+}
+
 function Get-NumericStats {
     param([object[]]$Values)
 
@@ -113,6 +131,56 @@ function Get-NumericStats {
         Average = [double]$measure.Average
         Max     = [double]$measure.Maximum
     }
+}
+
+function Get-HitgroupCounts {
+    param([object[]]$Events)
+
+    $counts = [ordered]@{}
+    if ($null -eq $Events -or $Events.Count -eq 0) {
+        return $counts
+    }
+
+    $preferredHitgroups = @("head", "chest", "stomach", "leftarm", "rightarm", "leftleg", "rightleg", "generic")
+    foreach ($hitgroup in $preferredHitgroups) {
+        $count = @($Events | Where-Object { $_.HitGroup -eq $hitgroup }).Count
+        if ($count -gt 0) {
+            $counts[$hitgroup] = $count
+        }
+    }
+
+    $otherGroups = @(
+        $Events |
+        Where-Object {
+            -not [string]::IsNullOrWhiteSpace($_.HitGroup) -and
+            ($preferredHitgroups -notcontains $_.HitGroup)
+        } |
+        Group-Object -Property HitGroup |
+        Sort-Object -Property Name
+    )
+
+    foreach ($group in $otherGroups) {
+        if (-not $counts.Contains($group.Name)) {
+            $counts[$group.Name] = [int]$group.Count
+        }
+    }
+
+    return $counts
+}
+
+function Format-HitgroupCounts {
+    param([System.Collections.IDictionary]$Counts)
+
+    if ($null -eq $Counts -or $Counts.Count -eq 0) {
+        return "n/a"
+    }
+
+    $parts = @()
+    foreach ($key in $Counts.Keys) {
+        $parts += ("{0}={1}" -f $key, $Counts[$key])
+    }
+
+    return ($parts -join ", ")
 }
 
 function Parse-WeaponLogLine {
@@ -200,6 +268,9 @@ function Parse-WeaponLogLine {
         DuckPenaltyScale     = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "duck_penalty_scale")
         FirstShotSpeedThreshold = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "firstshot_speed")
         MaxSpread            = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "max_spread")
+        PrimaryDamageSetting = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "sv_exp_glock_primary_damage")
+        HeadshotScaleSetting = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "sv_exp_glock_primary_headshot_scale")
+        HeadshotLethalSetting = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "sv_exp_glock_primary_headshot_lethal")
         Player               = Get-WeaponLogValue -Values $values -Name "player"
         EntIndex             = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "entindex")
         UserId               = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "userid")
@@ -220,6 +291,26 @@ function Parse-WeaponLogLine {
         Ducking              = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "ducking")
         DeltaPrevious        = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "delta_prev")
         Clip                 = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "clip")
+        Attacker             = Get-WeaponLogValue -Values $values -Name "attacker"
+        AttackerEntIndex     = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "attacker_entindex")
+        AttackerUserId       = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "attacker_userid")
+        Victim               = Get-WeaponLogValue -Values $values -Name "victim"
+        VictimEntIndex       = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "victim_entindex")
+        VictimUserId         = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "victim_userid")
+        HitGroup             = Get-WeaponLogValue -Values $values -Name "hitgroup"
+        HitGroupId           = Convert-WeaponLogNullableInt (Get-WeaponLogValue -Values $values -Name "hitgroup_id")
+        Headshot             = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "headshot")
+        BaseDamage           = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "base_damage")
+        HitgroupScale        = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "hitgroup_scale")
+        TraceDamage          = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "trace_damage")
+        AppliedDamage        = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "applied_damage")
+        HealthBefore         = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "health_before")
+        HealthAfter          = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "health_after")
+        ArmorBefore          = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "armor_before")
+        ArmorAfter           = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "armor_after")
+        ArmorDamage          = Convert-WeaponLogNullableDouble (Get-WeaponLogValue -Values $values -Name "armor_damage")
+        HeadshotLethalActive = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "headshot_lethal_active")
+        HeadshotLethalApplied = Convert-WeaponLogNullableBool (Get-WeaponLogValue -Values $values -Name "headshot_lethal_applied")
         RawLine              = $Line
     }
 }
@@ -246,6 +337,8 @@ $sessionEvent = @($parsedEvents | Where-Object { $_.Type -eq "session" } | Selec
 $session = if ($sessionEvent.Count -gt 0) { $sessionEvent[0] } else { $null }
 $acceptedEvents = @($parsedEvents | Where-Object { $_.Type -eq "accepted" })
 $rejectedEvents = @($parsedEvents | Where-Object { $_.Type -eq "rejected" })
+$hitEvents = @($parsedEvents | Where-Object { $_.Type -eq "hit" })
+$killEvents = @($parsedEvents | Where-Object { $_.Type -eq "kill" })
 
 $firstShotAccepted = @($acceptedEvents | Where-Object { $_.FirstShot -eq $true })
 $movePenaltyAccepted = @($acceptedEvents | Where-Object { $null -ne $_.MovementPenalty -and $_.MovementPenalty -gt 0.0 })
@@ -271,11 +364,20 @@ $crouchMoveAccepted = @(
     }
 )
 
+$headshotHitEvents = @($hitEvents | Where-Object { $_.Headshot -eq $true })
+$headshotKillEvents = @($killEvents | Where-Object { $_.Headshot -eq $true })
+$lethalHeadshotEvidenceEvents = @($hitEvents | Where-Object { $_.HeadshotLethalApplied -eq $true })
+if ($lethalHeadshotEvidenceEvents.Count -eq 0 -and $hitEvents.Count -eq 0) {
+    $lethalHeadshotEvidenceEvents = @($killEvents | Where-Object { $_.HeadshotLethalApplied -eq $true })
+}
+
 $spreadStats = Get-NumericStats -Values ($acceptedEvents | Select-Object -ExpandProperty Spread)
 $movementPenaltyStats = Get-NumericStats -Values ($acceptedEvents | Select-Object -ExpandProperty MovementPenalty)
 $speedStats = Get-NumericStats -Values ($acceptedEvents | Select-Object -ExpandProperty HorizontalSpeed)
 $standingPenaltyRateStats = Get-NumericStats -Values ($standingMoveAccepted | Select-Object -ExpandProperty MovementPenaltyRate)
 $crouchPenaltyRateStats = Get-NumericStats -Values ($crouchMoveAccepted | Select-Object -ExpandProperty MovementPenaltyRate)
+$appliedDamageStats = Get-NumericStats -Values ($hitEvents | Select-Object -ExpandProperty AppliedDamage)
+$hitgroupCounts = Get-HitgroupCounts -Events $hitEvents
 
 $recoveryReturnedFirstShot = $false
 $recoveryEvent = $null
@@ -294,7 +396,6 @@ foreach ($acceptedEvent in $acceptedEvents) {
 }
 
 $crouchMoveEvidence = $false
-$crouchComparisonFound = $false
 foreach ($crouchEvent in $crouchMoveAccepted) {
     foreach ($standingEvent in $standingMoveAccepted) {
         if ($null -eq $crouchEvent.SpeedRatio -or $null -eq $standingEvent.SpeedRatio) {
@@ -303,7 +404,6 @@ foreach ($crouchEvent in $crouchMoveAccepted) {
 
         if ($crouchEvent.SpeedRatio -ge $standingEvent.SpeedRatio -and $crouchEvent.MovementPenalty -lt $standingEvent.MovementPenalty) {
             $crouchMoveEvidence = $true
-            $crouchComparisonFound = $true
             break
         }
     }
@@ -317,6 +417,9 @@ if (-not $crouchMoveEvidence -and $standingPenaltyRateStats -and $crouchPenaltyR
     $crouchMoveEvidence = $true
 }
 
+$headshotPathEvidence = ($headshotHitEvents.Count -gt 0)
+$headshotPathEvidenceSufficient = ($headshotHitEvents.Count -gt 0 -and ($headshotKillEvents.Count -gt 0 -or $lethalHeadshotEvidenceEvents.Count -gt 0))
+
 if ($acceptedEvents.Count -gt 0) {
     [void]$observations.Add(("Accepted Glock primary shots were present ({0})." -f $acceptedEvents.Count))
 }
@@ -325,10 +428,24 @@ else {
 }
 
 if ($rejectedEvents.Count -gt 0) {
-    [void]$observations.Add(("Tap-fire hold rejection lines were present ({0}); that is evidence the manual run exercised the rejection path." -f $rejectedEvents.Count))
+    [void]$observations.Add(("Tap-fire hold rejection lines were present ({0}); that is evidence the rejection path was exercised." -f $rejectedEvents.Count))
 }
 else {
     [void]$warnings.Add("No rejection lines were found, so this log does not show tap-fire hold blocking evidence.")
+}
+
+if ($hitEvents.Count -gt 0) {
+    [void]$observations.Add(("Glock hit telemetry lines were present ({0})." -f $hitEvents.Count))
+}
+else {
+    [void]$warnings.Add("No Glock hit telemetry lines were found.")
+}
+
+if ($killEvents.Count -gt 0) {
+    [void]$observations.Add(("Glock kill telemetry lines were present ({0})." -f $killEvents.Count))
+}
+else {
+    [void]$warnings.Add("No Glock kill telemetry lines were found.")
 }
 
 if ($firstShotAccepted.Count -gt 0) {
@@ -343,6 +460,30 @@ if ($movePenaltyAccepted.Count -gt 0) {
 }
 else {
     [void]$warnings.Add("No accepted events with move_penalty > 0 were found.")
+}
+
+if ($headshotHitEvents.Count -gt 0) {
+    [void]$observations.Add(("Headshot hit telemetry was present ({0})." -f $headshotHitEvents.Count))
+}
+else {
+    [void]$warnings.Add("No Glock headshot hit lines were found.")
+}
+
+if ($headshotKillEvents.Count -gt 0) {
+    [void]$observations.Add(("Headshot kill telemetry was present ({0})." -f $headshotKillEvents.Count))
+}
+else {
+    [void]$warnings.Add("No Glock headshot kill lines were found.")
+}
+
+if ($lethalHeadshotEvidenceEvents.Count -gt 0) {
+    [void]$observations.Add(("Explicit lethal-headshot evidence was present ({0}) via headshot_lethal_applied=1." -f $lethalHeadshotEvidenceEvents.Count))
+}
+elseif ($session -and $session.HeadshotLethalSetting -eq $true) {
+    [void]$warnings.Add("The session metadata enabled headshot-lethal tuning, but no hit recorded headshot_lethal_applied=1.")
+}
+else {
+    [void]$warnings.Add("No explicit lethal-headshot evidence was found. Kills alone are not treated as proof that the lethal-headshot path ran.")
 }
 
 if ($recoveryReturnedFirstShot) {
@@ -372,16 +513,33 @@ else {
 }
 
 if (-not $session) {
-    [void]$warnings.Add("No session header line was parsed. The analyzer can still summarize accepted and rejected events, but launch metadata is missing.")
+    [void]$warnings.Add("No session header line was parsed. The analyzer can still summarize event telemetry, but launch metadata is missing.")
+}
+
+if ($headshotPathEvidenceSufficient) {
+    [void]$observations.Add("The log contains enough evidence to say the session exercised the intended Glock headshot path: at least one headshot hit was recorded and the log also shows a headshot kill or an explicit lethal-headshot flag.")
+}
+elseif ($headshotPathEvidence) {
+    [void]$warnings.Add("Headshot hits were logged, but the evidence stops short of a headshot kill or explicit lethal-headshot flag.")
+}
+else {
+    [void]$warnings.Add("The log does not contain enough evidence to say the session exercised the intended Glock headshot path.")
 }
 
 $signals = [ordered]@{
-    acceptedShots                      = ($acceptedEvents.Count -gt 0)
-    tapFireHoldRejections              = ($rejectedEvents.Count -gt 0)
-    firstShotAccepted                  = ($firstShotAccepted.Count -gt 0)
-    movementPenaltyPositive            = ($movePenaltyAccepted.Count -gt 0)
-    recoveryReturnedFirstShot          = $recoveryReturnedFirstShot
-    crouchMovePenaltyReductionCandidate = $crouchMoveEvidence
+    acceptedShots                        = ($acceptedEvents.Count -gt 0)
+    tapFireHoldRejections                = ($rejectedEvents.Count -gt 0)
+    firstShotAccepted                    = ($firstShotAccepted.Count -gt 0)
+    movementPenaltyPositive              = ($movePenaltyAccepted.Count -gt 0)
+    recoveryReturnedFirstShot            = $recoveryReturnedFirstShot
+    crouchMovePenaltyReductionCandidate  = $crouchMoveEvidence
+    hitsPresent                          = ($hitEvents.Count -gt 0)
+    killsPresent                         = ($killEvents.Count -gt 0)
+    headshotHitsPresent                  = ($headshotHitEvents.Count -gt 0)
+    headshotKillsPresent                 = ($headshotKillEvents.Count -gt 0)
+    lethalHeadshotEvidencePresent        = ($lethalHeadshotEvidenceEvents.Count -gt 0)
+    headshotPathObserved                 = $headshotPathEvidence
+    headshotPathEvidenceSufficient       = $headshotPathEvidenceSufficient
 }
 
 if ($RequireAccepted -and -not $signals.acceptedShots) {
@@ -402,6 +560,22 @@ if ($RequireMovePenalty -and -not $signals.movementPenaltyPositive) {
 
 if ($RequireCrouchMoveEvidence -and -not $signals.crouchMovePenaltyReductionCandidate) {
     [void]$assertionFailures.Add("Required signal missing: crouch-moving accepted shots that suggest lower movement penalty than standing movement.")
+}
+
+if ($RequireHits -and -not $signals.hitsPresent) {
+    [void]$assertionFailures.Add("Required signal missing: Glock hit telemetry lines.")
+}
+
+if ($RequireKills -and -not $signals.killsPresent) {
+    [void]$assertionFailures.Add("Required signal missing: Glock kill telemetry lines.")
+}
+
+if ($RequireHeadshotKills -and -not $signals.headshotKillsPresent) {
+    [void]$assertionFailures.Add("Required signal missing: Glock headshot kill telemetry lines.")
+}
+
+if ($RequireLethalHeadshotEvidence -and -not $signals.lethalHeadshotEvidencePresent) {
+    [void]$assertionFailures.Add("Required signal missing: explicit lethal-headshot evidence via headshot_lethal_applied=1.")
 }
 
 $report = [ordered]@{
@@ -428,6 +602,9 @@ $report = [ordered]@{
                 duckPenaltyScale = $session.DuckPenaltyScale
                 firstShotSpeedThreshold = $session.FirstShotSpeedThreshold
                 maxSpread = $session.MaxSpread
+                primaryDamage = $session.PrimaryDamageSetting
+                headshotScale = $session.HeadshotScaleSetting
+                headshotLethal = $session.HeadshotLethalSetting
             }
         }
     }
@@ -438,6 +615,11 @@ $report = [ordered]@{
         parsedEventCount = $parsedEvents.Count
         acceptedShots = $acceptedEvents.Count
         rejectedShots = $rejectedEvents.Count
+        hitEvents = $hitEvents.Count
+        killEvents = $killEvents.Count
+        headshotHits = $headshotHitEvents.Count
+        headshotKills = $headshotKillEvents.Count
+        lethalHeadshotEvidence = $lethalHeadshotEvidenceEvents.Count
         firstShotAccepted = $firstShotAccepted.Count
         acceptedMovePenaltyPositive = $movePenaltyAccepted.Count
         acceptedGrounded = $groundedAccepted.Count
@@ -452,6 +634,8 @@ $report = [ordered]@{
         horizontalSpeed = $speedStats
         standingMovePenaltyRate = $standingPenaltyRateStats
         crouchMovePenaltyRate = $crouchPenaltyRateStats
+        appliedDamage = $appliedDamageStats
+        hitgroupCounts = $hitgroupCounts
     }
     signals = $signals
     observations = @($observations)
@@ -472,7 +656,7 @@ if ($ExportJson -or $ExportCsv) {
 
     if ($ExportJson) {
         $jsonPath = Join-Path $resolvedOutputDir ("weapon-report-" + $timestamp + ".json")
-        $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $jsonPath -Encoding UTF8
+        $report | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $jsonPath -Encoding UTF8
         $exportedFiles.json = $jsonPath
     }
 
@@ -496,8 +680,12 @@ if ($session) {
         Write-Host "  tuning                   : base=$(Format-WeaponLogNumber -Value $session.BaseSpread -Digits 4) ground=$(Format-WeaponLogNumber -Value $session.GroundMovePenalty -Digits 4) air=$(Format-WeaponLogNumber -Value $session.AirMovePenalty -Digits 4) duck=$(Format-WeaponLogNumber -Value $session.DuckPenaltyScale -Digits 4) firstshot_speed=$(Format-WeaponLogNumber -Value $session.FirstShotSpeedThreshold -Digits 1) max_spread=$(Format-WeaponLogNumber -Value $session.MaxSpread -Digits 4)"
     }
 
+    if ($null -ne $session.PrimaryDamageSetting -or $null -ne $session.HeadshotScaleSetting -or $null -ne $session.HeadshotLethalSetting) {
+        Write-Host "  damage tuning            : damage=$(Format-WeaponLogNumber -Value $session.PrimaryDamageSetting -Digits 4) headshot_scale=$(Format-WeaponLogNumber -Value $session.HeadshotScaleSetting -Digits 4) headshot_lethal=$(Format-WeaponLogBool -Value $session.HeadshotLethalSetting)"
+    }
+
     if ($null -ne $session.TapFire -or $null -ne $session.MoveSpreadScale -or $null -ne $session.FirstShotEnabled -or $null -ne $session.SpreadRecovery) {
-        Write-Host "  feature flags            : tapfire=$(if ($null -eq $session.TapFire) { 'n/a' } elseif ($session.TapFire) { '1' } else { '0' }) move_scale=$(Format-WeaponLogNumber -Value $session.MoveSpreadScale -Digits 4) firstshot=$(if ($null -eq $session.FirstShotEnabled) { 'n/a' } elseif ($session.FirstShotEnabled) { '1' } else { '0' }) recovery=$(Format-WeaponLogNumber -Value $session.SpreadRecovery -Digits 3)"
+        Write-Host "  feature flags            : tapfire=$(Format-WeaponLogBool -Value $session.TapFire) move_scale=$(Format-WeaponLogNumber -Value $session.MoveSpreadScale -Digits 4) firstshot=$(Format-WeaponLogBool -Value $session.FirstShotEnabled) recovery=$(Format-WeaponLogNumber -Value $session.SpreadRecovery -Digits 3)"
     }
 }
 else {
@@ -506,8 +694,15 @@ else {
 
 Write-Host "  accepted shots           : $($acceptedEvents.Count)"
 Write-Host "  rejected shots           : $($rejectedEvents.Count)"
+Write-Host "  hit events               : $($hitEvents.Count)"
+Write-Host "  kill events              : $($killEvents.Count)"
+Write-Host "  headshot hits            : $($headshotHitEvents.Count)"
+Write-Host "  headshot kills           : $($headshotKillEvents.Count)"
+Write-Host "  lethal hs evidence       : $($lethalHeadshotEvidenceEvents.Count)"
 Write-Host "  first-shot accepted      : $($firstShotAccepted.Count)"
 Write-Host "  accepted move_penalty>0  : $($movePenaltyAccepted.Count)"
+Write-Host "  applied dmg min/avg/max  : $(Format-WeaponLogNumber -Value $(if ($appliedDamageStats) { $appliedDamageStats.Min } else { $null }) -Digits 4) / $(Format-WeaponLogNumber -Value $(if ($appliedDamageStats) { $appliedDamageStats.Average } else { $null }) -Digits 4) / $(Format-WeaponLogNumber -Value $(if ($appliedDamageStats) { $appliedDamageStats.Max } else { $null }) -Digits 4)"
+Write-Host "  hitgroups                : $(Format-HitgroupCounts -Counts $hitgroupCounts)"
 Write-Host "  accepted grounded        : $($groundedAccepted.Count)"
 Write-Host "  accepted airborne        : $($airborneAccepted.Count)"
 Write-Host "  accepted ducking         : $($duckingAccepted.Count)"

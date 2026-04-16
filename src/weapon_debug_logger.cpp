@@ -1,11 +1,12 @@
 #include "extdll.h"
 #include "util.h"
 #include "cbase.h"
+#include "monsters.h"
 #include "player.h"
-
 #include "future_gameplay_hooks.h"
 #include "weapon_debug_logger.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <windows.h>
@@ -19,6 +20,30 @@ bool g_weaponDebugLogPathNoticePrinted = false;
 bool g_weaponDebugLogWarningPrinted = false;
 std::string g_weaponDebugLogPath;
 
+struct GlockPrimaryShotContext
+{
+    bool active;
+    entvars_t *attacker;
+    CBasePlayer *attackerPlayer;
+    bool experimentalModeActive;
+    float baseDamage;
+    float headshotScale;
+    bool headshotLethal;
+    char profileName[64];
+    bool pendingHit;
+    CBaseEntity *victim;
+    int hitgroup;
+    bool headshot;
+    float hitgroupScale;
+    float traceDamage;
+    bool headshotLethalApplied;
+    float victimHealthBefore;
+    bool victimArmorKnown;
+    float victimArmorBefore;
+};
+
+GlockPrimaryShotContext g_glockPrimaryShotContext = {};
+
 void PrintWeaponDebugWarningOnce(const char *message)
 {
     if (g_weaponDebugLogWarningPrinted)
@@ -28,6 +53,30 @@ void PrintWeaponDebugWarningOnce(const char *message)
 
     g_weaponDebugLogWarningPrinted = true;
     ALERT(at_console, "[hl-server] weapon debug logging warning: %s\n", message);
+}
+
+void ResetGlockPrimaryShotContext()
+{
+    memset(&g_glockPrimaryShotContext, 0, sizeof(g_glockPrimaryShotContext));
+}
+
+void ClearPendingGlockPrimaryHit()
+{
+    g_glockPrimaryShotContext.pendingHit = false;
+    g_glockPrimaryShotContext.victim = NULL;
+    g_glockPrimaryShotContext.hitgroup = HITGROUP_GENERIC;
+    g_glockPrimaryShotContext.headshot = false;
+    g_glockPrimaryShotContext.hitgroupScale = 0.0f;
+    g_glockPrimaryShotContext.traceDamage = 0.0f;
+    g_glockPrimaryShotContext.headshotLethalApplied = false;
+    g_glockPrimaryShotContext.victimHealthBefore = 0.0f;
+    g_glockPrimaryShotContext.victimArmorKnown = false;
+    g_glockPrimaryShotContext.victimArmorBefore = 0.0f;
+}
+
+bool HasMatchingActiveGlockPrimaryShot(entvars_t *pevAttacker)
+{
+    return g_glockPrimaryShotContext.active && g_glockPrimaryShotContext.attacker == pevAttacker;
 }
 
 void FormatTimestamp(char *buffer, size_t bufferSize)
@@ -101,6 +150,85 @@ std::string SanitizeLogValue(const char *value)
     }
 
     return sanitized;
+}
+
+float GetFallbackHitgroupScale(CBaseEntity *pVictim, int hitgroup)
+{
+    const bool fPlayerVictim = pVictim != NULL && pVictim->IsPlayer();
+
+    switch (hitgroup)
+    {
+    case HITGROUP_HEAD:
+        return fPlayerVictim ? gSkillData.plrHead : gSkillData.monHead;
+    case HITGROUP_CHEST:
+        return fPlayerVictim ? gSkillData.plrChest : gSkillData.monChest;
+    case HITGROUP_STOMACH:
+        return fPlayerVictim ? gSkillData.plrStomach : gSkillData.monStomach;
+    case HITGROUP_LEFTARM:
+    case HITGROUP_RIGHTARM:
+        return fPlayerVictim ? gSkillData.plrArm : gSkillData.monArm;
+    case HITGROUP_LEFTLEG:
+    case HITGROUP_RIGHTLEG:
+        return fPlayerVictim ? gSkillData.plrLeg : gSkillData.monLeg;
+    case HITGROUP_GENERIC:
+    default:
+        return 1.0f;
+    }
+}
+
+float ComputePlayerHeadshotLethalDamage(CBasePlayer *pPlayer)
+{
+    if (pPlayer == NULL || pPlayer->pev == NULL)
+    {
+        return 0.0f;
+    }
+
+    const float flHealth = pPlayer->pev->health > 0.0f ? pPlayer->pev->health : 0.0f;
+    const float flArmor = pPlayer->pev->armorvalue > 0.0f ? pPlayer->pev->armorvalue : 0.0f;
+    const float flRequiredDamage = (flArmor >= (2.0f * flHealth))
+        ? (5.0f * flHealth)
+        : (flHealth + (2.0f * flArmor));
+
+    return (float)ceil(flRequiredDamage);
+}
+
+float ComputeHeadshotLethalDamage(CBaseEntity *pVictim)
+{
+    if (pVictim == NULL || pVictim->pev == NULL)
+    {
+        return 0.0f;
+    }
+
+    if (pVictim->IsPlayer())
+    {
+        return ComputePlayerHeadshotLethalDamage((CBasePlayer *)pVictim);
+    }
+
+    return (float)ceil(pVictim->pev->health > 0.0f ? pVictim->pev->health : 0.0f);
+}
+
+const char *GetHitgroupName(int hitgroup)
+{
+    switch (hitgroup)
+    {
+    case HITGROUP_HEAD:
+        return "head";
+    case HITGROUP_CHEST:
+        return "chest";
+    case HITGROUP_STOMACH:
+        return "stomach";
+    case HITGROUP_LEFTARM:
+        return "leftarm";
+    case HITGROUP_RIGHTARM:
+        return "rightarm";
+    case HITGROUP_LEFTLEG:
+        return "leftleg";
+    case HITGROUP_RIGHTLEG:
+        return "rightleg";
+    case HITGROUP_GENERIC:
+    default:
+        return "generic";
+    }
 }
 
 std::string GetDirectoryName(const std::string &path)
@@ -295,57 +423,6 @@ void PrintLogPathNotice()
     ALERT(at_console, "[hl-server] weapon debug telemetry file: %s\n", g_weaponDebugLogPath.c_str());
 }
 
-void EnsureWeaponDebugLogOpen()
-{
-    if (g_weaponDebugLogOpenAttempted)
-    {
-        return;
-    }
-
-    g_weaponDebugLogOpenAttempted = true;
-
-    std::string resolvedLogPath;
-    if (!ResolveWeaponDebugLogPath(&resolvedLogPath))
-    {
-        PrintWeaponDebugWarningOnce("unable to resolve a disposable testbed log path; telemetry will stay console-only");
-        return;
-    }
-
-    g_weaponDebugLogPath = NormalizePathForLogging(resolvedLogPath);
-    g_weaponDebugLogFile = fopen(resolvedLogPath.c_str(), "a");
-    if (g_weaponDebugLogFile == NULL)
-    {
-        PrintWeaponDebugWarningOnce("failed to open the disposable weapon debug log file; telemetry will stay console-only");
-        return;
-    }
-
-    PrintLogPathNotice();
-
-    char timestamp[64];
-    char sessionLine[1024];
-    FormatTimestamp(timestamp, sizeof(timestamp));
-    _snprintf_s(
-        sessionLine,
-        sizeof(sessionLine),
-        _TRUNCATE,
-        "[weaponlog] type=session ts=%s map=%s event=weapon_debug_session status=ready game=valve file=\"%s\" profile=\"%s\" tapfire=%d move_scale=%.4f firstshot_enabled=%d recovery=%.3f base=%.4f ground_move_penalty=%.4f air_move_penalty=%.4f duck_penalty_scale=%.4f firstshot_speed=%.1f max_spread=%.4f",
-        timestamp,
-        SanitizeLogValue(GetSafeMapName()).c_str(),
-        g_weaponDebugLogPath.c_str(),
-        SanitizeLogValue(ExpGlockProfileName()).c_str(),
-        ExpPistolTapFireEnabled() ? 1 : 0,
-        ExpMoveSpreadScale(),
-        ExpFirstShotAccuracyEnabled() ? 1 : 0,
-        ExpSpreadRecoverySeconds(),
-        ExpGlockPrimaryBaseSpread(),
-        ExpGlockPrimaryGroundMovePenalty(),
-        ExpGlockPrimaryAirMovePenalty(),
-        ExpGlockPrimaryDuckPenaltyScale(),
-        ExpGlockPrimaryFirstShotSpeedThreshold(),
-        ExpGlockPrimaryMaxSpread());
-    WriteTelemetryLine(sessionLine);
-}
-
 std::string GetSafePlayerName(CBasePlayer *pPlayer)
 {
     if (pPlayer == NULL || pPlayer->pev == NULL || pPlayer->pev->netname == 0)
@@ -374,6 +451,111 @@ int GetPlayerUserId(CBasePlayer *pPlayer)
     }
 
     return GETPLAYERUSERID(pPlayer->edict());
+}
+
+std::string GetSafeEntityName(CBaseEntity *pEntity)
+{
+    if (pEntity == NULL)
+    {
+        return "unknown";
+    }
+
+    if (pEntity->IsPlayer())
+    {
+        return GetSafePlayerName((CBasePlayer *)pEntity);
+    }
+
+    if (pEntity->pev == NULL || pEntity->pev->classname == 0)
+    {
+        return "unknown";
+    }
+
+    return SanitizeLogValue(STRING(pEntity->pev->classname));
+}
+
+int GetEntityIndex(CBaseEntity *pEntity)
+{
+    if (pEntity == NULL || pEntity->edict() == NULL)
+    {
+        return -1;
+    }
+
+    return ENTINDEX(pEntity->edict());
+}
+
+int GetEntityUserId(CBaseEntity *pEntity)
+{
+    if (pEntity == NULL || !pEntity->IsPlayer() || pEntity->edict() == NULL)
+    {
+        return -1;
+    }
+
+    return GETPLAYERUSERID(pEntity->edict());
+}
+
+void FormatOptionalFloat(char *buffer, size_t bufferSize, bool available, float value, int digits)
+{
+    if (!available)
+    {
+        strcpy_s(buffer, bufferSize, "na");
+        return;
+    }
+
+    _snprintf_s(buffer, bufferSize, _TRUNCATE, "%.*f", digits, value);
+}
+
+void EnsureWeaponDebugLogOpen()
+{
+    if (g_weaponDebugLogOpenAttempted)
+    {
+        return;
+    }
+
+    g_weaponDebugLogOpenAttempted = true;
+
+    std::string resolvedLogPath;
+    if (!ResolveWeaponDebugLogPath(&resolvedLogPath))
+    {
+        PrintWeaponDebugWarningOnce("unable to resolve a disposable testbed log path; telemetry will stay console-only");
+        return;
+    }
+
+    g_weaponDebugLogPath = NormalizePathForLogging(resolvedLogPath);
+    g_weaponDebugLogFile = fopen(resolvedLogPath.c_str(), "a");
+    if (g_weaponDebugLogFile == NULL)
+    {
+        PrintWeaponDebugWarningOnce("failed to open the disposable weapon debug log file; telemetry will stay console-only");
+        return;
+    }
+
+    PrintLogPathNotice();
+
+    char timestamp[64];
+    char sessionLine[1536];
+    FormatTimestamp(timestamp, sizeof(timestamp));
+    _snprintf_s(
+        sessionLine,
+        sizeof(sessionLine),
+        _TRUNCATE,
+        "[weaponlog] type=session ts=%s map=%s event=weapon_debug_session status=ready game=valve file=\"%s\" profile=\"%s\" tapfire=%d move_scale=%.4f firstshot_enabled=%d recovery=%.3f base=%.4f ground_move_penalty=%.4f air_move_penalty=%.4f duck_penalty_scale=%.4f firstshot_speed=%.1f max_spread=%.4f sv_exp_glock_primary_damage=%.4f sv_exp_glock_primary_headshot_scale=%.4f sv_exp_glock_primary_headshot_lethal=%d",
+        timestamp,
+        SanitizeLogValue(GetSafeMapName()).c_str(),
+        g_weaponDebugLogPath.c_str(),
+        SanitizeLogValue(ExpGlockProfileName()).c_str(),
+        ExpPistolTapFireEnabled() ? 1 : 0,
+        ExpMoveSpreadScale(),
+        ExpFirstShotAccuracyEnabled() ? 1 : 0,
+        ExpSpreadRecoverySeconds(),
+        ExpGlockPrimaryBaseSpread(),
+        ExpGlockPrimaryGroundMovePenalty(),
+        ExpGlockPrimaryAirMovePenalty(),
+        ExpGlockPrimaryDuckPenaltyScale(),
+        ExpGlockPrimaryFirstShotSpeedThreshold(),
+        ExpGlockPrimaryMaxSpread(),
+        ExpGlockPrimaryDamage(),
+        ExpGlockPrimaryHeadshotScale(),
+        ExpGlockPrimaryHeadshotLethal() ? 1 : 0);
+    WriteTelemetryLine(sessionLine);
 }
 }
 
@@ -464,4 +646,178 @@ void LogRejectedGlockPrimaryHold(CBasePlayer *pPlayer, const GlockRejectedShotTe
         telemetry.ducking ? 1 : 0);
 
     WriteTelemetryLine(line);
+}
+
+void BeginGlockPrimaryShotContext(CBasePlayer *pPlayer)
+{
+    ResetGlockPrimaryShotContext();
+    if (pPlayer == NULL || pPlayer->pev == NULL)
+    {
+        return;
+    }
+
+    g_glockPrimaryShotContext.active = true;
+    g_glockPrimaryShotContext.attacker = pPlayer->pev;
+    g_glockPrimaryShotContext.attackerPlayer = pPlayer;
+    g_glockPrimaryShotContext.experimentalModeActive = ExpGlockExperimentalModeEnabled();
+    g_glockPrimaryShotContext.baseDamage = ExpGlockPrimaryDamage();
+    g_glockPrimaryShotContext.headshotScale = ExpGlockPrimaryHeadshotScale();
+    g_glockPrimaryShotContext.headshotLethal = ExpGlockPrimaryHeadshotLethal();
+    strncpy_s(g_glockPrimaryShotContext.profileName, sizeof(g_glockPrimaryShotContext.profileName), ExpGlockProfileName(), _TRUNCATE);
+}
+
+void EndGlockPrimaryShotContext()
+{
+    ResetGlockPrimaryShotContext();
+}
+
+float GetActiveGlockPrimaryBaseDamage(entvars_t *pevAttacker, float fallbackDamage)
+{
+    if (!HasMatchingActiveGlockPrimaryShot(pevAttacker))
+    {
+        return fallbackDamage;
+    }
+
+    return g_glockPrimaryShotContext.baseDamage;
+}
+
+bool ApplyActiveGlockPrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAttacker, int hitgroup, float *pDamage)
+{
+    if (pDamage == NULL || pVictim == NULL || pVictim->pev == NULL || !HasMatchingActiveGlockPrimaryShot(pevAttacker))
+    {
+        return false;
+    }
+
+    const bool fHeadshot = hitgroup == HITGROUP_HEAD;
+    float flHitgroupScale = GetFallbackHitgroupScale(pVictim, hitgroup);
+
+    if (fHeadshot)
+    {
+        flHitgroupScale = g_glockPrimaryShotContext.headshotScale;
+    }
+
+    float flDamage = GetActiveGlockPrimaryBaseDamage(pevAttacker, *pDamage) * flHitgroupScale;
+    bool fHeadshotLethalApplied = false;
+
+    if (fHeadshot && g_glockPrimaryShotContext.headshotLethal)
+    {
+        const float flLethalDamage = ComputeHeadshotLethalDamage(pVictim);
+        if (flLethalDamage > flDamage)
+        {
+            flDamage = flLethalDamage;
+            fHeadshotLethalApplied = true;
+        }
+    }
+
+    *pDamage = flDamage;
+
+    g_glockPrimaryShotContext.pendingHit = true;
+    g_glockPrimaryShotContext.victim = pVictim;
+    g_glockPrimaryShotContext.hitgroup = hitgroup;
+    g_glockPrimaryShotContext.headshot = fHeadshot;
+    g_glockPrimaryShotContext.hitgroupScale = flHitgroupScale;
+    g_glockPrimaryShotContext.traceDamage = flDamage;
+    g_glockPrimaryShotContext.headshotLethalApplied = fHeadshotLethalApplied;
+    g_glockPrimaryShotContext.victimHealthBefore = pVictim->pev->health;
+    g_glockPrimaryShotContext.victimArmorKnown = pVictim->IsPlayer();
+    g_glockPrimaryShotContext.victimArmorBefore = g_glockPrimaryShotContext.victimArmorKnown ? pVictim->pev->armorvalue : 0.0f;
+
+    return true;
+}
+
+void FinalizeActiveGlockPrimaryHitTelemetry()
+{
+    if (!g_glockPrimaryShotContext.active || !g_glockPrimaryShotContext.pendingHit || g_glockPrimaryShotContext.victim == NULL || g_glockPrimaryShotContext.victim->pev == NULL)
+    {
+        ClearPendingGlockPrimaryHit();
+        return;
+    }
+
+    CBaseEntity *pVictim = g_glockPrimaryShotContext.victim;
+    const float flHealthAfter = pVictim->pev->health;
+    const float flAppliedDamage = g_glockPrimaryShotContext.victimHealthBefore - flHealthAfter;
+    const bool fArmorKnown = g_glockPrimaryShotContext.victimArmorKnown && pVictim->IsPlayer();
+    const float flArmorAfter = fArmorKnown ? pVictim->pev->armorvalue : 0.0f;
+    const float flArmorDamage = fArmorKnown ? (g_glockPrimaryShotContext.victimArmorBefore - flArmorAfter) : 0.0f;
+
+    if (ExpDebugWeaponLogEnabled())
+    {
+        EnsureWeaponDebugLogOpen();
+
+        char timestamp[64];
+        char armorBefore[32];
+        char armorAfter[32];
+        char armorDamage[32];
+        char line[2048];
+
+        FormatTimestamp(timestamp, sizeof(timestamp));
+        FormatOptionalFloat(armorBefore, sizeof(armorBefore), fArmorKnown, g_glockPrimaryShotContext.victimArmorBefore, 1);
+        FormatOptionalFloat(armorAfter, sizeof(armorAfter), fArmorKnown, flArmorAfter, 1);
+        FormatOptionalFloat(armorDamage, sizeof(armorDamage), fArmorKnown, flArmorDamage, 1);
+
+        _snprintf_s(
+            line,
+            sizeof(line),
+            _TRUNCATE,
+            "[weaponlog] type=hit ts=%s map=%s attacker=\"%s\" attacker_entindex=%d attacker_userid=%d victim=\"%s\" victim_entindex=%d victim_userid=%d weapon=glock fire=primary hitgroup=%s hitgroup_id=%d headshot=%d experimental=%d profile=\"%s\" base_damage=%.4f hitgroup_scale=%.4f trace_damage=%.4f applied_damage=%.4f health_before=%.1f health_after=%.1f armor_before=%s armor_after=%s armor_damage=%s headshot_lethal_active=%d headshot_lethal_applied=%d",
+            timestamp,
+            SanitizeLogValue(GetSafeMapName()).c_str(),
+            GetSafePlayerName(g_glockPrimaryShotContext.attackerPlayer).c_str(),
+            GetPlayerEntityIndex(g_glockPrimaryShotContext.attackerPlayer),
+            GetPlayerUserId(g_glockPrimaryShotContext.attackerPlayer),
+            GetSafeEntityName(pVictim).c_str(),
+            GetEntityIndex(pVictim),
+            GetEntityUserId(pVictim),
+            GetHitgroupName(g_glockPrimaryShotContext.hitgroup),
+            g_glockPrimaryShotContext.hitgroup,
+            g_glockPrimaryShotContext.headshot ? 1 : 0,
+            g_glockPrimaryShotContext.experimentalModeActive ? 1 : 0,
+            SanitizeLogValue(g_glockPrimaryShotContext.profileName).c_str(),
+            g_glockPrimaryShotContext.baseDamage,
+            g_glockPrimaryShotContext.hitgroupScale,
+            g_glockPrimaryShotContext.traceDamage,
+            flAppliedDamage,
+            g_glockPrimaryShotContext.victimHealthBefore,
+            flHealthAfter,
+            armorBefore,
+            armorAfter,
+            armorDamage,
+            g_glockPrimaryShotContext.headshotLethal ? 1 : 0,
+            g_glockPrimaryShotContext.headshotLethalApplied ? 1 : 0);
+        WriteTelemetryLine(line);
+
+        if (!pVictim->IsAlive())
+        {
+            char killLine[2048];
+            _snprintf_s(
+                killLine,
+                sizeof(killLine),
+                _TRUNCATE,
+                "[weaponlog] type=kill ts=%s map=%s attacker=\"%s\" attacker_entindex=%d attacker_userid=%d victim=\"%s\" victim_entindex=%d victim_userid=%d weapon=glock fire=primary hitgroup=%s hitgroup_id=%d headshot=%d experimental=%d profile=\"%s\" trace_damage=%.4f applied_damage=%.4f health_before=%.1f health_after=%.1f armor_before=%s armor_after=%s headshot_lethal_active=%d headshot_lethal_applied=%d",
+                timestamp,
+                SanitizeLogValue(GetSafeMapName()).c_str(),
+                GetSafePlayerName(g_glockPrimaryShotContext.attackerPlayer).c_str(),
+                GetPlayerEntityIndex(g_glockPrimaryShotContext.attackerPlayer),
+                GetPlayerUserId(g_glockPrimaryShotContext.attackerPlayer),
+                GetSafeEntityName(pVictim).c_str(),
+                GetEntityIndex(pVictim),
+                GetEntityUserId(pVictim),
+                GetHitgroupName(g_glockPrimaryShotContext.hitgroup),
+                g_glockPrimaryShotContext.hitgroup,
+                g_glockPrimaryShotContext.headshot ? 1 : 0,
+                g_glockPrimaryShotContext.experimentalModeActive ? 1 : 0,
+                SanitizeLogValue(g_glockPrimaryShotContext.profileName).c_str(),
+                g_glockPrimaryShotContext.traceDamage,
+                flAppliedDamage,
+                g_glockPrimaryShotContext.victimHealthBefore,
+                flHealthAfter,
+                armorBefore,
+                armorAfter,
+                g_glockPrimaryShotContext.headshotLethal ? 1 : 0,
+                g_glockPrimaryShotContext.headshotLethalApplied ? 1 : 0);
+            WriteTelemetryLine(killLine);
+        }
+    }
+
+    ClearPendingGlockPrimaryHit();
 }

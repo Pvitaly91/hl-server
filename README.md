@@ -119,6 +119,12 @@ Launch detached experimental-debug HLDS with a preset from the BAT wrapper:
 scripts\run-testbed.bat glock-profile cs_tight
 ```
 
+Launch detached experimental-debug HLDS with the same named preset from PowerShell:
+
+```powershell
+.\scripts\run-server.ps1 -Configuration Debug -EnableExperimentalGlock -EnableExperimentalGlockDebug -GlockProfile cs_tight -Detached
+```
+
 Launch the one-click manual Glock session:
 
 ```powershell
@@ -128,7 +134,13 @@ Launch the one-click manual Glock session:
 Launch the one-click manual Glock session with a preset:
 
 ```powershell
-.\scripts\run-glock-test-session.ps1 -Configuration Debug -GlockProfile cs_mobile
+.\scripts\run-glock-test-session.ps1 -Configuration Debug -GlockProfile cs_tight
+```
+
+Launch the same named-profile one-click session from `cmd.exe` or Explorer with the thin BAT alias:
+
+```bat
+scripts\run-testbed.bat glock-session-profile cs_tight
 ```
 
 Launch the same session and analyze the latest Glock telemetry log after you finish the manual firing pass and press Enter in the original console:
@@ -212,15 +224,27 @@ Blocked tap-fire hold attempts log only when rejection logging is also enabled, 
 Each session also starts with a single header line:
 
 ```text
-[weaponlog] type=session ts=2026-04-16T21:24:54.901 map=crossfire event=weapon_debug_session status=ready game=valve file="d:/dev/cpp/hl-server/testbed/logs/weapon-debug-20260416-212454.log" profile="cs_tight" tapfire=1 move_scale=1.0000 firstshot_enabled=1 recovery=0.350 base=0.0080 ground_move_penalty=0.0950 air_move_penalty=0.1400 duck_penalty_scale=0.7000 firstshot_speed=30.0 max_spread=0.1600
+[weaponlog] type=session ts=2026-04-16T21:24:54.901 map=crossfire event=weapon_debug_session status=ready game=valve file="d:/dev/cpp/hl-server/testbed/logs/weapon-debug-20260416-212454.log" profile="cs_tight" tapfire=1 move_scale=1.0000 firstshot_enabled=1 recovery=0.350 base=0.0080 ground_move_penalty=0.0950 air_move_penalty=0.1400 duck_penalty_scale=0.7000 firstshot_speed=30.0 max_spread=0.1600 sv_exp_glock_primary_damage=10.0000 sv_exp_glock_primary_headshot_scale=4.0000 sv_exp_glock_primary_headshot_lethal=1
 ```
+
+Hit and kill telemetry stay on the same single-line `key=value` shape, for example:
+
+```text
+[weaponlog] type=hit ts=2026-04-16T21:25:02.114 map=crossfire attacker="Player" attacker_entindex=1 attacker_userid=2 victim="Target Bravo" victim_entindex=3 victim_userid=5 weapon=glock fire=primary hitgroup=head hitgroup_id=1 headshot=1 experimental=1 profile="cs_tight" base_damage=10.0000 hitgroup_scale=4.0000 trace_damage=200.0000 applied_damage=100.0000 health_before=100.0 health_after=0.0 armor_before=50.0 armor_after=0.0 armor_damage=50.0 headshot_lethal_active=1 headshot_lethal_applied=1
+```
+
+```text
+[weaponlog] type=kill ts=2026-04-16T21:25:02.114 map=crossfire attacker="Player" attacker_entindex=1 attacker_userid=2 victim="Target Bravo" victim_entindex=3 victim_userid=5 weapon=glock fire=primary hitgroup=head hitgroup_id=1 headshot=1 experimental=1 profile="cs_tight" trace_damage=200.0000 applied_damage=100.0000 health_before=100.0 health_after=0.0 armor_before=50.0 armor_after=0.0 headshot_lethal_active=1 headshot_lethal_applied=1
+```
+
+In this implementation, "lethal headshot evidence" means the server explicitly logged `headshot_lethal_applied=1` on a Glock hit or kill after the dedicated headshot-lethal path raised pre-armor damage for that specific hit. It is not inferred from a kill line alone, and it is not a claim of exact Counter-Strike parity or validated subjective feel.
 
 ## Analyze Glock telemetry
 
 Analyze the newest disposable weapon log:
 
 ```powershell
-.\scripts\analyze-weapon-log.ps1
+.\scripts\analyze-weapon-log.ps1 -Latest
 ```
 
 Analyze a specific log file:
@@ -254,23 +278,37 @@ Assert that a manual run exercised the expected signals:
 .\scripts\analyze-weapon-log.ps1 -Path .\scripts\fixtures\sample-weapon-debug.log -RequireAccepted -RequireRejections -RequireFirstShot -RequireMovePenalty -RequireCrouchMoveEvidence
 ```
 
+Assert that a log contains hit, kill, headshot-kill, and explicit lethal-headshot evidence:
+
+```powershell
+.\scripts\analyze-weapon-log.ps1 -Path .\scripts\fixtures\sample-weapon-debug.log -RequireHits -RequireKills -RequireHeadshotKills -RequireLethalHeadshotEvidence
+```
+
 Example summary:
 
 ```text
 Weapon log analysis
   log path                 : D:\DEV\CPP\HL-Server\scripts\fixtures\sample-weapon-debug.log
   session                  : ts=2026-04-16T12:00:00.000 map=fixture_range game=valve status=ready
-  profile                  : cs_mobile
-  tuning                   : base=0.0120 ground=0.0600 air=0.0900 duck=0.6500 firstshot_speed=55.0 max_spread=0.1800
-  feature flags            : tapfire=1 move_scale=1.0000 firstshot=1 recovery=0.250
+  profile                  : cs_tight
+  tuning                   : base=0.0080 ground=0.0950 air=0.1400 duck=0.7000 firstshot_speed=30.0 max_spread=0.1600
+  damage tuning            : damage=10.0000 headshot_scale=4.0000 headshot_lethal=1
+  feature flags            : tapfire=1 move_scale=1.0000 firstshot=1 recovery=0.350
   accepted shots           : 5
   rejected shots           : 1
+  hit events               : 2
+  kill events              : 1
+  headshot hits            : 1
+  headshot kills           : 1
+  lethal hs evidence       : 1
   first-shot accepted      : 2
   accepted move_penalty>0  : 3
+  applied dmg min/avg/max  : 10.0000 / 55.0000 / 100.0000
+  hitgroups                : head=1, chest=1
   accepted grounded        : 4
   accepted airborne        : 1
   accepted ducking         : 1
-  spread min/avg/max       : 0.0000 / 0.0384 / 0.1020
+  spread min/avg/max       : 0.0000 / 0.0350 / 0.0700
 ```
 
 The analyzer summarizes server-authoritative telemetry evidence only. It helps confirm that accepted shots, tap-fire hold rejections, movement penalties, recovery, and crouch-move candidates were logged, but it does not prove subjective stock-client feel or prediction quality.

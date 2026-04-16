@@ -36,6 +36,7 @@
 #include "game.h"
 #include "pm_shared.h"
 #include "hltv.h"
+#include "weapon_debug_logger.h"
 
 // #define DUCKFIX
 
@@ -401,29 +402,32 @@ void CBasePlayer :: TraceAttack( entvars_t *pevAttacker, float flDamage, Vector 
 	{
 		m_LastHitGroup = ptr->iHitgroup;
 
-		switch ( ptr->iHitgroup )
+		if (!ApplyActiveGlockPrimaryTraceDamage(this, pevAttacker, ptr->iHitgroup, &flDamage))
 		{
-		case HITGROUP_GENERIC:
-			break;
-		case HITGROUP_HEAD:
-			flDamage *= gSkillData.plrHead;
-			break;
-		case HITGROUP_CHEST:
-			flDamage *= gSkillData.plrChest;
-			break;
-		case HITGROUP_STOMACH:
-			flDamage *= gSkillData.plrStomach;
-			break;
-		case HITGROUP_LEFTARM:
-		case HITGROUP_RIGHTARM:
-			flDamage *= gSkillData.plrArm;
-			break;
-		case HITGROUP_LEFTLEG:
-		case HITGROUP_RIGHTLEG:
-			flDamage *= gSkillData.plrLeg;
-			break;
-		default:
-			break;
+			switch ( ptr->iHitgroup )
+			{
+			case HITGROUP_GENERIC:
+				break;
+			case HITGROUP_HEAD:
+				flDamage *= gSkillData.plrHead;
+				break;
+			case HITGROUP_CHEST:
+				flDamage *= gSkillData.plrChest;
+				break;
+			case HITGROUP_STOMACH:
+				flDamage *= gSkillData.plrStomach;
+				break;
+			case HITGROUP_LEFTARM:
+			case HITGROUP_RIGHTARM:
+				flDamage *= gSkillData.plrArm;
+				break;
+			case HITGROUP_LEFTLEG:
+			case HITGROUP_RIGHTLEG:
+				flDamage *= gSkillData.plrLeg;
+				break;
+			default:
+				break;
+			}
 		}
 
 		SpawnBlood(ptr->vecEndPos, BloodColor(), flDamage);// a little surface blood.

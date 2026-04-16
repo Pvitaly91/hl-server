@@ -9,6 +9,7 @@ set "TARGET_SCRIPT=%SCRIPT_DIR%run-server.ps1"
 set "DEFAULT_ARGS=-Detached"
 
 if /I "%MODE%"=="glock-session" goto mode_glock_session
+if /I "%MODE%"=="glock-session-profile" goto mode_glock_session_profile
 if /I "%MODE%"=="glock-profiles" goto mode_glock_profiles
 if /I "%MODE%"=="glock-profile" goto mode_glock_profile
 if /I "%MODE%"=="glock-report" goto mode_glock_report
@@ -19,6 +20,13 @@ goto collect_args
 
 :mode_glock_session
 set "TARGET_SCRIPT=%SCRIPT_DIR%run-glock-test-session.ps1"
+set "DEFAULT_ARGS="
+shift
+goto collect_args
+
+:mode_glock_session_profile
+set "TARGET_SCRIPT=%SCRIPT_DIR%run-glock-test-session.ps1"
+set "RUN_SWITCHES=-GlockProfile"
 set "DEFAULT_ARGS="
 shift
 goto collect_args
