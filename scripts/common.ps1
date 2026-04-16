@@ -723,9 +723,28 @@ function Get-ExperimentalGlockDebugLaunchAssignments {
     )
 }
 
+function Get-ExperimentalWeaponDebugLaunchAssignments {
+    return @(Get-ExperimentalGlockDebugLaunchAssignments)
+}
+
+function Get-ExperimentalMp5LaunchAssignments {
+    return @(
+        "sv_exp_mp5_primary_enabled=1",
+        "sv_exp_mp5_profile_name=default"
+    )
+}
+
 function Get-GlockLabDummyLaunchAssignments {
     return @(
         "sv_exp_glock_lab_dummy=1"
+    )
+}
+
+function Get-Mp5LabLoadoutLaunchAssignments {
+    return @(
+        "sv_exp_mp5_lab_loadout=1",
+        "sv_exp_mp5_lab_ammo=250",
+        "sv_exp_mp5_lab_autoswitch=1"
     )
 }
 
@@ -733,7 +752,8 @@ function Get-SessionMetadataLaunchAssignments {
     param(
         [string]$SessionTag,
         [string]$MatrixName,
-        [string]$MatrixStep
+        [string]$MatrixStep,
+        [string]$WeaponUnderTest
     )
 
     $assignments = New-Object System.Collections.Generic.List[string]
@@ -748,6 +768,10 @@ function Get-SessionMetadataLaunchAssignments {
 
     if (-not [string]::IsNullOrWhiteSpace($MatrixStep)) {
         $assignments.Add(("sv_exp_matrix_step={0}" -f $MatrixStep.Trim()))
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($WeaponUnderTest)) {
+        $assignments.Add(("sv_exp_weapon_under_test={0}" -f $WeaponUnderTest.Trim()))
     }
 
     return $assignments.ToArray()
@@ -866,6 +890,87 @@ function Get-GlockProfileLaunchAssignments {
 
     $profile = Get-GlockProfile -Name $Name
     return @("sv_exp_glock_profile_name=$($profile.Name)") + @($profile.Assignments)
+}
+
+function Get-Mp5ProfilesRoot {
+    return (Join-RepoPath "configs\mp5-presets")
+}
+
+function Get-Mp5Profiles {
+    $profilesRoot = Get-Mp5ProfilesRoot
+    if (-not (Test-Path -LiteralPath $profilesRoot -PathType Container)) {
+        throw "MP5 profiles directory was not found: $profilesRoot"
+    }
+
+    $profiles = New-Object System.Collections.Generic.List[object]
+
+    foreach ($profileFile in (Get-ChildItem -LiteralPath $profilesRoot -File -Filter "*.json" | Sort-Object BaseName, Name)) {
+        try {
+            $rawJson = Get-Content -LiteralPath $profileFile.FullName -Raw
+            $profileData = $rawJson | ConvertFrom-Json
+        }
+        catch {
+            throw "Failed to parse MP5 profile '$($profileFile.FullName)': $($_.Exception.Message)"
+        }
+
+        $profileName = [string]$profileData.name
+        $description = [string]$profileData.description
+
+        if ([string]::IsNullOrWhiteSpace($profileName)) {
+            throw "MP5 profile '$($profileFile.FullName)' must define a non-empty 'name'."
+        }
+
+        if ([string]::IsNullOrWhiteSpace($description)) {
+            throw "MP5 profile '$($profileFile.FullName)' must define a non-empty 'description'."
+        }
+
+        if ($profileFile.BaseName -ne $profileName) {
+            throw "MP5 profile filename '$($profileFile.Name)' must match profile name '$profileName'."
+        }
+
+        if ($null -eq $profileData.cvars) {
+            throw "MP5 profile '$($profileFile.FullName)' must define a 'cvars' object."
+        }
+
+        $assignments = @(ConvertTo-LaunchAssignments -Cvars $profileData.cvars -SourceLabel "MP5 preset")
+
+        $profiles.Add([PSCustomObject]@{
+            Name = $profileName
+            Description = $description
+            Path = $profileFile.FullName
+            Assignments = $assignments
+            Cvars = $profileData.cvars
+        })
+    }
+
+    return $profiles.ToArray()
+}
+
+function Get-Mp5Profile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    $profiles = @(Get-Mp5Profiles)
+    $match = $profiles | Where-Object { $_.Name.Equals($Name, [System.StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1
+    if ($match) {
+        return $match
+    }
+
+    $available = $profiles | Select-Object -ExpandProperty Name
+    $availableText = if ($available.Count -gt 0) { ($available -join ", ") } else { "none" }
+    throw "Unknown MP5 profile '$Name'. Available profiles: $availableText"
+}
+
+function Get-Mp5ProfileLaunchAssignments {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    $profile = Get-Mp5Profile -Name $Name
+    return @("sv_exp_mp5_profile_name=$($profile.Name)") + @($profile.Assignments)
 }
 
 function Get-GlockLabTargetsRoot {

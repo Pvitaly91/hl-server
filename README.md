@@ -280,6 +280,72 @@ The Glock lab dummy is a one-player testing aid, not a perfect substitute for re
 
 The lab dummy armor model is experimental and dummy-only. It is useful for comparing unarmored versus armored or head-protected target states, but it is not guaranteed exact parity with real player armor. Head-protected lethal-headshot evidence against the dummy proves only that the logged dummy armor model ran for that target state.
 
+## Experimental MP5 mode
+
+The repo now carries a parallel server-side MP5 primary experiment that stays on `-game valve`, keeps the stock client compatible, and reuses the same disposable testbed plus analyzer pipeline as the Glock work.
+
+List the checked-in MP5 presets:
+
+```powershell
+.\scripts\list-mp5-profiles.ps1
+```
+
+Launch a detached MP5 profile run directly with PowerShell:
+
+```powershell
+.\scripts\run-server.ps1 -Configuration Debug -Detached -EnableExperimentalMp5 -EnableExperimentalWeaponDebug -Mp5Profile cs_burst
+```
+
+Launch the same detached profile-oriented session flow from the BAT wrapper:
+
+```bat
+scripts\run-testbed.bat mp5-profile cs_burst -NoClient -NoTail
+```
+
+Launch the one-click MP5 session flow:
+
+```powershell
+.\scripts\run-mp5-test-session.ps1 -Configuration Debug
+```
+
+Launch the one-player MP5 lab flow with a dummy target:
+
+```powershell
+.\scripts\run-mp5-test-session.ps1 -Configuration Debug -LabDummy -Mp5Profile cs_mobile -LabTargetProfile vest_headprotected
+```
+
+Use the MP5 BAT aliases from `cmd.exe` or Explorer:
+
+```bat
+scripts\run-testbed.bat mp5-profiles
+scripts\run-testbed.bat mp5-session
+scripts\run-testbed.bat mp5-lab
+scripts\run-testbed.bat mp5-lab-profile cs_mobile -NoClient -NoTail -LabTargetProfile vest_headprotected
+```
+
+Analyze the newest MP5-focused log:
+
+```powershell
+.\scripts\analyze-weapon-log.ps1 -Latest -Weapon mp5
+```
+
+Run MP5-focused analyzer assertions against a known synthetic fixture:
+
+```powershell
+.\scripts\analyze-weapon-log.ps1 -Path .\scripts\fixtures\sample-mp5-weapon-debug.log -Weapon mp5 -RequireWeaponAccepted -RequireWeaponHits -RequireWeaponKills -RequireWeaponHeadshotKills -RequireBurstGrowthEvidence -RequireMovementPenaltyEvidence
+```
+
+Example MP5 accepted and hit telemetry:
+
+```text
+[weaponlog] type=accepted ts=2026-04-16T13:30:01.090 map=fixture_range player="Synthetic Fixture" entindex=1 userid=1 weapon=mp5 fire=primary experimental=1 profile="cs_burst" firstshot=0 spread=0.0600 base=0.0400 move_penalty=0.0120 burst_additional_spread=0.0080 burst_index=2 speed2d=180.0 maxspeed=270.0 grounded=1 ducking=0 delta_prev=0.090 clip=48
+[weaponlog] type=kill ts=2026-04-16T13:30:01.181 map=fixture_range attacker="Synthetic Fixture" attacker_entindex=1 attacker_userid=1 victim="Glock Lab Dummy" victim_entindex=24 victim_userid=-1 victim_kind=dummy victim_class=glock_lab_dummy victim_model="models/barney.mdl" weapon=mp5 fire=primary hitgroup=head hitgroup_id=1 headshot=1 experimental=1 profile="cs_burst" target_profile="vest_headprotected" trace_damage=137.0000 applied_damage=68.5000 health_before=68.5 health_after=0.0 armor_before=68.5 armor_after=0.0 damage_raw=137.0000 damage_to_health=68.5000 damage_absorbed=68.5000 armor_drain=68.5000 dummy_armor_after=0.0 armor_applied=1 head_protected=1 headshot_lethal_active=1 headshot_lethal_applied=1
+```
+
+MP5 session logs are written under `testbed/logs/weapon-debug-*.log`, and MP5 analyzer JSON or CSV exports still land under `testbed/logs/reports/`.
+
+This is still server-authoritative experimentation for stock clients. It proves only what the server logged for spread, burst-growth, movement-penalty, dummy-hit, and headshot-damage paths. It does not prove client-side recoil feel, prediction quality, or exact Counter-Strike parity.
+
 ## Glock comparison matrices
 
 Checked-in manual comparison matrices live under `configs/glock-comparison-matrices/`.

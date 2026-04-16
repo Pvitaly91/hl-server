@@ -22,6 +22,8 @@
 #include "player.h"
 #include "soundent.h"
 #include "gamerules.h"
+#include "future_gameplay_hooks.h"
+#include "weapon_debug_logger.h"
 
 enum mp5_e
 {
@@ -34,6 +36,50 @@ enum mp5_e
 	MP5_FIRE2,
 	MP5_FIRE3,
 };
+
+namespace
+{
+const float kMp5MinMaxSpeed = 1.0f;
+const float kMp5FallbackMaxSpeed = 270.0f;
+
+float ClampFloat(float value, float minimum, float maximum)
+{
+	if (value < minimum)
+	{
+		return minimum;
+	}
+
+	if (value > maximum)
+	{
+		return maximum;
+	}
+
+	return value;
+}
+
+float RecoverBurstAdditionalSpread(float currentSpread, float elapsedSeconds)
+{
+	if (currentSpread <= 0.0f)
+	{
+		return 0.0f;
+	}
+
+	const float recoverySeconds = ExpMP5PrimarySpreadRecoverySeconds();
+	if (recoverySeconds <= 0.0f)
+	{
+		return 0.0f;
+	}
+
+	const float maxBurstSpread = ExpMP5PrimaryBurstMaxAdditionalSpread();
+	if (maxBurstSpread <= 0.0f)
+	{
+		return 0.0f;
+	}
+
+	const float recoveredSpread = currentSpread - ((maxBurstSpread / recoverySeconds) * elapsedSeconds);
+	return recoveredSpread > 0.0f ? recoveredSpread : 0.0f;
+}
+}
 
 
 
@@ -56,6 +102,9 @@ void CMP5::Spawn( )
 	m_iId = WEAPON_MP5;
 
 	m_iDefaultAmmo = gpGlobals->maxClients > 1 ? MP5_MAX_CLIP : MP5_DEFAULT_GIVE;
+	m_flLastAcceptedPrimaryShotTime = -1.0f;
+	m_flPrimaryBurstSpreadAccumulator = 0.0f;
+	m_iPrimaryBurstShotCount = 0;
 
 	FallInit();// get ready to fall down.
 }
@@ -144,6 +193,23 @@ void CMP5::PrimaryAttack()
 
 	m_pPlayer->m_iWeaponVolume = NORMAL_GUN_VOLUME;
 	m_pPlayer->m_iWeaponFlash = NORMAL_GUN_FLASH;
+	const BOOL fHadAmmo = (m_iClip > 0);
+	const BOOL fExperimentalPrimary = ExpMP5PrimaryEnabled();
+	const BOOL fGrounded = FBitSet(m_pPlayer->pev->flags, FL_ONGROUND);
+	const BOOL fDucking = (m_pPlayer->pev->button & IN_DUCK) || FBitSet(m_pPlayer->pev->flags, FL_DUCKING);
+	const float flHorizontalSpeed = m_pPlayer->pev->velocity.Length2D();
+
+	float flMaxSpeedForNormalization = m_pPlayer->pev->maxspeed;
+	if (flMaxSpeedForNormalization <= kMp5MinMaxSpeed)
+	{
+		flMaxSpeedForNormalization = kMp5FallbackMaxSpeed;
+	}
+
+	const BOOL fHasPreviousAcceptedShot = m_flLastAcceptedPrimaryShotTime >= 0.0f;
+	const float flTimeSincePreviousAcceptedShot = fHasPreviousAcceptedShot ? (gpGlobals->time - m_flLastAcceptedPrimaryShotTime) : 0.0f;
+	const float flRecoveredBurstAddedSpread = fHasPreviousAcceptedShot
+		? RecoverBurstAdditionalSpread(m_flPrimaryBurstSpreadAccumulator, flTimeSincePreviousAcceptedShot)
+		: 0.0f;
 
 	m_iClip--;
 
@@ -156,20 +222,90 @@ void CMP5::PrimaryAttack()
 	Vector vecSrc	 = m_pPlayer->GetGunPosition( );
 	Vector vecAiming = m_pPlayer->GetAutoaimVector( AUTOAIM_5DEGREES );
 	Vector vecDir;
+	BOOL fFirstShotAccuracyApplied = FALSE;
+	float flMovementPenalty = 0.0f;
+	float flBurstAddedSpread = 0.0f;
+	int iBurstShotIndex = 1;
 
-#ifdef CLIENT_DLL
-	if ( bIsMultiplayer() )
-#else
-	if ( g_pGameRules->IsMultiplayer() )
-#endif
+	if (fExperimentalPrimary)
 	{
-		// optimized multiplayer. Widened to make it easier to hit a moving player
-		vecDir = m_pPlayer->FireBulletsPlayer( 1, vecSrc, vecAiming, VECTOR_CONE_6DEGREES, 8192, BULLET_PLAYER_MP5, 2, 0, m_pPlayer->pev, m_pPlayer->random_seed );
+		flBurstAddedSpread = flRecoveredBurstAddedSpread;
+		iBurstShotIndex = (flBurstAddedSpread > 0.0001f && m_iPrimaryBurstShotCount > 0)
+			? (m_iPrimaryBurstShotCount + 1)
+			: 1;
+
+		if (ExpMP5PrimaryFirstShotAccuracyEnabled() &&
+			fGrounded &&
+			flHorizontalSpeed <= ExpMP5PrimaryFirstShotSpeedThreshold() &&
+			flBurstAddedSpread <= 0.0001f)
+		{
+			fFirstShotAccuracyApplied = TRUE;
+		}
+
+		if (!fFirstShotAccuracyApplied)
+		{
+			const float flSpeedRatio = ClampFloat(flHorizontalSpeed / flMaxSpeedForNormalization, 0.0f, 1.0f);
+			flMovementPenalty = fGrounded
+				? (ExpMP5PrimaryGroundMovePenalty() * flSpeedRatio)
+				: ExpMP5PrimaryAirMovePenalty();
+
+			if (fDucking)
+			{
+				flMovementPenalty *= ExpMP5PrimaryDuckPenaltyScale();
+			}
+		}
+
+		const float flSpread = fFirstShotAccuracyApplied
+			? 0.0f
+			: ClampFloat(ExpMP5PrimaryBaseSpread() + flMovementPenalty + flBurstAddedSpread, 0.0f, ExpMP5PrimaryMaxSpread());
+
+		BeginMp5PrimaryShotContext(m_pPlayer);
+		vecDir = m_pPlayer->FireBulletsPlayer( 1, vecSrc, vecAiming, Vector( flSpread, flSpread, flSpread ), 8192, BULLET_PLAYER_MP5, 2, 0, m_pPlayer->pev, m_pPlayer->random_seed );
+		EndMp5PrimaryShotContext();
+
+		if (fHadAmmo)
+		{
+			Mp5AcceptedShotTelemetry acceptedTelemetry = {};
+			acceptedTelemetry.experimentalModeActive = ExpMP5ExperimentalModeEnabled() != FALSE;
+			acceptedTelemetry.firstShotAccuracyApplied = fFirstShotAccuracyApplied != FALSE;
+			acceptedTelemetry.spread = flSpread;
+			acceptedTelemetry.baseSpread = ExpMP5PrimaryBaseSpread();
+			acceptedTelemetry.movementPenalty = flMovementPenalty;
+			acceptedTelemetry.burstAddedSpread = flBurstAddedSpread;
+			acceptedTelemetry.burstShotIndex = iBurstShotIndex;
+			acceptedTelemetry.horizontalSpeed = flHorizontalSpeed;
+			acceptedTelemetry.maxSpeedForNormalization = flMaxSpeedForNormalization;
+			acceptedTelemetry.grounded = fGrounded != FALSE;
+			acceptedTelemetry.ducking = fDucking != FALSE;
+			acceptedTelemetry.hasPreviousAcceptedShot = fHasPreviousAcceptedShot != FALSE;
+			acceptedTelemetry.timeSincePreviousAcceptedShot = flTimeSincePreviousAcceptedShot;
+			acceptedTelemetry.clipAfterShot = m_iClip;
+
+			LogAcceptedMp5PrimaryShot(m_pPlayer, acceptedTelemetry);
+			m_flPrimaryBurstSpreadAccumulator = ClampFloat(
+				flBurstAddedSpread + ExpMP5PrimaryBurstGrowth(),
+				0.0f,
+				ExpMP5PrimaryBurstMaxAdditionalSpread());
+			m_iPrimaryBurstShotCount = iBurstShotIndex;
+			m_flLastAcceptedPrimaryShotTime = gpGlobals->time;
+		}
 	}
 	else
 	{
-		// single player spread
-		vecDir = m_pPlayer->FireBulletsPlayer( 1, vecSrc, vecAiming, VECTOR_CONE_3DEGREES, 8192, BULLET_PLAYER_MP5, 2, 0, m_pPlayer->pev, m_pPlayer->random_seed );
+#ifdef CLIENT_DLL
+		if ( bIsMultiplayer() )
+#else
+		if ( g_pGameRules->IsMultiplayer() )
+#endif
+		{
+			// optimized multiplayer. Widened to make it easier to hit a moving player
+			vecDir = m_pPlayer->FireBulletsPlayer( 1, vecSrc, vecAiming, VECTOR_CONE_6DEGREES, 8192, BULLET_PLAYER_MP5, 2, 0, m_pPlayer->pev, m_pPlayer->random_seed );
+		}
+		else
+		{
+			// single player spread
+			vecDir = m_pPlayer->FireBulletsPlayer( 1, vecSrc, vecAiming, VECTOR_CONE_3DEGREES, 8192, BULLET_PLAYER_MP5, 2, 0, m_pPlayer->pev, m_pPlayer->random_seed );
+		}
 	}
 
   int flags;

@@ -8,7 +8,9 @@ param(
     [int]$MaxPlayers = 4,
     [string[]]$SetCvar = @(),
     [switch]$EnableExperimentalGlock,
+    [switch]$EnableExperimentalMp5,
     [switch]$EnableGlockLabDummy,
+    [switch]$EnableMp5LabLoadout,
     [string]$TemplateRoot,
     [string]$HldsExe,
     [string]$HlExe,
@@ -27,8 +29,14 @@ $effectiveSetCvars = @()
 if ($EnableExperimentalGlock) {
     $effectiveSetCvars += @(Get-ExperimentalGlockLaunchAssignments)
 }
+if ($EnableExperimentalMp5) {
+    $effectiveSetCvars += @(Get-ExperimentalMp5LaunchAssignments)
+}
 if ($EnableGlockLabDummy) {
     $effectiveSetCvars += @(Get-GlockLabDummyLaunchAssignments)
+}
+if ($EnableMp5LabLoadout) {
+    $effectiveSetCvars += @(Get-Mp5LabLoadoutLaunchAssignments)
 }
 $effectiveSetCvars += @($SetCvar)
 
@@ -37,11 +45,30 @@ $expectedCvars = [ordered]@{
     "sv_exp_move_spread_scale" = "0.0"
     "sv_exp_first_shot_accuracy" = "0"
     "sv_exp_spread_recovery" = "0.0"
+    "sv_exp_weapon_under_test" = ""
     "sv_exp_debug_weaponlog" = "0"
     "sv_exp_debug_weaponlog_rejections" = "0"
     "sv_exp_session_tag" = ""
     "sv_exp_matrix_name" = ""
     "sv_exp_matrix_step" = ""
+    "sv_exp_mp5_primary_enabled" = "0"
+    "sv_exp_mp5_profile_name" = "default"
+    "sv_exp_mp5_primary_base_spread" = "0.0523"
+    "sv_exp_mp5_primary_ground_move_penalty" = "0.0200"
+    "sv_exp_mp5_primary_air_move_penalty" = "0.0400"
+    "sv_exp_mp5_primary_duck_penalty_scale" = "0.7000"
+    "sv_exp_mp5_primary_burst_growth" = "0.0060"
+    "sv_exp_mp5_primary_burst_max_additional_spread" = "0.0600"
+    "sv_exp_mp5_primary_spread_recovery" = "0.3000"
+    "sv_exp_mp5_primary_damage" = "12.0"
+    "sv_exp_mp5_primary_headshot_scale" = "3.0"
+    "sv_exp_mp5_primary_headshot_lethal" = "0"
+    "sv_exp_mp5_primary_first_shot_accuracy" = "0"
+    "sv_exp_mp5_primary_first_shot_speed_threshold" = "30.0"
+    "sv_exp_mp5_primary_max_spread" = "0.1200"
+    "sv_exp_mp5_lab_loadout" = "0"
+    "sv_exp_mp5_lab_ammo" = "250"
+    "sv_exp_mp5_lab_autoswitch" = "1"
     "sv_exp_glock_lab_dummy" = "0"
     "sv_exp_glock_lab_target_profile_name" = "default"
     "sv_exp_glock_lab_dummy_health" = "100.0"

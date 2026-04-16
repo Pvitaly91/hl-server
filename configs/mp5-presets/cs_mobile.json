@@ -1,0 +1,19 @@
+{
+  "name": "cs_mobile",
+  "description": "Experimental more mobile MP5 tuning with softer movement penalties for manual stock-client comparison. This is not an authoritative CS configuration.",
+  "cvars": {
+    "sv_exp_mp5_primary_base_spread": "0.0480",
+    "sv_exp_mp5_primary_ground_move_penalty": "0.0120",
+    "sv_exp_mp5_primary_air_move_penalty": "0.0300",
+    "sv_exp_mp5_primary_duck_penalty_scale": "0.7500",
+    "sv_exp_mp5_primary_burst_growth": "0.0050",
+    "sv_exp_mp5_primary_burst_max_additional_spread": "0.0550",
+    "sv_exp_mp5_primary_spread_recovery": "0.2500",
+    "sv_exp_mp5_primary_damage": "11.0",
+    "sv_exp_mp5_primary_headshot_scale": "3.0",
+    "sv_exp_mp5_primary_headshot_lethal": "0",
+    "sv_exp_mp5_primary_first_shot_accuracy": "1",
+    "sv_exp_mp5_primary_first_shot_speed_threshold": "40.0",
+    "sv_exp_mp5_primary_max_spread": "0.1000"
+  }
+}

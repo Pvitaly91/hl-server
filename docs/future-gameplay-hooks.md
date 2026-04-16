@@ -6,9 +6,10 @@
 
 - `third_party/valve-halflife-sdk/dlls/game.cpp` calls it during `GameDLLInit` to register typed experimental cvars.
 - `third_party/valve-halflife-sdk/dlls/client.cpp` now calls it from `StartFrame` so debug-only runtime helpers can arm themselves after launch-time cvars are applied.
-- `third_party/valve-halflife-sdk/dlls/wpn_shared/hl_wpn_glock.cpp` is still the only weapon-specific gameplay patch site for the current Glock experiment.
-- `third_party/valve-halflife-sdk/dlls/combat.cpp` and `third_party/valve-halflife-sdk/dlls/player.cpp` carry the smallest safe server-side damage and post-hit telemetry hooks for this Glock-specific pass.
-- `src/weapon_debug_logger.cpp` is the local, non-vendored logger that mirrors telemetry to the server console and a disposable `testbed/logs/weapon-debug-<timestamp>.log` file.
+- `third_party/valve-halflife-sdk/dlls/wpn_shared/hl_wpn_glock.cpp` remains the Glock-specific primary-fire patch site.
+- `third_party/valve-halflife-sdk/dlls/mp5.cpp` is now the focused MP5 primary-fire patch site for movement spread, burst growth, and recovery experiments.
+- `third_party/valve-halflife-sdk/dlls/combat.cpp` and `third_party/valve-halflife-sdk/dlls/player.cpp` carry the smallest safe server-side damage and post-hit telemetry hooks for the current Glock and MP5 passes.
+- `src/weapon_debug_logger.cpp` is the local, non-vendored logger that mirrors Glock and MP5 telemetry to the server console and a disposable `testbed/logs/weapon-debug-<timestamp>.log` file.
 
 This keeps the stock runtime on `-game valve`, keeps all debug writes inside the disposable testbed, and avoids any client DLL dependency.
 
@@ -53,6 +54,57 @@ This keeps the stock runtime on `-game valve`, keeps all debug writes inside the
   `1` also logs tap-fire hold rejections when primary fire is blocked because the player never released attack for a fresh press.
 
 The Glock tuning coefficients now live behind typed accessors in `src/future_gameplay_hooks.cpp`, so changing presets or launch-time overrides no longer requires recompiling the weapon logic.
+
+## Current MP5 cvars
+
+The MP5 experiment uses the same typed-accessor seam in `src/future_gameplay_hooks.cpp`.
+
+- `sv_exp_weapon_under_test`
+  Default empty string.
+  Metadata-only cvar that records which weapon the session is intentionally exercising, for example `mp5`.
+- `sv_exp_mp5_profile_name`
+  Default `default`.
+  String-like metadata cvar that records the selected checked-in MP5 preset name.
+- `sv_exp_mp5_primary_enabled`
+  Default `0`.
+  `1` enables the experimental MP5 primary-fire path. `0` keeps the stock MP5 primary behavior.
+- `sv_exp_mp5_primary_base_spread`
+  Base spread for the experimental MP5 primary path before movement or burst penalties.
+- `sv_exp_mp5_primary_ground_move_penalty`
+  Grounded movement penalty coefficient, scaled by current horizontal speed.
+- `sv_exp_mp5_primary_air_move_penalty`
+  Flat airborne penalty used when the player is not grounded.
+- `sv_exp_mp5_primary_duck_penalty_scale`
+  Multiplier applied to the movement penalty while ducking.
+- `sv_exp_mp5_primary_burst_growth`
+  Additional spread added after each accepted rapid primary shot.
+- `sv_exp_mp5_primary_burst_max_additional_spread`
+  Clamp ceiling for the accumulated burst-added spread.
+- `sv_exp_mp5_primary_spread_recovery`
+  Recovery time in seconds for burst-added spread to decay back toward zero.
+- `sv_exp_mp5_primary_damage`
+  Experimental MP5 base damage used by the server-side primary path.
+- `sv_exp_mp5_primary_headshot_scale`
+  Head hitgroup multiplier for the experimental MP5 primary path.
+- `sv_exp_mp5_primary_headshot_lethal`
+  `1` allows the server to raise pre-armor MP5 headshot damage high enough to force a lethal result for the current target snapshot, and telemetry explicitly marks when that path actually ran.
+- `sv_exp_mp5_primary_first_shot_accuracy`
+  `1` allows a fully accurate grounded shot when the player is moving slowly enough and has recovered burst spread.
+- `sv_exp_mp5_primary_first_shot_speed_threshold`
+  Maximum horizontal speed for first-shot accuracy qualification.
+- `sv_exp_mp5_primary_max_spread`
+  Clamp ceiling for the final experimental MP5 primary spread.
+- `sv_exp_mp5_lab_loadout`
+  Default `0`.
+  `1` enables the MP5 lab loadout helper for the first live testing player.
+- `sv_exp_mp5_lab_ammo`
+  Default `250`.
+  Practical ammo target for the MP5 lab helper.
+- `sv_exp_mp5_lab_autoswitch`
+  Default `1`.
+  When the helper grants the MP5 to a player for the first time, it also tries to select it immediately.
+
+Defaults preserve current behavior when the MP5 experiment is off.
 
 ## Session and matrix metadata cvars
 
@@ -202,6 +254,41 @@ Each lab target profile file contains:
 
 The descriptions intentionally say "experimental" because the lab target profiles are one-player testing aids, not exact PvP armor presets.
 
+## MP5 preset files
+
+Checked-in MP5 tuning presets live under `configs/mp5-presets/` as small JSON files.
+
+Current examples:
+
+- `baseline.json`
+  Experimental MP5 tuning that stays close to the current server-side defaults.
+- `cs_burst.json`
+  Experimental tighter MP5 tuning with stronger burst-growth sensitivity.
+- `cs_mobile.json`
+  Experimental more mobile MP5 tuning with softer grounded movement penalties.
+
+Each preset file contains:
+
+- `name`
+- `description`
+- `cvars`
+
+The current launcher merge order for MP5 sessions is:
+
+1. built-in experimental MP5 defaults
+2. selected MP5 preset from `configs/mp5-presets/`
+3. selected lab target profile from `configs/glock-lab-targets/` when the MP5 lab flow also uses the one-player dummy
+4. explicit command-line overrides
+
+The MP5 lab loadout helper also stays in `src/future_gameplay_hooks.cpp` and is intentionally narrow:
+
+- it looks for the first live player during `StartFrame`
+- it grants `weapon_9mmAR` when missing
+- it tops the player's `9mm` ammo toward `sv_exp_mp5_lab_ammo`
+- it tries `SelectItem("weapon_9mmAR")` on first grant when `sv_exp_mp5_lab_autoswitch 1`
+
+This helper exists only to make one-player MP5 lab sessions practical. It is not a general gameplay rebalance hook.
+
 ## Glock comparison matrices
 
 Checked-in manual comparison matrices now live under `configs/glock-comparison-matrices/` as small JSON files.
@@ -232,6 +319,26 @@ Each step can define:
 - optional `extraCvars`
 
 The current matrix runner is intentionally Glock-lab-specific. It reuses the existing one-click session, analyzer, and report exports instead of trying to become a generic tournament harness.
+
+## What the MP5 telemetry proves
+
+The current MP5 telemetry is still server-authoritative and stock-client-compatible:
+
+- it proves which authoritative MP5 primary shots were accepted
+- it records burst index, burst-added spread, movement penalty, grounded or ducking state, current speed, and time since the previous accepted shot
+- it proves whether burst-growth evidence and movement-penalty evidence appeared in a session
+- it records the active MP5 preset metadata in the session header and exported analyzer JSON
+- it records hitgroup-aware hit and kill telemetry, including dummy victim classification, applied damage, and explicit headshot-lethal evidence when configured
+- it can be filtered in `scripts/analyze-weapon-log.ps1` through `-Weapon mp5`
+- it can be asserted through `-RequireWeaponAccepted`, `-RequireWeaponHits`, `-RequireWeaponKills`, `-RequireWeaponHeadshotKills`, `-RequireBurstGrowthEvidence`, and `-RequireMovementPenaltyEvidence`
+
+It still does not prove:
+
+- client-side recoil feel
+- client prediction quality
+- exact Counter-Strike recoil or damage parity
+- that synthetic fixtures prove live weapon behavior
+- that a one-player dummy session replaces real PvP testing
 
 ## What the Glock telemetry proves
 
@@ -268,6 +375,7 @@ The telemetry now uses a stable, single-line, parser-friendly prefix plus `key=v
   `[weaponlog] type=session ts=... map=... event=weapon_debug_session status=ready game=valve file="..." profile="..." ... sv_exp_glock_lab_target_profile_name="vest_headprotected" sv_exp_glock_lab_dummy_armor=100.0 sv_exp_glock_lab_dummy_head_protected=1 sv_exp_glock_lab_dummy_armor_health_fraction=0.500 sv_exp_glock_lab_dummy_armor_drain_scale=1.000 session_tag="armor_sweep-20260416-01-unarmored" matrix_name="armor_sweep" matrix_step="unarmored"`
 - accepted primary shot
   `[weaponlog] type=accepted ts=... map=... player="..." entindex=... userid=... weapon=glock fire=primary ...`
+  `[weaponlog] type=accepted ts=... map=... player="..." entindex=... userid=... weapon=mp5 fire=primary profile="cs_burst" spread=... move_penalty=... burst_additional_spread=... burst_index=... delta_prev=...`
 - rejected tap-fire hold
   `[weaponlog] type=rejected ts=... map=... player="..." entindex=... userid=... weapon=glock fire=primary reason=tapfire_hold_blocked ...`
 - dummy lifecycle
@@ -276,8 +384,10 @@ The telemetry now uses a stable, single-line, parser-friendly prefix plus `key=v
   `[weaponlog] type=dummy_clear ...`
 - hit result
   `[weaponlog] type=hit ts=... map=... attacker="..." victim="..." victim_kind=... victim_class=... victim_model="..." weapon=glock fire=primary hitgroup=... target_profile="vest_headprotected" applied_damage=... damage_raw=... damage_to_health=... damage_absorbed=... armor_drain=... dummy_armor_before=... dummy_armor_after=... armor_applied=... head_protected=... headshot=... headshot_lethal_active=... headshot_lethal_applied=...`
+  `[weaponlog] type=hit ts=... map=... attacker="..." victim="..." victim_kind=... victim_class=... victim_model="..." weapon=mp5 fire=primary hitgroup=... target_profile="vest_headprotected" applied_damage=... damage_raw=... armor_applied=... head_protected=... headshot=... headshot_lethal_active=... headshot_lethal_applied=...`
 - kill result
   `[weaponlog] type=kill ts=... map=... attacker="..." victim="..." victim_kind=... victim_class=... victim_model="..." weapon=glock fire=primary hitgroup=... target_profile="vest_headprotected" applied_damage=... dummy_armor_after=... armor_applied=... head_protected=... headshot=... headshot_lethal_active=... headshot_lethal_applied=...`
+  `[weaponlog] type=kill ts=... map=... attacker="..." victim="..." victim_kind=... victim_class=... victim_model="..." weapon=mp5 fire=primary hitgroup=... target_profile="vest_headprotected" applied_damage=... dummy_armor_after=... armor_applied=... head_protected=... headshot=... headshot_lethal_active=... headshot_lethal_applied=...`
 
 The line remains human-readable, but the stable prefix and `type=` field make it fast to parse. The current analyzer is also backward-compatible with older unprefixed `key=value` Glock logs so earlier manual sessions are still usable.
 
@@ -294,6 +404,15 @@ The analyzer now preserves those tags in exported JSON through:
 - `comparisonSummary`
 
 `comparisonSummary` also flattens the key counters, damage stats, evidence booleans, and missing-signal notes that the multi-session aggregation script uses.
+
+For MP5 logs, the exported JSON also carries normalized fields such as:
+
+- `metadata.weaponUnderTest`
+- `metadata.mp5Profile`
+- `comparisonSummary.weaponUnderTest`
+- `comparisonSummary.mp5Profile`
+- `comparisonSummary.burstGrowthEvidenceCount`
+- `comparisonSummary.movementPenaltyEvidenceCount`
 
 For dummy-driven sessions, the authoritative dummy configuration that matters for evidence review is the lifecycle telemetry itself:
 
@@ -446,17 +565,19 @@ This checklist is intentionally honest. It validates the authoritative telemetry
 
 ## Glock telemetry hook location
 
-The Glock telemetry itself lives in three places:
+The current Glock and MP5 telemetry lives in four focused places:
 
 - `src/future_gameplay_hooks.cpp`
-  Owns the typed experimental cvars plus the one-player Glock lab dummy lifecycle. This is where the dummy spawn position is computed, where the stock `monster_generic` is created, and where clear or autorespawn decisions happen from the `StartFrame` seam.
+  Owns the typed experimental cvars plus the one-player Glock lab dummy lifecycle and the MP5 lab loadout helper. This is where the dummy spawn position is computed, where the stock `monster_generic` is created, where the MP5 loadout is granted, and where clear or autorespawn decisions happen from the `StartFrame` seam.
 
 - `third_party/valve-halflife-sdk/dlls/wpn_shared/hl_wpn_glock.cpp`
   The accepted-shot and tap-fire rejection decisions are logged exactly where the server decides whether Glock primary fire proceeds, and this file now brackets experimental Glock primary shots with a narrow hit-telemetry context.
+- `third_party/valve-halflife-sdk/dlls/mp5.cpp`
+  The accepted-shot decision for experimental MP5 primary fire now computes movement spread, burst growth, burst recovery, optional first-shot accuracy, and the narrow per-shot telemetry context for hit and kill logging.
 - `src/weapon_debug_logger.cpp`
-  Formats single-line telemetry, resolves the disposable `testbed/logs/` path from the loaded `hl.dll`, writes the one-time session header, records dummy lifecycle lines, applies the dummy-only armor model during experimental Glock trace damage, marks dummy victims on hit and kill lines, and keeps console logging alive even if the file cannot be opened.
+  Formats single-line telemetry, resolves the disposable `testbed/logs/` path from the loaded `hl.dll`, writes the one-time session header, records dummy lifecycle lines, applies the dummy-only armor model during experimental Glock or MP5 trace damage, marks dummy victims on hit and kill lines, and keeps console logging alive even if the file cannot be opened.
 - `third_party/valve-halflife-sdk/dlls/combat.cpp` and `third_party/valve-halflife-sdk/dlls/player.cpp`
-  The experimental Glock hit and kill telemetry finalizes after the stock server damage path resolves. Those are the smallest practical hook points for hitgroup-aware damage scaling and post-damage telemetry in this pass.
+  The experimental Glock and MP5 hit and kill telemetry finalizes after the stock server damage path resolves. Those are the smallest practical hook points for hitgroup-aware damage scaling and post-damage telemetry in this pass.
 
 The accepted-shot line includes timestamp, map, player identity, fire mode, experiment/tap-fire/first-shot flags, spread values, movement inputs, grounded or ducking state, time since the previous accepted primary shot when known, and clip ammo after the shot.
 

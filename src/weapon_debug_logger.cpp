@@ -52,6 +52,38 @@ struct GlockPrimaryShotContext
 
 GlockPrimaryShotContext g_glockPrimaryShotContext = {};
 
+struct Mp5PrimaryShotContext
+{
+    bool active;
+    entvars_t *attacker;
+    CBasePlayer *attackerPlayer;
+    bool experimentalModeActive;
+    float baseDamage;
+    float headshotScale;
+    bool headshotLethal;
+    char profileName[64];
+    bool pendingHit;
+    CBaseEntity *victim;
+    int hitgroup;
+    bool headshot;
+    float hitgroupScale;
+    float traceDamage;
+    bool headshotLethalApplied;
+    float victimHealthBefore;
+    bool victimArmorKnown;
+    float victimArmorBefore;
+    bool victimIsDummy;
+    char targetProfileName[64];
+    bool dummyArmorApplied;
+    bool dummyHeadProtected;
+    float damageRaw;
+    float damageToHealth;
+    float damageAbsorbed;
+    float armorDrain;
+};
+
+Mp5PrimaryShotContext g_mp5PrimaryShotContext = {};
+
 void PrintWeaponDebugWarningOnce(const char *message)
 {
     if (g_weaponDebugLogWarningPrinted)
@@ -93,6 +125,38 @@ void ClearPendingGlockPrimaryHit()
 bool HasMatchingActiveGlockPrimaryShot(entvars_t *pevAttacker)
 {
     return g_glockPrimaryShotContext.active && g_glockPrimaryShotContext.attacker == pevAttacker;
+}
+
+void ResetMp5PrimaryShotContext()
+{
+    memset(&g_mp5PrimaryShotContext, 0, sizeof(g_mp5PrimaryShotContext));
+}
+
+void ClearPendingMp5PrimaryHit()
+{
+    g_mp5PrimaryShotContext.pendingHit = false;
+    g_mp5PrimaryShotContext.victim = NULL;
+    g_mp5PrimaryShotContext.hitgroup = HITGROUP_GENERIC;
+    g_mp5PrimaryShotContext.headshot = false;
+    g_mp5PrimaryShotContext.hitgroupScale = 0.0f;
+    g_mp5PrimaryShotContext.traceDamage = 0.0f;
+    g_mp5PrimaryShotContext.headshotLethalApplied = false;
+    g_mp5PrimaryShotContext.victimHealthBefore = 0.0f;
+    g_mp5PrimaryShotContext.victimArmorKnown = false;
+    g_mp5PrimaryShotContext.victimArmorBefore = 0.0f;
+    g_mp5PrimaryShotContext.victimIsDummy = false;
+    g_mp5PrimaryShotContext.targetProfileName[0] = '\0';
+    g_mp5PrimaryShotContext.dummyArmorApplied = false;
+    g_mp5PrimaryShotContext.dummyHeadProtected = false;
+    g_mp5PrimaryShotContext.damageRaw = 0.0f;
+    g_mp5PrimaryShotContext.damageToHealth = 0.0f;
+    g_mp5PrimaryShotContext.damageAbsorbed = 0.0f;
+    g_mp5PrimaryShotContext.armorDrain = 0.0f;
+}
+
+bool HasMatchingActiveMp5PrimaryShot(entvars_t *pevAttacker)
+{
+    return g_mp5PrimaryShotContext.active && g_mp5PrimaryShotContext.attacker == pevAttacker;
 }
 
 void FormatTimestamp(char *buffer, size_t bufferSize)
@@ -496,6 +560,17 @@ const char *GetSafeMapName()
     return STRING(gpGlobals->mapname);
 }
 
+const char *GetSessionProfileName()
+{
+    const char *weaponUnderTest = ExpWeaponUnderTest();
+    if (weaponUnderTest != NULL && weaponUnderTest[0] != '\0' && _stricmp(weaponUnderTest, "mp5") == 0)
+    {
+        return ExpMP5ProfileName();
+    }
+
+    return ExpGlockProfileName();
+}
+
 std::string NormalizePathForLogging(const std::string &path)
 {
     std::string normalized = path;
@@ -710,17 +785,19 @@ void EnsureWeaponDebugLogOpen()
     PrintLogPathNotice();
 
     char timestamp[64];
-    char sessionLine[2048];
+    char sessionLine[4096];
     FormatTimestamp(timestamp, sizeof(timestamp));
     _snprintf_s(
         sessionLine,
         sizeof(sessionLine),
         _TRUNCATE,
-        "[weaponlog] type=session ts=%s map=%s event=weapon_debug_session status=ready game=valve file=\"%s\" profile=\"%s\" tapfire=%d move_scale=%.4f firstshot_enabled=%d recovery=%.3f base=%.4f ground_move_penalty=%.4f air_move_penalty=%.4f duck_penalty_scale=%.4f firstshot_speed=%.1f max_spread=%.4f sv_exp_glock_primary_damage=%.4f sv_exp_glock_primary_headshot_scale=%.4f sv_exp_glock_primary_headshot_lethal=%d sv_exp_glock_lab_dummy=%d sv_exp_glock_lab_target_profile_name=\"%s\" sv_exp_glock_lab_dummy_armor=%.1f sv_exp_glock_lab_dummy_head_protected=%d sv_exp_glock_lab_dummy_armor_health_fraction=%.3f sv_exp_glock_lab_dummy_armor_drain_scale=%.3f",
+        "[weaponlog] type=session ts=%s map=%s event=weapon_debug_session status=ready game=valve file=\"%s\" profile=\"%s\" glock_profile=\"%s\" mp5_profile=\"%s\" tapfire=%d move_scale=%.4f firstshot_enabled=%d recovery=%.3f base=%.4f ground_move_penalty=%.4f air_move_penalty=%.4f duck_penalty_scale=%.4f firstshot_speed=%.1f max_spread=%.4f sv_exp_glock_primary_damage=%.4f sv_exp_glock_primary_headshot_scale=%.4f sv_exp_glock_primary_headshot_lethal=%d sv_exp_mp5_primary_enabled=%d sv_exp_mp5_primary_base_spread=%.4f sv_exp_mp5_primary_ground_move_penalty=%.4f sv_exp_mp5_primary_air_move_penalty=%.4f sv_exp_mp5_primary_duck_penalty_scale=%.4f sv_exp_mp5_primary_burst_growth=%.4f sv_exp_mp5_primary_burst_max_additional_spread=%.4f sv_exp_mp5_primary_spread_recovery=%.4f sv_exp_mp5_primary_damage=%.4f sv_exp_mp5_primary_headshot_scale=%.4f sv_exp_mp5_primary_headshot_lethal=%d sv_exp_mp5_primary_first_shot_accuracy=%d sv_exp_mp5_primary_first_shot_speed_threshold=%.1f sv_exp_mp5_primary_max_spread=%.4f sv_exp_mp5_lab_loadout=%d sv_exp_mp5_lab_ammo=%.1f sv_exp_mp5_lab_autoswitch=%d sv_exp_glock_lab_dummy=%d sv_exp_glock_lab_target_profile_name=\"%s\" sv_exp_glock_lab_dummy_armor=%.1f sv_exp_glock_lab_dummy_head_protected=%d sv_exp_glock_lab_dummy_armor_health_fraction=%.3f sv_exp_glock_lab_dummy_armor_drain_scale=%.3f",
         timestamp,
         SanitizeLogValue(GetSafeMapName()).c_str(),
         g_weaponDebugLogPath.c_str(),
+        SanitizeLogValue(GetSessionProfileName()).c_str(),
         SanitizeLogValue(ExpGlockProfileName()).c_str(),
+        SanitizeLogValue(ExpMP5ProfileName()).c_str(),
         ExpPistolTapFireEnabled() ? 1 : 0,
         ExpMoveSpreadScale(),
         ExpFirstShotAccuracyEnabled() ? 1 : 0,
@@ -734,6 +811,23 @@ void EnsureWeaponDebugLogOpen()
         ExpGlockPrimaryDamage(),
         ExpGlockPrimaryHeadshotScale(),
         ExpGlockPrimaryHeadshotLethal() ? 1 : 0,
+        ExpMP5PrimaryEnabled() ? 1 : 0,
+        ExpMP5PrimaryBaseSpread(),
+        ExpMP5PrimaryGroundMovePenalty(),
+        ExpMP5PrimaryAirMovePenalty(),
+        ExpMP5PrimaryDuckPenaltyScale(),
+        ExpMP5PrimaryBurstGrowth(),
+        ExpMP5PrimaryBurstMaxAdditionalSpread(),
+        ExpMP5PrimarySpreadRecoverySeconds(),
+        ExpMP5PrimaryDamage(),
+        ExpMP5PrimaryHeadshotScale(),
+        ExpMP5PrimaryHeadshotLethal() ? 1 : 0,
+        ExpMP5PrimaryFirstShotAccuracyEnabled() ? 1 : 0,
+        ExpMP5PrimaryFirstShotSpeedThreshold(),
+        ExpMP5PrimaryMaxSpread(),
+        ExpMP5LabLoadoutEnabled() ? 1 : 0,
+        ExpMP5LabAmmo(),
+        ExpMP5LabAutoswitch() ? 1 : 0,
         ExpGlockLabDummyEnabled() ? 1 : 0,
         SanitizeLogValue(ExpGlockLabTargetProfileName()).c_str(),
         ExpGlockLabDummyArmor(),
@@ -741,6 +835,7 @@ void EnsureWeaponDebugLogOpen()
         ExpGlockLabDummyArmorHealthFraction(),
         ExpGlockLabDummyArmorDrainScale());
     std::string sessionTelemetryLine = sessionLine;
+    AppendOptionalQuotedTelemetryField(&sessionTelemetryLine, "weapon_under_test", ExpWeaponUnderTest());
     AppendOptionalQuotedTelemetryField(&sessionTelemetryLine, "session_tag", ExpSessionTag());
     AppendOptionalQuotedTelemetryField(&sessionTelemetryLine, "matrix_name", ExpMatrixName());
     AppendOptionalQuotedTelemetryField(&sessionTelemetryLine, "matrix_step", ExpMatrixStep());
@@ -794,7 +889,7 @@ void LogGlockLabDummySpawn(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, bool
         GetPlayerUserId(pAnchorPlayer),
         originValue,
         angles.y,
-        SanitizeLogValue(ExpGlockProfileName()).c_str(),
+        SanitizeLogValue(GetSessionProfileName()).c_str(),
         SanitizeLogValue(ExpGlockLabTargetProfileName()).c_str(),
         pDummy != NULL && pDummy->pev != NULL ? pDummy->pev->max_health : ExpGlockLabDummyHealth(),
         pDummy != NULL && pDummy->pev != NULL ? pDummy->pev->armorvalue : ExpGlockLabDummyArmor(),
@@ -802,7 +897,9 @@ void LogGlockLabDummySpawn(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, bool
         ExpGlockLabDummyArmorHealthFraction(),
         ExpGlockLabDummyArmorDrainScale());
 
-    WriteTelemetryLine(line);
+    std::string telemetryLine = line;
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "weapon_under_test", ExpWeaponUnderTest());
+    WriteTelemetryLine(telemetryLine.c_str());
 }
 
 void LogGlockLabDummyClear(CBaseEntity *pDummy, const char *reason)
@@ -830,10 +927,12 @@ void LogGlockLabDummyClear(CBaseEntity *pDummy, const char *reason)
         GetSafeEntityClassname(pDummy).c_str(),
         GetSafeEntityModel(pDummy).c_str(),
         SanitizeLogValue(reason).c_str(),
-        SanitizeLogValue(ExpGlockProfileName()).c_str(),
+        SanitizeLogValue(GetSessionProfileName()).c_str(),
         SanitizeLogValue(ExpGlockLabTargetProfileName()).c_str());
 
-    WriteTelemetryLine(line);
+    std::string telemetryLine = line;
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "weapon_under_test", ExpWeaponUnderTest());
+    WriteTelemetryLine(telemetryLine.c_str());
 }
 
 void LogAcceptedGlockPrimaryShot(CBasePlayer *pPlayer, const GlockAcceptedShotTelemetry &telemetry)
@@ -875,6 +974,57 @@ void LogAcceptedGlockPrimaryShot(CBasePlayer *pPlayer, const GlockAcceptedShotTe
         telemetry.spread,
         telemetry.baseSpread,
         telemetry.movementPenalty,
+        telemetry.horizontalSpeed,
+        telemetry.maxSpeedForNormalization,
+        telemetry.grounded ? 1 : 0,
+        telemetry.ducking ? 1 : 0,
+        deltaPreviousShot,
+        telemetry.clipAfterShot);
+
+    WriteTelemetryLine(line);
+}
+
+void LogAcceptedMp5PrimaryShot(CBasePlayer *pPlayer, const Mp5AcceptedShotTelemetry &telemetry)
+{
+    if (!ExpDebugWeaponLogEnabled())
+    {
+        return;
+    }
+
+    EnsureWeaponDebugLogOpen();
+
+    char timestamp[64];
+    char deltaPreviousShot[32];
+    char line[1408];
+    FormatTimestamp(timestamp, sizeof(timestamp));
+
+    if (telemetry.hasPreviousAcceptedShot)
+    {
+        _snprintf_s(deltaPreviousShot, sizeof(deltaPreviousShot), _TRUNCATE, "%.3f", telemetry.timeSincePreviousAcceptedShot);
+    }
+    else
+    {
+        strcpy_s(deltaPreviousShot, sizeof(deltaPreviousShot), "na");
+    }
+
+    _snprintf_s(
+        line,
+        sizeof(line),
+        _TRUNCATE,
+        "[weaponlog] type=accepted ts=%s map=%s player=\"%s\" entindex=%d userid=%d weapon=mp5 fire=primary experimental=%d profile=\"%s\" firstshot=%d spread=%.4f base=%.4f move_penalty=%.4f burst_additional_spread=%.4f burst_index=%d speed2d=%.1f maxspeed=%.1f grounded=%d ducking=%d delta_prev=%s clip=%d",
+        timestamp,
+        SanitizeLogValue(GetSafeMapName()).c_str(),
+        GetSafePlayerName(pPlayer).c_str(),
+        GetPlayerEntityIndex(pPlayer),
+        GetPlayerUserId(pPlayer),
+        telemetry.experimentalModeActive ? 1 : 0,
+        SanitizeLogValue(ExpMP5ProfileName()).c_str(),
+        telemetry.firstShotAccuracyApplied ? 1 : 0,
+        telemetry.spread,
+        telemetry.baseSpread,
+        telemetry.movementPenalty,
+        telemetry.burstAddedSpread,
+        telemetry.burstShotIndex,
         telemetry.horizontalSpeed,
         telemetry.maxSpeedForNormalization,
         telemetry.grounded ? 1 : 0,
@@ -1185,4 +1335,276 @@ void FinalizeActiveGlockPrimaryHitTelemetry()
     }
 
     ClearPendingGlockPrimaryHit();
+}
+
+void BeginMp5PrimaryShotContext(CBasePlayer *pPlayer)
+{
+    ResetMp5PrimaryShotContext();
+    if (pPlayer == NULL || pPlayer->pev == NULL)
+    {
+        return;
+    }
+
+    g_mp5PrimaryShotContext.active = true;
+    g_mp5PrimaryShotContext.attacker = pPlayer->pev;
+    g_mp5PrimaryShotContext.attackerPlayer = pPlayer;
+    g_mp5PrimaryShotContext.experimentalModeActive = ExpMP5ExperimentalModeEnabled();
+    g_mp5PrimaryShotContext.baseDamage = ExpMP5PrimaryDamage();
+    g_mp5PrimaryShotContext.headshotScale = ExpMP5PrimaryHeadshotScale();
+    g_mp5PrimaryShotContext.headshotLethal = ExpMP5PrimaryHeadshotLethal();
+    strncpy_s(g_mp5PrimaryShotContext.profileName, sizeof(g_mp5PrimaryShotContext.profileName), ExpMP5ProfileName(), _TRUNCATE);
+    strncpy_s(g_mp5PrimaryShotContext.targetProfileName, sizeof(g_mp5PrimaryShotContext.targetProfileName), ExpGlockLabTargetProfileName(), _TRUNCATE);
+}
+
+void EndMp5PrimaryShotContext()
+{
+    ResetMp5PrimaryShotContext();
+}
+
+float GetActiveMp5PrimaryBaseDamage(entvars_t *pevAttacker, float fallbackDamage)
+{
+    if (!HasMatchingActiveMp5PrimaryShot(pevAttacker))
+    {
+        return fallbackDamage;
+    }
+
+    return g_mp5PrimaryShotContext.baseDamage;
+}
+
+bool ApplyActiveMp5PrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAttacker, int hitgroup, float *pDamage)
+{
+    if (pDamage == NULL || pVictim == NULL || pVictim->pev == NULL || !HasMatchingActiveMp5PrimaryShot(pevAttacker))
+    {
+        return false;
+    }
+
+    const bool headshot = hitgroup == HITGROUP_HEAD;
+    float hitgroupScale = GetFallbackHitgroupScale(pVictim, hitgroup);
+
+    if (headshot)
+    {
+        hitgroupScale = g_mp5PrimaryShotContext.headshotScale;
+    }
+
+    float damage = GetActiveMp5PrimaryBaseDamage(pevAttacker, *pDamage) * hitgroupScale;
+    bool headshotLethalApplied = false;
+    const bool dummyVictim = IsExpGlockLabDummyEntity(pVictim);
+
+    if (headshot && g_mp5PrimaryShotContext.headshotLethal)
+    {
+        const float lethalDamage = ComputeHeadshotLethalDamage(pVictim);
+        if (lethalDamage > damage)
+        {
+            damage = lethalDamage;
+            headshotLethalApplied = true;
+        }
+    }
+
+    float damageToHealth = damage;
+    float damageAbsorbed = 0.0f;
+    float armorDrain = 0.0f;
+    bool dummyArmorApplied = false;
+    const bool dummyHeadProtected = dummyVictim && ExpGlockLabDummyHeadProtected();
+    const float dummyArmorBefore = dummyVictim && pVictim->pev->armorvalue > 0.0f ? pVictim->pev->armorvalue : 0.0f;
+
+    if (dummyVictim && dummyArmorBefore > 0.0f && DummyArmorProtectsHitgroup(hitgroup, dummyHeadProtected))
+    {
+        const float armorHealthFraction = ClampFloat(ExpGlockLabDummyArmorHealthFraction(), 0.0f, 1.0f);
+        const float desiredDamageToHealth = damage * armorHealthFraction;
+        const float desiredDamageAbsorbed = damage - desiredDamageToHealth;
+        const float armorDrainScale = ExpGlockLabDummyArmorDrainScale();
+
+        if (desiredDamageAbsorbed > 0.0f)
+        {
+            if (armorDrainScale <= 0.0f)
+            {
+                damageToHealth = desiredDamageToHealth;
+                damageAbsorbed = desiredDamageAbsorbed;
+                armorDrain = 0.0f;
+                dummyArmorApplied = true;
+            }
+            else
+            {
+                const float desiredArmorDrain = desiredDamageAbsorbed * armorDrainScale;
+
+                if (desiredArmorDrain <= dummyArmorBefore)
+                {
+                    damageToHealth = desiredDamageToHealth;
+                    damageAbsorbed = desiredDamageAbsorbed;
+                    armorDrain = desiredArmorDrain;
+                    dummyArmorApplied = true;
+                }
+                else
+                {
+                    armorDrain = dummyArmorBefore;
+                    damageAbsorbed = armorDrain / armorDrainScale;
+                    damageToHealth = damage - damageAbsorbed;
+                    dummyArmorApplied = damageAbsorbed > 0.0f;
+                }
+            }
+
+            pVictim->pev->armorvalue = dummyArmorBefore - armorDrain;
+            if (pVictim->pev->armorvalue < 0.0f)
+            {
+                pVictim->pev->armorvalue = 0.0f;
+            }
+        }
+    }
+
+    *pDamage = damageToHealth;
+
+    g_mp5PrimaryShotContext.pendingHit = true;
+    g_mp5PrimaryShotContext.victim = pVictim;
+    g_mp5PrimaryShotContext.hitgroup = hitgroup;
+    g_mp5PrimaryShotContext.headshot = headshot;
+    g_mp5PrimaryShotContext.hitgroupScale = hitgroupScale;
+    g_mp5PrimaryShotContext.traceDamage = damage;
+    g_mp5PrimaryShotContext.headshotLethalApplied = headshotLethalApplied;
+    g_mp5PrimaryShotContext.victimHealthBefore = pVictim->pev->health;
+    g_mp5PrimaryShotContext.victimArmorKnown = pVictim->IsPlayer() || dummyVictim;
+    g_mp5PrimaryShotContext.victimArmorBefore = g_mp5PrimaryShotContext.victimArmorKnown
+        ? (dummyVictim ? dummyArmorBefore : pVictim->pev->armorvalue)
+        : 0.0f;
+    g_mp5PrimaryShotContext.victimIsDummy = dummyVictim;
+    g_mp5PrimaryShotContext.dummyArmorApplied = dummyArmorApplied;
+    g_mp5PrimaryShotContext.dummyHeadProtected = dummyHeadProtected;
+    g_mp5PrimaryShotContext.damageRaw = damage;
+    g_mp5PrimaryShotContext.damageToHealth = damageToHealth;
+    g_mp5PrimaryShotContext.damageAbsorbed = damageAbsorbed;
+    g_mp5PrimaryShotContext.armorDrain = armorDrain;
+
+    return true;
+}
+
+void FinalizeActiveMp5PrimaryHitTelemetry()
+{
+    if (!g_mp5PrimaryShotContext.active || !g_mp5PrimaryShotContext.pendingHit || g_mp5PrimaryShotContext.victim == NULL || g_mp5PrimaryShotContext.victim->pev == NULL)
+    {
+        ClearPendingMp5PrimaryHit();
+        return;
+    }
+
+    CBaseEntity *pVictim = g_mp5PrimaryShotContext.victim;
+    const float healthAfter = pVictim->pev->health;
+    const float appliedDamage = g_mp5PrimaryShotContext.victimHealthBefore - healthAfter;
+    const bool armorKnown = g_mp5PrimaryShotContext.victimArmorKnown;
+    const float armorAfter = armorKnown ? pVictim->pev->armorvalue : 0.0f;
+    const float armorDamage = armorKnown ? (g_mp5PrimaryShotContext.victimArmorBefore - armorAfter) : 0.0f;
+    const bool dummyTelemetry = g_mp5PrimaryShotContext.victimIsDummy;
+
+    if (ExpDebugWeaponLogEnabled())
+    {
+        EnsureWeaponDebugLogOpen();
+
+        char timestamp[64];
+        char armorBefore[32];
+        char armorAfterText[32];
+        char armorDamageText[32];
+        char dummyArmorBefore[32];
+        char dummyArmorAfter[32];
+        char damageRaw[32];
+        char damageToHealth[32];
+        char damageAbsorbed[32];
+        char armorDrain[32];
+        char line[3072];
+
+        FormatTimestamp(timestamp, sizeof(timestamp));
+        FormatOptionalFloat(armorBefore, sizeof(armorBefore), armorKnown, g_mp5PrimaryShotContext.victimArmorBefore, 1);
+        FormatOptionalFloat(armorAfterText, sizeof(armorAfterText), armorKnown, armorAfter, 1);
+        FormatOptionalFloat(armorDamageText, sizeof(armorDamageText), armorKnown, armorDamage, 1);
+        FormatOptionalFloat(dummyArmorBefore, sizeof(dummyArmorBefore), dummyTelemetry, g_mp5PrimaryShotContext.victimArmorBefore, 1);
+        FormatOptionalFloat(dummyArmorAfter, sizeof(dummyArmorAfter), dummyTelemetry, armorAfter, 1);
+        FormatOptionalFloat(damageRaw, sizeof(damageRaw), dummyTelemetry, g_mp5PrimaryShotContext.damageRaw, 4);
+        FormatOptionalFloat(damageToHealth, sizeof(damageToHealth), dummyTelemetry, g_mp5PrimaryShotContext.damageToHealth, 4);
+        FormatOptionalFloat(damageAbsorbed, sizeof(damageAbsorbed), dummyTelemetry, g_mp5PrimaryShotContext.damageAbsorbed, 4);
+        FormatOptionalFloat(armorDrain, sizeof(armorDrain), dummyTelemetry, g_mp5PrimaryShotContext.armorDrain, 4);
+
+        _snprintf_s(
+            line,
+            sizeof(line),
+            _TRUNCATE,
+            "[weaponlog] type=hit ts=%s map=%s attacker=\"%s\" attacker_entindex=%d attacker_userid=%d victim=\"%s\" victim_entindex=%d victim_userid=%d victim_kind=%s victim_class=%s victim_model=\"%s\" weapon=mp5 fire=primary hitgroup=%s hitgroup_id=%d headshot=%d experimental=%d profile=\"%s\" target_profile=\"%s\" base_damage=%.4f hitgroup_scale=%.4f trace_damage=%.4f applied_damage=%.4f health_before=%.1f health_after=%.1f armor_before=%s armor_after=%s armor_damage=%s damage_raw=%s damage_to_health=%s damage_absorbed=%s armor_drain=%s dummy_armor_before=%s dummy_armor_after=%s armor_applied=%d head_protected=%d headshot_lethal_active=%d headshot_lethal_applied=%d",
+            timestamp,
+            SanitizeLogValue(GetSafeMapName()).c_str(),
+            GetSafePlayerName(g_mp5PrimaryShotContext.attackerPlayer).c_str(),
+            GetPlayerEntityIndex(g_mp5PrimaryShotContext.attackerPlayer),
+            GetPlayerUserId(g_mp5PrimaryShotContext.attackerPlayer),
+            GetSafeEntityName(pVictim).c_str(),
+            GetEntityIndex(pVictim),
+            GetEntityUserId(pVictim),
+            GetEntityKind(pVictim),
+            GetSafeEntityClassname(pVictim).c_str(),
+            GetSafeEntityModel(pVictim).c_str(),
+            GetHitgroupName(g_mp5PrimaryShotContext.hitgroup),
+            g_mp5PrimaryShotContext.hitgroup,
+            g_mp5PrimaryShotContext.headshot ? 1 : 0,
+            g_mp5PrimaryShotContext.experimentalModeActive ? 1 : 0,
+            SanitizeLogValue(g_mp5PrimaryShotContext.profileName).c_str(),
+            dummyTelemetry ? SanitizeLogValue(g_mp5PrimaryShotContext.targetProfileName).c_str() : "na",
+            g_mp5PrimaryShotContext.baseDamage,
+            g_mp5PrimaryShotContext.hitgroupScale,
+            g_mp5PrimaryShotContext.traceDamage,
+            appliedDamage,
+            g_mp5PrimaryShotContext.victimHealthBefore,
+            healthAfter,
+            armorBefore,
+            armorAfterText,
+            armorDamageText,
+            damageRaw,
+            damageToHealth,
+            damageAbsorbed,
+            armorDrain,
+            dummyArmorBefore,
+            dummyArmorAfter,
+            g_mp5PrimaryShotContext.dummyArmorApplied ? 1 : 0,
+            g_mp5PrimaryShotContext.dummyHeadProtected ? 1 : 0,
+            g_mp5PrimaryShotContext.headshotLethal ? 1 : 0,
+            g_mp5PrimaryShotContext.headshotLethalApplied ? 1 : 0);
+        WriteTelemetryLine(line);
+
+        if (!pVictim->IsAlive())
+        {
+            char killLine[3072];
+            _snprintf_s(
+                killLine,
+                sizeof(killLine),
+                _TRUNCATE,
+                "[weaponlog] type=kill ts=%s map=%s attacker=\"%s\" attacker_entindex=%d attacker_userid=%d victim=\"%s\" victim_entindex=%d victim_userid=%d victim_kind=%s victim_class=%s victim_model=\"%s\" weapon=mp5 fire=primary hitgroup=%s hitgroup_id=%d headshot=%d experimental=%d profile=\"%s\" target_profile=\"%s\" trace_damage=%.4f applied_damage=%.4f health_before=%.1f health_after=%.1f armor_before=%s armor_after=%s damage_raw=%s damage_to_health=%s damage_absorbed=%s armor_drain=%s dummy_armor_after=%s armor_applied=%d head_protected=%d headshot_lethal_active=%d headshot_lethal_applied=%d",
+                timestamp,
+                SanitizeLogValue(GetSafeMapName()).c_str(),
+                GetSafePlayerName(g_mp5PrimaryShotContext.attackerPlayer).c_str(),
+                GetPlayerEntityIndex(g_mp5PrimaryShotContext.attackerPlayer),
+                GetPlayerUserId(g_mp5PrimaryShotContext.attackerPlayer),
+                GetSafeEntityName(pVictim).c_str(),
+                GetEntityIndex(pVictim),
+                GetEntityUserId(pVictim),
+                GetEntityKind(pVictim),
+                GetSafeEntityClassname(pVictim).c_str(),
+                GetSafeEntityModel(pVictim).c_str(),
+                GetHitgroupName(g_mp5PrimaryShotContext.hitgroup),
+                g_mp5PrimaryShotContext.hitgroup,
+                g_mp5PrimaryShotContext.headshot ? 1 : 0,
+                g_mp5PrimaryShotContext.experimentalModeActive ? 1 : 0,
+                SanitizeLogValue(g_mp5PrimaryShotContext.profileName).c_str(),
+                dummyTelemetry ? SanitizeLogValue(g_mp5PrimaryShotContext.targetProfileName).c_str() : "na",
+                g_mp5PrimaryShotContext.traceDamage,
+                appliedDamage,
+                g_mp5PrimaryShotContext.victimHealthBefore,
+                healthAfter,
+                armorBefore,
+                armorAfterText,
+                damageRaw,
+                damageToHealth,
+                damageAbsorbed,
+                armorDrain,
+                dummyArmorAfter,
+                g_mp5PrimaryShotContext.dummyArmorApplied ? 1 : 0,
+                g_mp5PrimaryShotContext.dummyHeadProtected ? 1 : 0,
+                g_mp5PrimaryShotContext.headshotLethal ? 1 : 0,
+                g_mp5PrimaryShotContext.headshotLethalApplied ? 1 : 0);
+            WriteTelemetryLine(killLine);
+        }
+    }
+
+    ClearPendingMp5PrimaryHit();
 }

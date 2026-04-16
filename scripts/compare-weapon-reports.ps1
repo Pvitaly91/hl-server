@@ -170,10 +170,12 @@ function ConvertTo-ComparisonRow {
 
     $row = [PSCustomObject]@{
         SourceReportPath = $SourcePath
+        WeaponUnderTest = Get-OptionalObjectString -InputObject $summary -Names @("weaponUnderTest")
         SessionTag = Get-OptionalObjectString -InputObject $summary -Names @("sessionTag")
         MatrixName = Get-OptionalObjectString -InputObject $summary -Names @("matrixName")
         MatrixStep = Get-OptionalObjectString -InputObject $summary -Names @("matrixStep")
         GlockProfile = Get-OptionalObjectString -InputObject $summary -Names @("glockProfile")
+        Mp5Profile = Get-OptionalObjectString -InputObject $summary -Names @("mp5Profile")
         LabTargetProfile = Get-OptionalObjectString -InputObject $summary -Names @("labTargetProfile")
         AcceptedShotCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $summary -Names @("acceptedShotCount"))
         RejectedShotCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $summary -Names @("rejectedShotCount"))
@@ -187,6 +189,8 @@ function ConvertTo-ComparisonRow {
         ArmoredDummyHitCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $summary -Names @("armoredDummyHitCount"))
         ProtectedDummyHeadshotHitCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $summary -Names @("protectedDummyHeadshotHitCount"))
         ProtectedDummyHeadshotKillCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $summary -Names @("protectedDummyHeadshotKillCount"))
+        BurstGrowthEvidenceCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $summary -Names @("burstGrowthEvidenceCount"))
+        MovementPenaltyEvidenceCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $summary -Names @("movementPenaltyEvidenceCount"))
         AppliedDamageMin = To-ReportNum (Get-ObjectPropertyValue -InputObject $appliedDamageSummary -Names @("min"))
         AppliedDamageAverage = To-ReportNum (Get-ObjectPropertyValue -InputObject $appliedDamageSummary -Names @("average"))
         AppliedDamageMax = To-ReportNum (Get-ObjectPropertyValue -InputObject $appliedDamageSummary -Names @("max"))
@@ -202,6 +206,9 @@ function ConvertTo-ComparisonRow {
     if ([string]::IsNullOrWhiteSpace($row.SessionTag)) {
         $row.SessionTag = Get-OptionalObjectString -InputObject $metadata -Names @("sessionTag")
     }
+    if ([string]::IsNullOrWhiteSpace($row.WeaponUnderTest)) {
+        $row.WeaponUnderTest = Get-OptionalObjectString -InputObject $metadata -Names @("weaponUnderTest")
+    }
     if ([string]::IsNullOrWhiteSpace($row.MatrixName)) {
         $row.MatrixName = Get-OptionalObjectString -InputObject $metadata -Names @("matrixName")
     }
@@ -211,10 +218,16 @@ function ConvertTo-ComparisonRow {
     if ([string]::IsNullOrWhiteSpace($row.GlockProfile)) {
         $row.GlockProfile = Get-OptionalObjectString -InputObject $metadata -Names @("glockProfile")
     }
+    if ([string]::IsNullOrWhiteSpace($row.Mp5Profile)) {
+        $row.Mp5Profile = Get-OptionalObjectString -InputObject $metadata -Names @("mp5Profile")
+    }
     if ([string]::IsNullOrWhiteSpace($row.LabTargetProfile)) {
         $row.LabTargetProfile = Get-OptionalObjectString -InputObject $metadata -Names @("labTargetProfile")
     }
 
+    if ([string]::IsNullOrWhiteSpace($row.WeaponUnderTest)) {
+        $row.WeaponUnderTest = Get-OptionalObjectString -InputObject $session -Names @("weaponUnderTest")
+    }
     if ([string]::IsNullOrWhiteSpace($row.SessionTag)) {
         $row.SessionTag = Get-OptionalObjectString -InputObject $session -Names @("sessionTag")
     }
@@ -226,6 +239,9 @@ function ConvertTo-ComparisonRow {
     }
     if ([string]::IsNullOrWhiteSpace($row.GlockProfile)) {
         $row.GlockProfile = Get-OptionalObjectString -InputObject $session -Names @("profileName")
+    }
+    if ([string]::IsNullOrWhiteSpace($row.Mp5Profile)) {
+        $row.Mp5Profile = Get-OptionalObjectString -InputObject $session -Names @("mp5ProfileName", "profileName")
     }
     if ([string]::IsNullOrWhiteSpace($row.LabTargetProfile)) {
         $row.LabTargetProfile = Get-OptionalObjectString -InputObject $session -Names @("targetProfileName")
@@ -243,6 +259,8 @@ function ConvertTo-ComparisonRow {
     if ($row.ArmoredDummyHitCount -eq 0) { $row.ArmoredDummyHitCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $counters -Names @("armoredDummyHits")) }
     if ($row.ProtectedDummyHeadshotHitCount -eq 0) { $row.ProtectedDummyHeadshotHitCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $counters -Names @("protectedDummyHeadshotHits")) }
     if ($row.ProtectedDummyHeadshotKillCount -eq 0) { $row.ProtectedDummyHeadshotKillCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $counters -Names @("protectedDummyHeadshotKills")) }
+    if ($row.BurstGrowthEvidenceCount -eq 0) { $row.BurstGrowthEvidenceCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $counters -Names @("burstGrowthEvidence")) }
+    if ($row.MovementPenaltyEvidenceCount -eq 0) { $row.MovementPenaltyEvidenceCount = To-ReportInt (Get-ObjectPropertyValue -InputObject $counters -Names @("acceptedMovePenaltyPositive")) }
 
     if ($null -eq $row.AppliedDamageMin) { $row.AppliedDamageMin = To-ReportNum (Get-ObjectPropertyValue -InputObject $appliedDamageStats -Names @("Min")) }
     if ($null -eq $row.AppliedDamageAverage) { $row.AppliedDamageAverage = To-ReportNum (Get-ObjectPropertyValue -InputObject $appliedDamageStats -Names @("Average")) }

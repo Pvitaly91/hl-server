@@ -402,7 +402,8 @@ void CBasePlayer :: TraceAttack( entvars_t *pevAttacker, float flDamage, Vector 
 	{
 		m_LastHitGroup = ptr->iHitgroup;
 
-		if (!ApplyActiveGlockPrimaryTraceDamage(this, pevAttacker, ptr->iHitgroup, &flDamage))
+		if (!ApplyActiveGlockPrimaryTraceDamage(this, pevAttacker, ptr->iHitgroup, &flDamage) &&
+			!ApplyActiveMp5PrimaryTraceDamage(this, pevAttacker, ptr->iHitgroup, &flDamage))
 		{
 			switch ( ptr->iHitgroup )
 			{

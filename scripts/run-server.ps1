@@ -8,11 +8,15 @@ param(
     [int]$MaxPlayers = 4,
     [string[]]$SetCvar = @(),
     [string]$GlockProfile,
+    [string]$Mp5Profile,
     [string]$LabTargetProfile,
     [hashtable]$Cvars,
     [switch]$EnableExperimentalGlock,
+    [switch]$EnableExperimentalMp5,
     [switch]$EnableExperimentalGlockDebug,
+    [switch]$EnableExperimentalWeaponDebug,
     [switch]$EnableGlockLabDummy,
+    [switch]$EnableMp5LabLoadout,
     [switch]$Detached,
     [switch]$PassThru,
     [string]$TemplateRoot,
@@ -38,22 +42,35 @@ if ((-not (Test-LeafPath -Path $runtimeHldsExe)) -or (-not (Test-LeafPath -Path 
 Assert-UdpPortAvailable -Port $Port
 $effectiveSetCvars = @()
 $useGlockProfile = -not [string]::IsNullOrWhiteSpace($GlockProfile)
+$useMp5Profile = -not [string]::IsNullOrWhiteSpace($Mp5Profile)
 $useLabTargetProfile = -not [string]::IsNullOrWhiteSpace($LabTargetProfile)
 
 if ($EnableExperimentalGlock -or $EnableExperimentalGlockDebug -or $useGlockProfile) {
     $effectiveSetCvars += @(Get-ExperimentalGlockLaunchAssignments)
 }
 
-if ($EnableExperimentalGlockDebug) {
-    $effectiveSetCvars += @(Get-ExperimentalGlockDebugLaunchAssignments)
+if ($EnableExperimentalMp5 -or $useMp5Profile) {
+    $effectiveSetCvars += @(Get-ExperimentalMp5LaunchAssignments)
+}
+
+if ($EnableExperimentalGlockDebug -or $EnableExperimentalWeaponDebug) {
+    $effectiveSetCvars += @(Get-ExperimentalWeaponDebugLaunchAssignments)
 }
 
 if ($EnableGlockLabDummy) {
     $effectiveSetCvars += @(Get-GlockLabDummyLaunchAssignments)
 }
 
+if ($EnableMp5LabLoadout) {
+    $effectiveSetCvars += @(Get-Mp5LabLoadoutLaunchAssignments)
+}
+
 if ($useGlockProfile) {
     $effectiveSetCvars += @(Get-GlockProfileLaunchAssignments -Name $GlockProfile)
+}
+
+if ($useMp5Profile) {
+    $effectiveSetCvars += @(Get-Mp5ProfileLaunchAssignments -Name $Mp5Profile)
 }
 
 if ($useLabTargetProfile) {

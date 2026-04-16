@@ -583,6 +583,9 @@ public:
 	void WeaponIdle( void );
 	float m_flNextAnimTime;
 	int m_iShell;
+	float m_flLastAcceptedPrimaryShotTime;
+	float m_flPrimaryBurstSpreadAccumulator;
+	int m_iPrimaryBurstShotCount;
 
 	virtual BOOL UseDecrement( void )
 	{ 
