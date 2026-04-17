@@ -7,10 +7,10 @@ set "SCRIPT_DIR=%~dp0"
 cls
 echo Live disposable testbed menu
 echo.
-echo   1. Glock live lab
-echo   2. MP5 live lab
-echo   3. Glock live lab ^(unarmored^)
-echo   4. MP5 live lab ^(vest_headprotected^)
+echo   1. Glock live lab ^(client-matched^)
+echo   2. MP5 live lab ^(client-matched^)
+echo   3. Glock live lab ^(client-matched, unarmored^)
+echo   4. MP5 live lab ^(client-matched, vest_headprotected^)
 echo   5. Open latest analysis
 echo   6. Run doctor
 echo   7. Exit

@@ -87,9 +87,15 @@ Write-Host "  target profile : $effectiveTargetProfile"
 Write-Host "  chosen map     : $Map"
 Write-Host "  logs           : $logsRoot"
 Write-Host "  analyzer output: $reportsRoot"
+Write-Host "  runtime root   : $($doctorReport.LiveContentStatus.RuntimeRoot)"
+Write-Host "  launch hlds    : $(if ($doctorReport.LiveContentStatus.RuntimeHldsExe) { $doctorReport.LiveContentStatus.RuntimeHldsExe } else { 'missing' })"
+Write-Host "  launch hl      : $(if ($doctorReport.LiveContentStatus.ClientLaunchExe) { $doctorReport.LiveContentStatus.ClientLaunchExe } else { 'not found' })"
 Write-Host "  client root    : $(if ($doctorReport.LiveContentStatus.ClientRoot) { $doctorReport.LiveContentStatus.ClientRoot } else { 'not found' })"
 Write-Host "  runtime source : $(if ($doctorReport.LiveContentStatus.RuntimeSourceRoot) { $doctorReport.LiveContentStatus.RuntimeSourceRoot } else { 'unavailable' })"
 Write-Host "  content source : $(if ($doctorReport.LiveContentStatus.EffectiveContentRoot) { $doctorReport.LiveContentStatus.EffectiveContentRoot } else { 'unavailable' })"
+Write-Host "  same-root      : $($doctorReport.LiveContentStatus.SameRootLaunchLabel)"
+Write-Host "  content_match  : $($doctorReport.LiveContentStatus.ContentMatchLabel)"
+Write-Host "  diagnosis kind : $($doctorReport.LiveContentStatus.DiagnosisKind)"
 Write-Host "  live verdict   : $($doctorReport.LiveContentStatus.Verdict)"
 Write-Host "  runtime map    : $(if ($doctorReport.LiveContentStatus.RuntimeMap.Path) { $doctorReport.LiveContentStatus.RuntimeMap.Path } else { 'missing' })"
 Write-Host "  client map     : $(if ($doctorReport.LiveContentStatus.ClientMap.Path) { $doctorReport.LiveContentStatus.ClientMap.Path } else { 'missing' })"
@@ -100,6 +106,22 @@ if ((-not $NoClient) -and (-not $resolvedClientExe)) {
     Write-Host "Live visual testing requires a stock Half-Life client executable."
     Write-Host "Set HL_EXE in .env, pass -HlExe <path>, or use a disposable runtime template that already contains hl.exe."
     exit 1
+}
+
+if (-not $NoClient) {
+    if ($doctorReport.LiveContentStatus.SameRootLaunchLabel -ne "yes") {
+        Write-Host ""
+        Write-Host "Live same-root preflight failed: the client would not launch from the disposable runtime root."
+        Write-Host "Resolve HL_EXE or rerun .\scripts\doctor-testbed.ps1 -PreferClientMatchedRuntime -Repair before retrying."
+        exit 1
+    }
+
+    if ($doctorReport.LiveContentStatus.ContentMatchLabel -ne "yes") {
+        Write-Host ""
+        Write-Host "Live same-root preflight failed: content_match=no for the runtime and client roots."
+        Write-Host "Check .\scripts\check-live-map-match.ps1 -PreferClientMatchedRuntime before retrying."
+        exit 1
+    }
 }
 
 $sessionParameters = @{

@@ -52,8 +52,13 @@ if ($preflightReport.SourceSelection -and $preflightReport.SourceSelection.Selec
     Write-Host "Source reason : $($selectedSource.Reason)"
 }
 if ($preflightReport.LiveContentStatus) {
+    Write-Host "Runtime root  : $($preflightReport.LiveContentStatus.RuntimeRoot)"
+    Write-Host "Launch hlds   : $(if ($preflightReport.LiveContentStatus.RuntimeHldsExe) { $preflightReport.LiveContentStatus.RuntimeHldsExe } else { 'missing' })"
+    Write-Host "Launch hl     : $(if ($preflightReport.LiveContentStatus.ClientLaunchExe) { $preflightReport.LiveContentStatus.ClientLaunchExe } else { 'not found' })"
     Write-Host "Client root   : $(if ($preflightReport.LiveContentStatus.ClientRoot) { $preflightReport.LiveContentStatus.ClientRoot } else { 'not found' })"
     Write-Host "Content root  : $(if ($preflightReport.LiveContentStatus.EffectiveContentRoot) { $preflightReport.LiveContentStatus.EffectiveContentRoot } else { 'unavailable' })"
+    Write-Host "Same-root     : $($preflightReport.LiveContentStatus.SameRootLaunchLabel)"
+    Write-Host "content_match : $($preflightReport.LiveContentStatus.ContentMatchLabel)"
     Write-Host "Live verdict  : $($preflightReport.LiveContentStatus.Verdict)"
 }
 

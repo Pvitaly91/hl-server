@@ -25,7 +25,7 @@ The testbed exists to run HLDS with the locally built `hl.dll` without modifying
 
 The scripts do not write back into the original template root. They mirror the selected source into `testbed/runtime/`, validate key executable-side dependencies, generate `steam_appid.txt` inside the disposable runtime when the source type makes the AppID unambiguous, then install the built DLL into `testbed/runtime/valve/dlls/`.
 
-For no-client or dedicated-only flows, that means the cached dedicated template can remain the preferred executable source. For live client-attached flows, the repo now has an explicit client-matched mode: it resolves the stock `hl.exe` root, mirrors that client root into `testbed/runtime/`, and then supplements missing server-side files from the selected HLDS-capable source when needed. That keeps `-game valve` while making the runtime content match the launched stock client.
+For no-client or dedicated-only flows, that means the cached dedicated template can remain the preferred executable source. For live client-attached flows, the repo now has an explicit same-root/client-matched mode: it resolves the stock `hl.exe` root, mirrors that client root into `testbed/runtime/`, and then supplements missing server-side files from the selected HLDS-capable source when needed. That keeps `-game valve` while making the runtime content match the launched stock client.
 
 ## HLDS launch behavior
 
@@ -55,7 +55,7 @@ The live launchers always:
 
 - run `doctor-testbed.ps1 -PreferClientMatchedRuntime -Repair -BuildIfMissing` first
 - keep the disposable runtime on `-game valve`
-- print the chosen client root, runtime source root, content source root, chosen map, `testbed/logs/`, and `testbed/logs/reports/`
+- print the chosen client root, runtime source root, content source root, launched `hlds.exe`, launched `hl.exe`, `Same-root launch`, `content_match`, chosen map, `testbed/logs/`, and `testbed/logs/reports/`
 - require a stock `hl.exe` for client-attached play unless `-NoClient` is explicitly forwarded
 - delegate the actual session startup to `run-glock-test-session.ps1` or `run-mp5-test-session.ps1`
 
@@ -95,6 +95,13 @@ You can inspect the current client/runtime pairing without launching a session:
 .\scripts\check-live-map-match.ps1
 .\scripts\check-live-map-match.ps1 -PreferClientMatchedRuntime
 ```
+
+Success for the live same-root path looks like this:
+
+- `Same-root launch    : yes`
+- `content_match       : yes`
+- `Launch hlds` and `Launch hl` both point into `testbed/runtime/`
+- the client joins without `Your map [maps/crossfire.bsp] differs from the server's.`
 
 ## Smoke test signal
 

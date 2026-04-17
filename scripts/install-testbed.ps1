@@ -40,4 +40,8 @@ Write-Host "Created steam_appid: $($installResult.CreatedSteamAppIdFile)"
 if ($installResult.ClientInstall) {
     Write-Host "Client root        : $($installResult.ClientInstall.Root)"
 }
+Write-Host "Launch hlds        : $(if ($installResult.LiveContentStatus.RuntimeHldsExe) { $installResult.LiveContentStatus.RuntimeHldsExe } else { 'missing' })"
+Write-Host "Launch hl          : $(if ($installResult.LiveContentStatus.ClientLaunchExe) { $installResult.LiveContentStatus.ClientLaunchExe } else { 'not found' })"
+Write-Host "Same-root launch   : $($installResult.LiveContentStatus.SameRootLaunchLabel)"
+Write-Host "content_match      : $($installResult.LiveContentStatus.ContentMatchLabel)"
 Write-Host "Live content       : $($installResult.LiveContentStatus.Verdict)"

@@ -1261,12 +1261,70 @@ function Get-TestbedLiveContentStatus {
     $runtimeSignature = New-TestbedContentSignature -Root $runtimeRootFull -RelativePath "valve\maps\crossfire.bsp"
     $sourceSignature = New-TestbedContentSignature -Root $runtimeSourceRoot -RelativePath "valve\maps\crossfire.bsp"
     $clientSignature = New-TestbedContentSignature -Root $clientRoot -RelativePath "valve\maps\crossfire.bsp"
+    $runtimeHldsExe = Join-Path $runtimeRootFull "hlds.exe"
+    $runtimeHlExe = Join-Path $runtimeRootFull "hl.exe"
+    $runtimeHldsExists = Test-LeafPath -Path $runtimeHldsExe
+    $runtimeHlExists = Test-LeafPath -Path $runtimeHlExe
+    $clientLaunchExe = if ($runtimeHlExists) {
+        $runtimeHlExe
+    }
+    elseif ($ClientInstall) {
+        $ClientInstall.HlExe
+    }
+    else {
+        $null
+    }
+    $serverWorkingDirectory = if ($runtimeHldsExists) { $runtimeRootFull } else { $null }
+    $clientWorkingDirectory = if ($clientLaunchExe) { Split-Path -Parent $clientLaunchExe } else { $null }
 
     $runtimeMatchesClientHash = $runtimeSignature.Exists -and $clientSignature.Exists -and ($runtimeSignature.Hash -eq $clientSignature.Hash)
     $sourceMatchesClientHash = $sourceSignature.Exists -and $clientSignature.Exists -and ($sourceSignature.Hash -eq $clientSignature.Hash)
     $sourceMatchesClientRoot = Test-PathsEqual -Left $runtimeSourceRoot -Right $clientRoot
     $expectedContentMatchesClientRoot = Test-PathsEqual -Left $effectiveContentRoot -Right $clientRoot
     $manifestContentMatchesClientRoot = Test-PathsEqual -Left $manifestContentRoot -Right $clientRoot
+    $serverLaunchUsesRuntimeRoot = Test-PathsEqual -Left $serverWorkingDirectory -Right $runtimeRootFull
+    $clientLaunchUsesRuntimeRoot = Test-PathsEqual -Left $clientWorkingDirectory -Right $runtimeRootFull
+    $sameRootLaunch = $serverLaunchUsesRuntimeRoot -and $clientLaunchUsesRuntimeRoot
+    $contentMatch = $runtimeMatchesClientHash
+    $contentMatchLabel = if ($runtimeSignature.Exists -and $clientSignature.Exists) {
+        if ($contentMatch) { "yes" } else { "no" }
+    }
+    else {
+        "unknown"
+    }
+    $rootMatchLabel = if ($clientRoot) {
+        if ($expectedContentMatchesClientRoot) { "yes" } else { "no" }
+    }
+    else {
+        "unknown"
+    }
+    $sameRootLaunchLabel = if ($clientLaunchExe -and $runtimeHldsExists) {
+        if ($sameRootLaunch) { "yes" } else { "no" }
+    }
+    else {
+        "unknown"
+    }
+    $diagnosisKind = if (-not $clientRoot) {
+        "missing_client_root"
+    }
+    elseif (-not $runtimeSignature.Exists -or -not $clientSignature.Exists) {
+        "content_layout_mismatch"
+    }
+    elseif (-not $serverLaunchUsesRuntimeRoot -or ($PreferClientMatchedRuntime -and (-not $clientLaunchUsesRuntimeRoot))) {
+        "wrong_working_directory"
+    }
+    elseif (-not $runtimeMatchesClientHash) {
+        "different_map_checksums"
+    }
+    elseif ($PreferClientMatchedRuntime -and $sameRootLaunch -and $expectedContentMatchesClientRoot) {
+        "same_root_client_matched"
+    }
+    elseif (-not $expectedContentMatchesClientRoot) {
+        "different_source_roots"
+    }
+    else {
+        "content_match"
+    }
 
     $verdict = if (-not $clientRoot) {
         "no stock client root was resolved"
@@ -1306,6 +1364,12 @@ function Get-TestbedLiveContentStatus {
         ClientRoot = $clientRoot
         RuntimeSourceRoot = $runtimeSourceRoot
         RuntimeSourceKind = if ($SelectedCandidate) { $SelectedCandidate.Probe.Kind } else { $null }
+        RuntimeRoot = $runtimeRootFull
+        RuntimeHldsExe = if ($runtimeHldsExists) { $runtimeHldsExe } else { $null }
+        RuntimeHlExe = if ($runtimeHlExists) { $runtimeHlExe } else { $null }
+        ClientLaunchExe = $clientLaunchExe
+        ServerWorkingDirectory = $serverWorkingDirectory
+        ClientWorkingDirectory = $clientWorkingDirectory
         EffectiveContentRoot = $effectiveContentRoot
         ManifestContentRoot = $manifestContentRoot
         RuntimeMap = $runtimeSignature
@@ -1316,6 +1380,14 @@ function Get-TestbedLiveContentStatus {
         ExpectedContentMatchesClientRoot = $expectedContentMatchesClientRoot
         ManifestContentMatchesClientRoot = $manifestContentMatchesClientRoot
         RuntimeMatchesClientHash = $runtimeMatchesClientHash
+        ServerLaunchUsesRuntimeRoot = $serverLaunchUsesRuntimeRoot
+        ClientLaunchUsesRuntimeRoot = $clientLaunchUsesRuntimeRoot
+        SameRootLaunch = $sameRootLaunch
+        SameRootLaunchLabel = $sameRootLaunchLabel
+        ContentMatch = $contentMatch
+        ContentMatchLabel = $contentMatchLabel
+        RootMatchLabel = $rootMatchLabel
+        DiagnosisKind = $diagnosisKind
         Verdict = $verdict
     }
 }
@@ -1593,11 +1665,20 @@ function Write-TestbedDoctorSummary {
 
     $manifestPath = Get-TestbedRuntimeManifestPath -RuntimeRoot $Report.RuntimeRoot
     Write-Host "Runtime manifest    : $(if (Test-LeafPath -Path $manifestPath) { $manifestPath } else { 'missing' })"
+    Write-Host "Runtime hlds.exe    : $(if ($Report.LiveContentStatus.RuntimeHldsExe) { $Report.LiveContentStatus.RuntimeHldsExe } else { 'missing' })"
+    Write-Host "Runtime hl.exe      : $(if ($Report.LiveContentStatus.RuntimeHlExe) { $Report.LiveContentStatus.RuntimeHlExe } else { 'not found' })"
     Write-Host "Client hl.exe       : $(if ($Report.LiveContentStatus.ClientHlExe) { $Report.LiveContentStatus.ClientHlExe } else { 'not found' })"
+    Write-Host "Launch client exe   : $(if ($Report.LiveContentStatus.ClientLaunchExe) { $Report.LiveContentStatus.ClientLaunchExe } else { 'not found' })"
     Write-Host "Client root         : $(if ($Report.LiveContentStatus.ClientRoot) { $Report.LiveContentStatus.ClientRoot } else { 'not found' })"
     Write-Host "Live content mode   : $(if ($Report.LiveContentStatus.PreferClientMatchedRuntime) { 'client-matched requested' } else { 'default selection' })"
     Write-Host "Content source root : $(if ($Report.LiveContentStatus.EffectiveContentRoot) { $Report.LiveContentStatus.EffectiveContentRoot } else { 'unavailable' })"
     Write-Host "Manifest content    : $(if ($Report.LiveContentStatus.ManifestContentRoot) { $Report.LiveContentStatus.ManifestContentRoot } else { 'missing' })"
+    Write-Host "Server work dir     : $(if ($Report.LiveContentStatus.ServerWorkingDirectory) { $Report.LiveContentStatus.ServerWorkingDirectory } else { 'unknown' })"
+    Write-Host "Client work dir     : $(if ($Report.LiveContentStatus.ClientWorkingDirectory) { $Report.LiveContentStatus.ClientWorkingDirectory } else { 'unknown' })"
+    Write-Host "Same-root launch    : $($Report.LiveContentStatus.SameRootLaunchLabel)"
+    Write-Host "content_match       : $($Report.LiveContentStatus.ContentMatchLabel)"
+    Write-Host "root_match          : $($Report.LiveContentStatus.RootMatchLabel)"
+    Write-Host "Live diagnosis kind : $($Report.LiveContentStatus.DiagnosisKind)"
     Write-Host "Live content verdict: $($Report.LiveContentStatus.Verdict)"
 
     if ($Report.LiveContentStatus.RuntimeMap.Path) {

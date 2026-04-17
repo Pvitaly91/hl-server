@@ -14,6 +14,7 @@ The doctor is aimed at the Windows startup failures that previously blocked the 
 - a runtime refresh blocked because `testbed/runtime` is still in use by a live `hlds.exe` or `hl.exe`
 - a stale disposable runtime that was mirrored from an older source root than the one the scripts would choose now
 - a regular Half-Life client install being used only because no dedicated HLDS-capable source was available
+- `Your map [maps/crossfire.bsp] differs from the server's.`
 - `crossfire different map` or another stock-map mismatch during a client-attached live connect
 
 ## How to run the doctor
@@ -52,8 +53,12 @@ For the currently selected source runtime, the doctor prints:
 - why that source was chosen
 - the selected `hlds.exe`
 - the selected `hl.exe` when one exists
+- the actual disposable runtime root
+- the launched `testbed/runtime\hlds.exe`
+- the launched client executable path that will be used for the live session
 - the resolved stock client root used for live client-attached sessions
 - the effective content source root that will be mirrored into `testbed/runtime/`
+- `Same-root launch` and `content_match` as explicit `yes` / `no` verdicts
 - the representative `valve\maps\crossfire.bsp` paths and SHA256 hashes for the runtime, the selected source, and the client root
 
 For the disposable runtime under `testbed/runtime/`, the doctor prints:
@@ -111,7 +116,7 @@ When `-PreferClientMatchedRuntime` is requested, the copy policy changes intenti
 3. the selected HLDS-capable source still supplies missing server-side files such as `hlds.exe` or server-only DLLs
 4. the doctor records both the executable source root and the client content root in the runtime manifest
 
-This is what prevents `different map` when the dedicated template and the stock client would otherwise pull `valve` content from different bases.
+This is what prevents `Your map [maps/crossfire.bsp] differs from the server's.` when the dedicated template and the stock client would otherwise pull `valve` content from different bases.
 
 The launch flow also now records a small `hlds-*-launch.txt` file under `testbed/logs/` that shows:
 
@@ -138,11 +143,12 @@ For client-attached testing, you also still need a valid stock `hl.exe` somewher
 
 The symptom looks like:
 
-- `crossfire different map`
+- `Your map [maps/crossfire.bsp] differs from the server's.`
+- or `crossfire different map`
 
 That happens when the disposable server runtime and the launched stock client resolve `valve` content from different roots and at least one representative map file differs. Before this patch, the repo could legitimately prepare `testbed/runtime/` from `testbed/cache/hlds-template` while the stock client launched from a separate Half-Life install. If those `valve\maps` trees diverged, the connect failed even though both sides were still on `-game valve`.
 
-The new client-matched live mode keeps the dedicated-template preference for no-client flows, but for live play it mirrors the stock client root into `testbed/runtime/` first and only supplements missing server-side files from the dedicated source. That keeps the runtime and the launched stock client aligned on the same `valve` content base.
+The new same-root/client-matched live mode keeps the dedicated-template preference for no-client flows, but for live play it mirrors the stock client root into `testbed/runtime/` first and only supplements missing server-side files from the dedicated source. That keeps the runtime and the launched stock client aligned on the same `valve` content base.
 
 ## External blockers the repo cannot solve automatically
 
