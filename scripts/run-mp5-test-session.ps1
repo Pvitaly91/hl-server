@@ -241,32 +241,14 @@ $launchInfo = & "$PSScriptRoot\run-server.ps1" `
     -PreferClientMatchedRuntime:$PreferClientMatchedRuntime `
     -PassThru
 
-$weaponLog = Wait-ForSessionWeaponDebugLog -PreviousLatestLog $previousWeaponLog -TimeoutSeconds $TimeoutSeconds -Process $launchInfo.Process
-$serverReady = $true
-
-if (-not $weaponLog) {
-    $serverReady = Wait-ForHldsReady -LaunchInfo $launchInfo -Map $Map -TimeoutSeconds $TimeoutSeconds
-    if (-not $serverReady) {
-        throw "Timed out waiting for either the MP5 session-ready weapon log or the HLDS map-start marker for '$Map'. Check $($launchInfo.StdOutLog) and $($launchInfo.StdErrLog)."
-    }
+# The session-ready weapon log appears only after a client joins, so the client
+# must launch after HLDS reaches the map-ready state instead of before it.
+$serverReady = Wait-ForHldsReady -LaunchInfo $launchInfo -Map $Map -TimeoutSeconds $TimeoutSeconds
+if (-not $serverReady) {
+    throw "Timed out waiting for the HLDS map-start marker for '$Map'. Check $($launchInfo.StdOutLog), $($launchInfo.StdErrLog), and $($launchInfo.QConsoleLog)."
 }
 
 $tailWindowRequested = $false
-
-if (-not $NoTail) {
-    if ($weaponLog) {
-        try {
-            Start-WeaponLogTailWindow -WeaponLogPath $weaponLog.FullName
-            $tailWindowRequested = $true
-        }
-        catch {
-            Write-Host "Unable to open a separate tail window automatically. Run .\\scripts\\tail-weapon-log.ps1 -Path `"$($weaponLog.FullName)`" in another PowerShell window."
-        }
-    }
-    else {
-        Write-Host "Weapon debug log path was not ready before the timeout. Run .\\scripts\\tail-weapon-log.ps1 once the session header appears."
-    }
-}
 
 $connectAddress = "127.0.0.1:$resolvedPort"
 $clientLaunchStatus = "disabled by -NoClient"
@@ -281,6 +263,28 @@ if (-not $NoClient) {
     else {
         $clientLaunchStatus = "skipped because no stock hl.exe was found for the live session"
         Write-Host "No stock Half-Life client executable was found. Set HL_EXE in .env if your Half-Life root is not auto-detected."
+    }
+}
+
+$weaponLog = $null
+$shouldWaitForWeaponLog = (-not $NoClient) -and ((-not $NoTail) -or $AnalyzeLatestOnExit -or $PassThru)
+if ($shouldWaitForWeaponLog) {
+    $postClientWeaponLogTimeout = [Math]::Min($TimeoutSeconds, 15)
+    $weaponLog = Wait-ForSessionWeaponDebugLog -PreviousLatestLog $previousWeaponLog -TimeoutSeconds $postClientWeaponLogTimeout -Process $launchInfo.Process
+}
+
+if (-not $NoTail) {
+    if ($weaponLog) {
+        try {
+            Start-WeaponLogTailWindow -WeaponLogPath $weaponLog.FullName
+            $tailWindowRequested = $true
+        }
+        catch {
+            Write-Host "Unable to open a separate tail window automatically. Run .\\scripts\\tail-weapon-log.ps1 -Path `"$($weaponLog.FullName)`" in another PowerShell window."
+        }
+    }
+    else {
+        Write-Host "Weapon debug log path is not ready yet. Run .\\scripts\\tail-weapon-log.ps1 once the session header appears."
     }
 }
 
