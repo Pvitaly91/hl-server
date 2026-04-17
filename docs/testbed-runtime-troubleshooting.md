@@ -2,7 +2,7 @@
 
 ## What this doc covers
 
-This repository keeps runtime writes inside `testbed/runtime/`, but HLDS still depends on a valid local source runtime outside the repo. The new doctor and repair tooling exists to make that dependency visible instead of leaving failures as opaque `hlds.exe` crashes.
+This repository keeps no-client runtime writes inside `testbed/runtime/`, but HLDS still depends on a valid local source runtime outside the repo. Live client-attached sessions now use a managed `hlserver_testbed` mod under the real Half-Life root, backed by `testbed/mods/`. The doctor and repair tooling exists to make those dependencies visible instead of leaving failures as opaque `hlds.exe` crashes.
 
 ## Symptoms the doctor now diagnoses
 
@@ -53,13 +53,14 @@ For the currently selected source runtime, the doctor prints:
 - why that source was chosen
 - the selected `hlds.exe`
 - the selected `hl.exe` when one exists
-- the actual disposable runtime root
-- the launched `testbed/runtime\hlds.exe`
+- the actual disposable runtime root for no-client flows
+- the managed live mod root for client-attached flows
+- the launched `hlds.exe`
 - the launched client executable path that will be used for the live session
 - the resolved stock client root used for live client-attached sessions
-- the effective content source root that will be mirrored into `testbed/runtime/`
+- the effective content source root used by the managed live mod
 - `Same-root launch` and `content_match` as explicit `yes` / `no` verdicts
-- the representative `valve\maps\crossfire.bsp` paths and SHA256 hashes for the runtime, the selected source, and the client root
+- the representative `crossfire.bsp` paths and SHA256 hashes for the live mod, the selected source, and the client root
 
 For the disposable runtime under `testbed/runtime/`, the doctor prints:
 
@@ -109,14 +110,15 @@ That fallback matters. A Half-Life client install can be good enough for some lo
 7. install the locally built `hl.dll` into `testbed/runtime/valve/dlls/`
 8. write `testbed/runtime/.hl-server-runtime.json` so stale mirrors are detectable later
 
-When `-PreferClientMatchedRuntime` is requested, the copy policy changes intentionally for live play:
+When `-PreferClientMatchedRuntime` is requested, the live policy changes intentionally:
 
 1. the repo resolves the stock `hl.exe` root that will be used for the live session
-2. that client root becomes the mirror base for `testbed/runtime/`
-3. the selected HLDS-capable source still supplies missing server-side files such as `hlds.exe` or server-only DLLs
-4. the doctor records both the executable source root and the client content root in the runtime manifest
+2. the repo stages a managed `hlserver_testbed` payload under `testbed/mods/hlserver_testbed`
+3. a junction appears at `Half-Life\hlserver_testbed` so both `hlds.exe` and `hl.exe` can launch from the same Half-Life root
+4. the staged mod contains the built `hl.dll`, a generated `liblist.gam`, and stock-content junctions such as `maps`
+5. the doctor records the client root and live-mod stage in `.hl-server-live-mod.json`
 
-This is what prevents `Your map [maps/crossfire.bsp] differs from the server's.` when the dedicated template and the stock client would otherwise pull `valve` content from different bases.
+This is what prevents `Your map [maps/crossfire.bsp] differs from the server's.` when the server and the stock client would otherwise resolve content from different roots.
 
 The launch flow also now records a small `hlds-*-launch.txt` file under `testbed/logs/` that shows:
 
@@ -137,7 +139,7 @@ You still need at least one of:
 - a valid Half-Life install that includes `hlds.exe`
 - network access plus permission for `doctor-testbed.ps1 -Repair` to download SteamCMD into `testbed/cache/` and install app `90`
 
-For client-attached testing, you also still need a valid stock `hl.exe` somewhere. The dedicated HLDS cache intentionally does not provide one, so the session helpers fall back to `HL_EXE` or the auto-detected Half-Life client install.
+For client-attached testing, you now need a valid Half-Life root that contains both `hl.exe` and `hlds.exe`. The new same-root live-mod path intentionally launches both processes from that one root.
 
 ## Why `different map` happens
 
@@ -146,9 +148,9 @@ The symptom looks like:
 - `Your map [maps/crossfire.bsp] differs from the server's.`
 - or `crossfire different map`
 
-That happens when the disposable server runtime and the launched stock client resolve `valve` content from different roots and at least one representative map file differs. Before this patch, the repo could legitimately prepare `testbed/runtime/` from `testbed/cache/hlds-template` while the stock client launched from a separate Half-Life install. If those `valve\maps` trees diverged, the connect failed even though both sides were still on `-game valve`.
+That happens when the server and the launched stock client resolve map content from different roots and at least one representative map file differs. Before this patch, the repo could prepare `testbed/runtime/` from `testbed/cache/hlds-template` while the stock client launched from a separate Half-Life install. If those trees diverged, the connect failed.
 
-The new same-root/client-matched live mode keeps the dedicated-template preference for no-client flows, but for live play it mirrors the stock client root into `testbed/runtime/` first and only supplements missing server-side files from the dedicated source. That keeps the runtime and the launched stock client aligned on the same `valve` content base.
+The new same-root live-mod mode keeps the dedicated-template preference for no-client flows, but for live play it builds `hlserver_testbed` from the stock Half-Life root and launches both processes from that same root. The mod's `maps` junction and `fallback_dir "valve"` keep the live mod aligned with the stock `valve` content base without copying the whole game into `testbed/runtime/`.
 
 ## External blockers the repo cannot solve automatically
 
@@ -196,7 +198,7 @@ Stop a stale testbed server before refreshing:
 taskkill /F /IM hlds.exe
 ```
 
-If you need a stock client for attached sessions while using the cached dedicated HLDS template, set:
+If you need to force the stock Half-Life root for live sessions, set:
 
 ```powershell
 $env:HL_EXE = 'D:\Steam\steamapps\common\Half-Life\hl.exe'
@@ -209,4 +211,4 @@ You can also pass the paths explicitly when you need to override auto-detection:
 .\scripts\doctor-testbed.ps1 -PreferClientMatchedRuntime -TemplateRoot D:\Games\Half-Life Dedicated Server -HlExe D:\Steam\steamapps\common\Half-Life\hl.exe
 ```
 
-The live BAT launchers (`scripts\play-glock-live.bat`, `scripts\play-mp5-live.bat`, and `scripts\play-live-test.bat`) enforce that requirement for client-attached play. If no stock `hl.exe` is available after the repair pass, they stop with a clear remediation message instead of silently starting a server-only visual-test launcher.
+The live BAT launchers (`scripts\play-glock-live.bat`, `scripts\play-mp5-live.bat`, and `scripts\play-live-test.bat`) enforce that requirement for client-attached play. If no same-root Half-Life install is available after the repair pass, they stop with a clear remediation message instead of silently starting a mismatched session.

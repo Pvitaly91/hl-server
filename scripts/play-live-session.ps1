@@ -76,7 +76,7 @@ $doctorReport = Get-TestbedDoctorReport `
 
 $resolvedClientExe = $null
 if (-not $NoClient) {
-    $resolvedClientExe = Get-TestbedSessionClientExe -RuntimeRoot $runtimeRoot
+    $resolvedClientExe = Get-TestbedSessionClientExe -RuntimeRoot $runtimeRoot -ExplicitHlExe $HlExe -PreferClientMatchedRuntime
 }
 
 Write-Host ""
@@ -90,9 +90,14 @@ Write-Host "  analyzer output: $reportsRoot"
 Write-Host "  runtime root   : $($doctorReport.LiveContentStatus.RuntimeRoot)"
 Write-Host "  launch hlds    : $(if ($doctorReport.LiveContentStatus.RuntimeHldsExe) { $doctorReport.LiveContentStatus.RuntimeHldsExe } else { 'missing' })"
 Write-Host "  launch hl      : $(if ($doctorReport.LiveContentStatus.ClientLaunchExe) { $doctorReport.LiveContentStatus.ClientLaunchExe } else { 'not found' })"
+Write-Host "  game dir       : $($doctorReport.LiveContentStatus.GameDirName)"
 Write-Host "  client root    : $(if ($doctorReport.LiveContentStatus.ClientRoot) { $doctorReport.LiveContentStatus.ClientRoot } else { 'not found' })"
 Write-Host "  runtime source : $(if ($doctorReport.LiveContentStatus.RuntimeSourceRoot) { $doctorReport.LiveContentStatus.RuntimeSourceRoot } else { 'unavailable' })"
 Write-Host "  content source : $(if ($doctorReport.LiveContentStatus.EffectiveContentRoot) { $doctorReport.LiveContentStatus.EffectiveContentRoot } else { 'unavailable' })"
+if ($doctorReport.LiveModState) {
+    Write-Host "  live mod root  : $($doctorReport.LiveModState.LinkPath)"
+    Write-Host "  live mod stage : $($doctorReport.LiveModState.StageRoot)"
+}
 Write-Host "  same-root      : $($doctorReport.LiveContentStatus.SameRootLaunchLabel)"
 Write-Host "  content_match  : $($doctorReport.LiveContentStatus.ContentMatchLabel)"
 Write-Host "  diagnosis kind : $($doctorReport.LiveContentStatus.DiagnosisKind)"
@@ -111,14 +116,14 @@ if ((-not $NoClient) -and (-not $resolvedClientExe)) {
 if (-not $NoClient) {
     if ($doctorReport.LiveContentStatus.SameRootLaunchLabel -ne "yes") {
         Write-Host ""
-        Write-Host "Live same-root preflight failed: the client would not launch from the disposable runtime root."
+        Write-Host "Live same-root preflight failed: the client and server are not launching from the same Half-Life root."
         Write-Host "Resolve HL_EXE or rerun .\scripts\doctor-testbed.ps1 -PreferClientMatchedRuntime -Repair before retrying."
         exit 1
     }
 
     if ($doctorReport.LiveContentStatus.ContentMatchLabel -ne "yes") {
         Write-Host ""
-        Write-Host "Live same-root preflight failed: content_match=no for the runtime and client roots."
+        Write-Host "Live same-root preflight failed: content_match=no for the managed live mod and the client."
         Write-Host "Check .\scripts\check-live-map-match.ps1 -PreferClientMatchedRuntime before retrying."
         exit 1
     }

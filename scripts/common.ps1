@@ -40,6 +40,40 @@ function Get-TestbedRuntimeRoot {
     return (Join-Path (Get-TestbedRoot) "runtime")
 }
 
+function Get-TestbedModsRoot {
+    return (Join-Path (Get-TestbedRoot) "mods")
+}
+
+function Get-TestbedLiveModName {
+    return "hlserver_testbed"
+}
+
+function Get-TestbedLiveModStageRoot {
+    param(
+        [string]$GameDirName = (Get-TestbedLiveModName)
+    )
+
+    return (Join-Path (Get-TestbedModsRoot) $GameDirName)
+}
+
+function Get-TestbedLiveModLinkPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ClientRoot,
+        [string]$GameDirName = (Get-TestbedLiveModName)
+    )
+
+    return (Join-Path (Get-FullPath -Path $ClientRoot) $GameDirName)
+}
+
+function Get-TestbedLiveModManifestPath {
+    param(
+        [string]$StageRoot = (Get-TestbedLiveModStageRoot)
+    )
+
+    return (Join-Path (Get-FullPath -Path $StageRoot) ".hl-server-live-mod.json")
+}
+
 function Get-TestbedLogsRoot {
     return (Join-Path (Get-TestbedRoot) "logs")
 }
@@ -303,8 +337,19 @@ function Resolve-DirectoryPath {
 function Get-TestbedSessionClientExe {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$RuntimeRoot
+        [string]$RuntimeRoot,
+        [string]$ExplicitHlExe,
+        [switch]$PreferClientMatchedRuntime
     )
+
+    if ($PreferClientMatchedRuntime) {
+        $clientInstall = Resolve-TestbedClientInstall -ExplicitHlExe $ExplicitHlExe
+        if ($clientInstall) {
+            return $clientInstall.HlExe
+        }
+
+        return $null
+    }
 
     $runtimeClient = Join-Path $RuntimeRoot "hl.exe"
     if (Test-LeafPath -Path $runtimeClient) {
@@ -1140,6 +1185,227 @@ function Write-TestbedRuntimeManifest {
     return $manifestPath
 }
 
+function Read-TestbedLiveModManifest {
+    param(
+        [string]$StageRoot = (Get-TestbedLiveModStageRoot)
+    )
+
+    $manifestPath = Get-TestbedLiveModManifestPath -StageRoot $StageRoot
+    if (-not (Test-LeafPath -Path $manifestPath)) {
+        return $null
+    }
+
+    try {
+        return (Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json)
+    }
+    catch {
+        return [PSCustomObject]@{
+            Path = $manifestPath
+            ParseError = $_.Exception.Message
+        }
+    }
+}
+
+function Get-PathLinkTarget {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $null
+    }
+
+    $item = Get-Item -LiteralPath $Path -Force
+    $targetValue = $item.PSObject.Properties["Target"]
+    if (-not $targetValue -or $null -eq $targetValue.Value) {
+        return $null
+    }
+
+    $targets = @($targetValue.Value)
+    if ($targets.Count -eq 0) {
+        return $null
+    }
+
+    return (Get-FullPath -Path ([string]$targets[0]))
+}
+
+function Ensure-JunctionPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$Target
+    )
+
+    $fullPath = Get-FullPath -Path $Path
+    $fullTarget = Get-FullPath -Path $Target
+
+    if (Test-Path -LiteralPath $fullPath) {
+        $item = Get-Item -LiteralPath $fullPath -Force
+        $currentTarget = Get-PathLinkTarget -Path $fullPath
+
+        if ($item.LinkType -eq "Junction" -and (Test-PathsEqual -Left $currentTarget -Right $fullTarget)) {
+            return $fullPath
+        }
+
+        $existingType = if ($item.PSIsContainer) { "directory" } else { "file" }
+        throw "Expected a managed junction at $fullPath pointing to $fullTarget, but found an existing $existingType that is not reusable."
+    }
+
+    Ensure-Directory -Path (Split-Path -Parent $fullPath)
+    New-Item -ItemType Junction -Path $fullPath -Target $fullTarget | Out-Null
+    return $fullPath
+}
+
+function Write-TestbedLiveModLibList {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$StageRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$GameDirName
+    )
+
+    $libListPath = Join-Path (Get-FullPath -Path $StageRoot) "liblist.gam"
+    $content = @(
+        ('game "{0}"' -f "Half-Life Server Testbed")
+        'startmap "crossfire"'
+        'mpentity "info_player_deathmatch"'
+        'gamedll "dlls\hl.dll"'
+        'gamedll_linux "dlls/hl.so"'
+        'gamedll_osx "dlls/hl.dylib"'
+        'secure "0"'
+        'type "multiplayer_only"'
+        'fallback_dir "valve"'
+        'hlversion "1111"'
+    )
+
+    Set-Content -LiteralPath $libListPath -Value $content -Encoding ASCII
+    return $libListPath
+}
+
+function Get-TestbedLiveModContentLinks {
+    return @(
+        "maps"
+        "models"
+        "sound"
+        "sprites"
+        "resource"
+        "gfx"
+        "media"
+    )
+}
+
+function Write-TestbedLiveModManifest {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$StageRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$Configuration,
+        [Parameter(Mandatory = $true)]
+        [string]$ClientRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$GameDirName,
+        [Parameter(Mandatory = $true)]
+        [string]$ClientHlExe,
+        [Parameter(Mandatory = $true)]
+        [string]$ClientHldsExe,
+        [Parameter(Mandatory = $true)]
+        [string]$InstalledDllPath,
+        [string]$InstalledPdbPath
+    )
+
+    $manifestPath = Get-TestbedLiveModManifestPath -StageRoot $StageRoot
+    $manifest = [ordered]@{
+        stageRoot = (Get-FullPath -Path $StageRoot)
+        clientRoot = (Get-FullPath -Path $ClientRoot)
+        gameDirName = $GameDirName
+        modLinkPath = (Get-TestbedLiveModLinkPath -ClientRoot $ClientRoot -GameDirName $GameDirName)
+        configuration = $Configuration
+        sourceHlExe = (Get-FullPath -Path $ClientHlExe)
+        sourceHldsExe = (Get-FullPath -Path $ClientHldsExe)
+        contentSourceRoot = (Get-FullPath -Path $ClientRoot)
+        installedDllPath = (Get-FullPath -Path $InstalledDllPath)
+        installedPdbPath = if ([string]::IsNullOrWhiteSpace($InstalledPdbPath)) { $null } else { (Get-FullPath -Path $InstalledPdbPath) }
+        contentLinks = @(Get-TestbedLiveModContentLinks)
+        createdAt = (Get-Date -Format o)
+    }
+
+    $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding ASCII
+    return $manifestPath
+}
+
+function Get-TestbedLiveModState {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ClientRoot,
+        [string]$GameDirName = (Get-TestbedLiveModName)
+    )
+
+    $fullClientRoot = Get-FullPath -Path $ClientRoot
+    $stageRoot = Get-TestbedLiveModStageRoot -GameDirName $GameDirName
+    $linkPath = Get-TestbedLiveModLinkPath -ClientRoot $fullClientRoot -GameDirName $GameDirName
+    $linkExists = Test-Path -LiteralPath $linkPath -PathType Container
+    $linkTarget = if ($linkExists) { Get-PathLinkTarget -Path $linkPath } else { $null }
+    $manifest = Read-TestbedLiveModManifest -StageRoot $stageRoot
+    $manifestPath = Get-TestbedLiveModManifestPath -StageRoot $stageRoot
+    $entryStates = New-Object System.Collections.Generic.List[object]
+
+    foreach ($entry in @(
+        @{ RelativePath = "dlls\hl.dll"; Path = (Join-Path $stageRoot "dlls\hl.dll"); Description = "server GameDLL for the live mod" }
+        @{ RelativePath = "dlls\hl.pdb"; Path = (Join-Path $stageRoot "dlls\hl.pdb"); Description = "debug symbols for the live mod" }
+        @{ RelativePath = "liblist.gam"; Path = (Join-Path $stageRoot "liblist.gam"); Description = "live mod game info file" }
+        @{ RelativePath = "maps"; Path = (Join-Path $stageRoot "maps"); Description = "maps junction into valve" }
+        @{ RelativePath = $GameDirName; Path = $linkPath; Description = "managed live mod junction under the client root" }
+    )) {
+        $present = if ($entry.RelativePath -in @("dlls\hl.dll", "dlls\hl.pdb", "liblist.gam")) {
+            Test-LeafPath -Path $entry.Path
+        }
+        else {
+            Test-Path -LiteralPath $entry.Path -PathType Container
+        }
+
+        $entryStates.Add([PSCustomObject]@{
+            RelativePath = $entry.RelativePath
+            Description = $entry.Description
+            Path = $entry.Path
+            Present = $present
+            AlwaysRequired = ($entry.RelativePath -ne "dlls\hl.pdb")
+        })
+    }
+
+    $missingRequired = @(
+        $entryStates |
+        Where-Object { $_.AlwaysRequired -and (-not $_.Present) } |
+        Select-Object -ExpandProperty RelativePath
+    )
+
+    $clientHlExe = Join-Path $fullClientRoot "hl.exe"
+    $clientHldsExe = Join-Path $fullClientRoot "hlds.exe"
+    $runtimeMap = Join-Path $linkPath "maps\crossfire.bsp"
+    $sourceMap = Join-Path $fullClientRoot "valve\maps\crossfire.bsp"
+
+    return [PSCustomObject]@{
+        ClientRoot = $fullClientRoot
+        GameDirName = $GameDirName
+        StageRoot = $stageRoot
+        LinkPath = $linkPath
+        LinkExists = $linkExists
+        LinkType = if ($linkExists) { (Get-Item -LiteralPath $linkPath -Force).LinkType } else { $null }
+        LinkTarget = $linkTarget
+        LinkTargetMatchesStageRoot = Test-PathsEqual -Left $linkTarget -Right $stageRoot
+        ManifestPath = $manifestPath
+        Manifest = $manifest
+        HlExe = if (Test-LeafPath -Path $clientHlExe) { $clientHlExe } else { $null }
+        HldsExe = if (Test-LeafPath -Path $clientHldsExe) { $clientHldsExe } else { $null }
+        RuntimeMapPath = $runtimeMap
+        SourceMapPath = $sourceMap
+        EntryStates = $entryStates.ToArray()
+        MissingRequired = $missingRequired
+        IsReady = ($missingRequired.Count -eq 0) -and (Test-PathsEqual -Left $linkTarget -Right $stageRoot) -and (Test-LeafPath -Path $clientHlExe) -and (Test-LeafPath -Path $clientHldsExe)
+    }
+}
+
 function Get-TestbedRuntimeEntryComparison {
     param(
         [Parameter(Mandatory = $true)]
@@ -1240,50 +1506,70 @@ function Get-TestbedLiveContentStatus {
         $SelectedCandidate,
         $ClientInstall,
         $RuntimeManifest,
+        $LiveModState,
         [bool]$PreferClientMatchedRuntime = $false
     )
 
     $runtimeRootFull = Get-FullPath -Path $RuntimeRoot
     $clientRoot = if ($ClientInstall) { $ClientInstall.Root } else { $null }
     $runtimeSourceRoot = if ($SelectedCandidate) { $SelectedCandidate.Root } else { $null }
-    $effectiveContentRoot = if ($PreferClientMatchedRuntime -and $clientRoot) {
-        $clientRoot
-    }
-    else {
-        $runtimeSourceRoot
-    }
-
+    $runtimeSourceKind = if ($SelectedCandidate) { $SelectedCandidate.Probe.Kind } else { $null }
+    $effectiveContentRoot = $runtimeSourceRoot
     $manifestContentRoot = $null
-    if ($RuntimeManifest) {
-        $manifestContentRoot = Get-ObjectPropertyValue -InputObject $RuntimeManifest -Names @("contentSourceRoot", "mirrorRoot", "sourceRoot")
-    }
-
-    $runtimeSignature = New-TestbedContentSignature -Root $runtimeRootFull -RelativePath "valve\maps\crossfire.bsp"
-    $sourceSignature = New-TestbedContentSignature -Root $runtimeSourceRoot -RelativePath "valve\maps\crossfire.bsp"
-    $clientSignature = New-TestbedContentSignature -Root $clientRoot -RelativePath "valve\maps\crossfire.bsp"
+    $runtimeRelativePath = "valve\maps\crossfire.bsp"
+    $clientRelativePath = "valve\maps\crossfire.bsp"
+    $sourceRelativePath = "valve\maps\crossfire.bsp"
     $runtimeHldsExe = Join-Path $runtimeRootFull "hlds.exe"
     $runtimeHlExe = Join-Path $runtimeRootFull "hl.exe"
     $runtimeHldsExists = Test-LeafPath -Path $runtimeHldsExe
     $runtimeHlExists = Test-LeafPath -Path $runtimeHlExe
-    $clientLaunchExe = if ($runtimeHlExists) {
-        $runtimeHlExe
-    }
-    elseif ($ClientInstall) {
-        $ClientInstall.HlExe
-    }
-    else {
-        $null
-    }
+    $clientLaunchExe = if ($runtimeHlExists) { $runtimeHlExe } elseif ($ClientInstall) { $ClientInstall.HlExe } else { $null }
     $serverWorkingDirectory = if ($runtimeHldsExists) { $runtimeRootFull } else { $null }
     $clientWorkingDirectory = if ($clientLaunchExe) { Split-Path -Parent $clientLaunchExe } else { $null }
+    $liveModeKind = "disposable_runtime"
+
+    if ($PreferClientMatchedRuntime -and $LiveModState -and $clientRoot) {
+        $liveModeKind = "same_root_live_mod"
+        $runtimeRootFull = $LiveModState.LinkPath
+        $runtimeSourceRoot = $clientRoot
+        $runtimeSourceKind = "half_life_client_install"
+        $effectiveContentRoot = $clientRoot
+        $manifestContentRoot = if ($LiveModState.Manifest) {
+            Get-ObjectPropertyValue -InputObject $LiveModState.Manifest -Names @("contentSourceRoot", "clientRoot")
+        }
+        else {
+            $null
+        }
+        $runtimeRelativePath = "maps\crossfire.bsp"
+        $clientRelativePath = "maps\crossfire.bsp"
+        $sourceRelativePath = "valve\maps\crossfire.bsp"
+        $runtimeHldsExe = $LiveModState.HldsExe
+        $runtimeHlExe = $LiveModState.HlExe
+        $runtimeHldsExists = -not [string]::IsNullOrWhiteSpace($runtimeHldsExe)
+        $runtimeHlExists = -not [string]::IsNullOrWhiteSpace($runtimeHlExe)
+        $clientLaunchExe = $runtimeHlExe
+        $serverWorkingDirectory = $clientRoot
+        $clientWorkingDirectory = $clientRoot
+    }
+    elseif ($RuntimeManifest) {
+        $manifestContentRoot = Get-ObjectPropertyValue -InputObject $RuntimeManifest -Names @("contentSourceRoot", "mirrorRoot", "sourceRoot")
+        if ($PreferClientMatchedRuntime -and $clientRoot) {
+            $effectiveContentRoot = $clientRoot
+        }
+    }
+
+    $runtimeSignature = New-TestbedContentSignature -Root $runtimeRootFull -RelativePath $runtimeRelativePath
+    $sourceSignature = New-TestbedContentSignature -Root $runtimeSourceRoot -RelativePath $sourceRelativePath
+    $clientSignature = New-TestbedContentSignature -Root $(if ($liveModeKind -eq "same_root_live_mod") { $runtimeRootFull } else { $clientRoot }) -RelativePath $clientRelativePath
 
     $runtimeMatchesClientHash = $runtimeSignature.Exists -and $clientSignature.Exists -and ($runtimeSignature.Hash -eq $clientSignature.Hash)
     $sourceMatchesClientHash = $sourceSignature.Exists -and $clientSignature.Exists -and ($sourceSignature.Hash -eq $clientSignature.Hash)
     $sourceMatchesClientRoot = Test-PathsEqual -Left $runtimeSourceRoot -Right $clientRoot
     $expectedContentMatchesClientRoot = Test-PathsEqual -Left $effectiveContentRoot -Right $clientRoot
     $manifestContentMatchesClientRoot = Test-PathsEqual -Left $manifestContentRoot -Right $clientRoot
-    $serverLaunchUsesRuntimeRoot = Test-PathsEqual -Left $serverWorkingDirectory -Right $runtimeRootFull
-    $clientLaunchUsesRuntimeRoot = Test-PathsEqual -Left $clientWorkingDirectory -Right $runtimeRootFull
+    $expectedLaunchRoot = if ($liveModeKind -eq "same_root_live_mod") { $clientRoot } else { $runtimeRootFull }
+    $serverLaunchUsesRuntimeRoot = Test-PathsEqual -Left $serverWorkingDirectory -Right $expectedLaunchRoot
+    $clientLaunchUsesRuntimeRoot = Test-PathsEqual -Left $clientWorkingDirectory -Right $expectedLaunchRoot
     $sameRootLaunch = $serverLaunchUsesRuntimeRoot -and $clientLaunchUsesRuntimeRoot
     $contentMatch = $runtimeMatchesClientHash
     $contentMatchLabel = if ($runtimeSignature.Exists -and $clientSignature.Exists) {
@@ -1307,6 +1593,9 @@ function Get-TestbedLiveContentStatus {
     $diagnosisKind = if (-not $clientRoot) {
         "missing_client_root"
     }
+    elseif ($PreferClientMatchedRuntime -and $liveModeKind -eq "same_root_live_mod" -and $LiveModState -and (-not $LiveModState.IsReady)) {
+        "stale_live_mod"
+    }
     elseif (-not $runtimeSignature.Exists -or -not $clientSignature.Exists) {
         "content_layout_mismatch"
     }
@@ -1315,6 +1604,9 @@ function Get-TestbedLiveContentStatus {
     }
     elseif (-not $runtimeMatchesClientHash) {
         "different_map_checksums"
+    }
+    elseif ($PreferClientMatchedRuntime -and $liveModeKind -eq "same_root_live_mod" -and $sameRootLaunch -and $expectedContentMatchesClientRoot) {
+        "same_root_live_mod"
     }
     elseif ($PreferClientMatchedRuntime -and $sameRootLaunch -and $expectedContentMatchesClientRoot) {
         "same_root_client_matched"
@@ -1332,13 +1624,19 @@ function Get-TestbedLiveContentStatus {
     elseif (-not $runtimeSourceRoot) {
         "runtime source was not resolved"
     }
+    elseif ($PreferClientMatchedRuntime -and $liveModeKind -eq "same_root_live_mod" -and $LiveModState -and (-not $LiveModState.IsReady)) {
+        "the managed same-root live mod is missing required files or the link under the Half-Life root"
+    }
     elseif ($runtimeMatchesClientHash) {
-        if ($PreferClientMatchedRuntime -and $expectedContentMatchesClientRoot) {
+        if ($PreferClientMatchedRuntime -and $liveModeKind -eq "same_root_live_mod" -and $sameRootLaunch -and $expectedContentMatchesClientRoot) {
+            "server and client launch from the same Half-Life root through the managed live mod"
+        }
+        elseif ($PreferClientMatchedRuntime -and $expectedContentMatchesClientRoot) {
             if ($sourceMatchesClientRoot) {
                 "runtime and client share the same live content root"
             }
             else {
-                "runtime crossfire matches the client after client-matched mirroring"
+                "runtime crossfire matches the client after live content mirroring"
             }
         }
         elseif ($sourceMatchesClientRoot) {
@@ -1348,7 +1646,7 @@ function Get-TestbedLiveContentStatus {
             "different roots, but crossfire matches between runtime source and client"
         }
         else {
-            "runtime crossfire matches the client after client-matched mirroring"
+            "runtime crossfire matches the client after live content mirroring"
         }
     }
     elseif ($sourceMatchesClientHash) {
@@ -1363,7 +1661,7 @@ function Get-TestbedLiveContentStatus {
         ClientHlExe = if ($ClientInstall) { $ClientInstall.HlExe } else { $null }
         ClientRoot = $clientRoot
         RuntimeSourceRoot = $runtimeSourceRoot
-        RuntimeSourceKind = if ($SelectedCandidate) { $SelectedCandidate.Probe.Kind } else { $null }
+        RuntimeSourceKind = $runtimeSourceKind
         RuntimeRoot = $runtimeRootFull
         RuntimeHldsExe = if ($runtimeHldsExists) { $runtimeHldsExe } else { $null }
         RuntimeHlExe = if ($runtimeHlExists) { $runtimeHlExe } else { $null }
@@ -1389,6 +1687,11 @@ function Get-TestbedLiveContentStatus {
         RootMatchLabel = $rootMatchLabel
         DiagnosisKind = $diagnosisKind
         Verdict = $verdict
+        LiveModeKind = $liveModeKind
+        GameDirName = if ($PreferClientMatchedRuntime -and $liveModeKind -eq "same_root_live_mod") { $LiveModState.GameDirName } else { "valve" }
+        LiveModStageRoot = if ($LiveModState) { $LiveModState.StageRoot } else { $null }
+        LiveModLinkPath = if ($LiveModState) { $LiveModState.LinkPath } else { $null }
+        LiveModManifestPath = if ($LiveModState) { $LiveModState.ManifestPath } else { $null }
     }
 }
 
@@ -1436,6 +1739,7 @@ function Get-TestbedDoctorReport {
     $buildDllExists = Test-LeafPath -Path $buildDllPath
     $clientInstall = $null
     $clientInstallError = $null
+    $liveModState = $null
 
     $selection = $null
     $selectionError = $null
@@ -1454,12 +1758,16 @@ function Get-TestbedDoctorReport {
         $clientInstallError = $_.Exception.Message
     }
 
+    if ($clientInstall) {
+        $liveModState = Get-TestbedLiveModState -ClientRoot $clientInstall.Root
+    }
+
     $entryComparison = @()
-    if ($selection -and $selection.SelectedCandidate -and $runtimeProbe.Exists) {
+    if ((-not $PreferClientMatchedRuntime) -and $selection -and $selection.SelectedCandidate -and $runtimeProbe.Exists) {
         $entryComparison = @(Get-TestbedRuntimeEntryComparison -SourceProbe $selection.SelectedCandidate.Probe -RuntimeProbe $runtimeProbe)
     }
 
-    $liveContentStatus = Get-TestbedLiveContentStatus -RuntimeRoot $runtimeRoot -SelectedCandidate $(if ($selection) { $selection.SelectedCandidate } else { $null }) -ClientInstall $clientInstall -RuntimeManifest $runtimeManifest -PreferClientMatchedRuntime:$PreferClientMatchedRuntime
+    $liveContentStatus = Get-TestbedLiveContentStatus -RuntimeRoot $runtimeRoot -SelectedCandidate $(if ($selection) { $selection.SelectedCandidate } else { $null }) -ClientInstall $clientInstall -RuntimeManifest $runtimeManifest -LiveModState $liveModState -PreferClientMatchedRuntime:$PreferClientMatchedRuntime
 
     $issues = New-Object System.Collections.Generic.List[string]
     $warnings = New-Object System.Collections.Generic.List[string]
@@ -1473,9 +1781,14 @@ function Get-TestbedDoctorReport {
     }
 
     if ($selectionError) {
-        $classification = "insufficient template source"
-        $issues.Add($selectionError)
-        $recommendations.Add("Set HL_RUNTIME_TEMPLATE or HLDS_EXE to a valid runtime root, or run .\scripts\doctor-testbed.ps1 -Repair to provision a dedicated template into testbed/cache.")
+        if ($PreferClientMatchedRuntime) {
+            $warnings.Add($selectionError)
+        }
+        else {
+            $classification = "insufficient template source"
+            $issues.Add($selectionError)
+            $recommendations.Add("Set HL_RUNTIME_TEMPLATE or HLDS_EXE to a valid runtime root, or run .\scripts\doctor-testbed.ps1 -Repair to provision a dedicated template into testbed/cache.")
+        }
     }
     elseif ($selection -and $selection.SelectedCandidate) {
         foreach ($warning in @($selection.Warnings)) {
@@ -1484,7 +1797,7 @@ function Get-TestbedDoctorReport {
             }
         }
 
-        if (Test-PathsEqual -Left $selection.SelectedCandidate.Root -Right $runtimeRoot) {
+        if ((-not $PreferClientMatchedRuntime) -and (Test-PathsEqual -Left $selection.SelectedCandidate.Root -Right $runtimeRoot)) {
             $classification = "insufficient template source"
             $issues.Add("The selected runtime template resolves to the disposable runtime itself. Choose a real install root or a cached template instead.")
             $recommendations.Add("Clear HL_RUNTIME_TEMPLATE and HLDS_EXE if they point at testbed/runtime, then rerun the doctor.")
@@ -1495,7 +1808,7 @@ function Get-TestbedDoctorReport {
         if ($PreferClientMatchedRuntime -and ($classification -eq "healthy")) {
             $classification = "missing stock client"
             $issues.Add($clientInstallError)
-            $recommendations.Add("Set HL_EXE in .env or pass -HlExe <path> so live client-matched sessions can mirror the stock client root into testbed/runtime.")
+            $recommendations.Add("Set HL_EXE in .env or pass -HlExe <path> so same-root live sessions can use the real Half-Life root.")
         }
         else {
             $warnings.Add($clientInstallError)
@@ -1506,12 +1819,56 @@ function Get-TestbedDoctorReport {
             $classification = "missing stock client"
         }
 
-        $issues.Add("Client-matched live mode was requested, but no stock hl.exe could be resolved.")
-        $recommendations.Add("Set HL_EXE in .env or pass -HlExe <path> so live client-attached sessions can mirror the stock client root into testbed/runtime.")
+        $issues.Add("Same-root live mode was requested, but no stock hl.exe could be resolved.")
+        $recommendations.Add("Set HL_EXE in .env or pass -HlExe <path> so live client-attached sessions can use the real Half-Life root.")
     }
 
     if ($classification -eq "healthy") {
-        if (-not $runtimeProbe.Exists) {
+        if ($PreferClientMatchedRuntime) {
+            if ($clientInstall -and (-not $clientInstall.Probe.HldsExe)) {
+                $classification = "missing same-root hlds"
+                $needsRepair = $false
+                $issues.Add("Same-root live mode requires hlds.exe in the same Half-Life root as $($clientInstall.HlExe).")
+                $recommendations.Add("Use a Half-Life install that already contains hlds.exe, or repoint HL_EXE to one that does.")
+            }
+            elseif ($liveModState -and $liveModState.Manifest -and $liveModState.Manifest.PSObject.Properties["ParseError"]) {
+                $classification = "stale live mod"
+                $needsRepair = $true
+                $issues.Add("Managed live mod manifest could not be parsed: $($liveModState.Manifest.ParseError)")
+                $recommendations.Add("Run .\scripts\doctor-testbed.ps1 -Repair -PreferClientMatchedRuntime to rebuild the managed live mod.")
+            }
+            elseif (-not $liveModState) {
+                $classification = "stale live mod"
+                $needsRepair = $true
+                $issues.Add("Managed live mod state could not be resolved from the current Half-Life root.")
+                $recommendations.Add("Run .\scripts\doctor-testbed.ps1 -Repair -PreferClientMatchedRuntime to recreate the managed live mod.")
+            }
+            elseif (-not $liveModState.Manifest) {
+                $classification = "stale live mod"
+                $needsRepair = $true
+                $issues.Add("Managed live mod manifest is missing from $($liveModState.StageRoot).")
+                $recommendations.Add("Run .\scripts\doctor-testbed.ps1 -Repair -PreferClientMatchedRuntime to recreate the managed live mod.")
+            }
+            elseif ($liveModState.Manifest.configuration -and (-not $liveModState.Manifest.configuration.Equals($configuration, [System.StringComparison]::OrdinalIgnoreCase))) {
+                $classification = "stale live mod"
+                $needsRepair = $true
+                $issues.Add("Managed live mod was prepared for configuration $($liveModState.Manifest.configuration), not the requested $configuration build.")
+                $recommendations.Add("Run .\scripts\doctor-testbed.ps1 -Repair -PreferClientMatchedRuntime to reinstall the live mod for $configuration.")
+            }
+            elseif (-not $liveModState.LinkTargetMatchesStageRoot) {
+                $classification = "stale live mod"
+                $needsRepair = $true
+                $issues.Add("Half-Life live mod link $($liveModState.LinkPath) does not point at the managed stage root $($liveModState.StageRoot).")
+                $recommendations.Add("Run .\scripts\doctor-testbed.ps1 -Repair -PreferClientMatchedRuntime to recreate the link under the Half-Life root.")
+            }
+            elseif (-not $liveContentStatus.ManifestContentMatchesClientRoot) {
+                $classification = "stale live mod"
+                $needsRepair = $true
+                $issues.Add("Managed live mod content root is $($liveContentStatus.ManifestContentRoot), but same-root live mode expects $($liveContentStatus.ClientRoot).")
+                $recommendations.Add("Run .\scripts\doctor-testbed.ps1 -Repair -PreferClientMatchedRuntime to rebuild the live mod from the current Half-Life root.")
+            }
+        }
+        elseif (-not $runtimeProbe.Exists) {
             $classification = "stale disposable runtime"
             $needsRepair = $true
             $issues.Add("Disposable runtime root does not exist: $runtimeRoot")
@@ -1541,15 +1898,9 @@ function Get-TestbedDoctorReport {
             $issues.Add("Disposable runtime was prepared for configuration $($runtimeManifest.configuration), not the requested $configuration build.")
             $recommendations.Add("Run .\scripts\install-testbed.ps1 -Configuration $configuration to refresh the disposable runtime.")
         }
-        elseif ($PreferClientMatchedRuntime -and $clientInstall -and (-not $liveContentStatus.ManifestContentMatchesClientRoot)) {
-            $classification = "stale disposable runtime"
-            $needsRepair = $true
-            $issues.Add("Disposable runtime content root is $($liveContentStatus.ManifestContentRoot), but live client-matched mode expects $($liveContentStatus.ClientRoot).")
-            $recommendations.Add("Run .\scripts\doctor-testbed.ps1 -Repair -PreferClientMatchedRuntime to rebuild testbed/runtime from the stock client content root.")
-        }
     }
 
-    if ($classification -eq "healthy" -and $runtimeProbe.Exists -and (-not $runtimeProbe.IsRunnable)) {
+    if (($classification -eq "healthy") -and (-not $PreferClientMatchedRuntime) -and $runtimeProbe.Exists -and (-not $runtimeProbe.IsRunnable)) {
         $classification = "missing executable dependency"
         $needsRepair = $true
         $issues.Add("Disposable runtime is missing required base entries: $($runtimeProbe.MissingBaseRequired -join ', ').")
@@ -1557,7 +1908,7 @@ function Get-TestbedDoctorReport {
     }
 
     $missingExpectedEntries = @($entryComparison | Where-Object { $_.MissingExpected } | Select-Object -ExpandProperty RelativePath)
-    if ($classification -eq "healthy" -and $missingExpectedEntries.Count -gt 0) {
+    if (($classification -eq "healthy") -and (-not $PreferClientMatchedRuntime) -and $missingExpectedEntries.Count -gt 0) {
         $classification = "missing executable dependency"
         $needsRepair = $true
         $issues.Add("Disposable runtime is missing entries that exist in the selected source: $($missingExpectedEntries -join ', ').")
@@ -1568,8 +1919,14 @@ function Get-TestbedDoctorReport {
         if ($PreferClientMatchedRuntime -and (-not $liveContentStatus.RuntimeMatchesClientHash)) {
             $classification = "live content mismatch"
             $needsRepair = $true
-            $issues.Add("Disposable runtime map $($liveContentStatus.RuntimeMap.Path) does not match the live client map $($liveContentStatus.ClientMap.Path).")
-            $recommendations.Add("Run .\scripts\doctor-testbed.ps1 -Repair -PreferClientMatchedRuntime to rebuild testbed/runtime from client-matched content.")
+            $issues.Add("Managed live mod map $($liveContentStatus.RuntimeMap.Path) does not match the live client map $($liveContentStatus.ClientMap.Path).")
+            $recommendations.Add("Run .\scripts\doctor-testbed.ps1 -Repair -PreferClientMatchedRuntime to rebuild the same-root live mod.")
+        }
+        elseif ($PreferClientMatchedRuntime -and $liveModState -and (-not $liveModState.IsReady)) {
+            $classification = "stale live mod"
+            $needsRepair = $true
+            $issues.Add("Managed live mod is missing required entries: $($liveModState.MissingRequired -join ', ').")
+            $recommendations.Add("Run .\scripts\doctor-testbed.ps1 -Repair -PreferClientMatchedRuntime to rebuild the same-root live mod.")
         }
         elseif ((-not $PreferClientMatchedRuntime) -and (-not $liveContentStatus.SourceMatchesClientRoot)) {
             if ($liveContentStatus.SourceMatchesClientHash) {
@@ -1583,10 +1940,11 @@ function Get-TestbedDoctorReport {
     }
 
     $latestLaunchFailure = if ($IgnoreLatestLaunchFailure) { $null } else { Get-LatestHldsLaunchFailure }
+    $manifestTimestampSource = if ($PreferClientMatchedRuntime -and $liveModState) { $liveModState.Manifest } else { $runtimeManifest }
     $manifestCreatedAtUtc = $null
-    if ($runtimeManifest -and $runtimeManifest.PSObject.Properties["createdAt"] -and (-not [string]::IsNullOrWhiteSpace([string]$runtimeManifest.createdAt))) {
+    if ($manifestTimestampSource -and $manifestTimestampSource.PSObject.Properties["createdAt"] -and (-not [string]::IsNullOrWhiteSpace([string]$manifestTimestampSource.createdAt))) {
         try {
-            $manifestCreatedAtUtc = ([DateTimeOffset]::Parse([string]$runtimeManifest.createdAt)).UtcDateTime
+            $manifestCreatedAtUtc = ([DateTimeOffset]::Parse([string]$manifestTimestampSource.createdAt)).UtcDateTime
         }
         catch {
             $manifestCreatedAtUtc = $null
@@ -1624,6 +1982,7 @@ function Get-TestbedDoctorReport {
         SourceSelectionError = $selectionError
         ClientInstall = $clientInstall
         ClientInstallError = $clientInstallError
+        LiveModState = $liveModState
         LiveContentStatus = $liveContentStatus
         EntryComparison = $entryComparison
         Classification = $classification
@@ -1664,13 +2023,21 @@ function Write-TestbedDoctorSummary {
     }
 
     $manifestPath = Get-TestbedRuntimeManifestPath -RuntimeRoot $Report.RuntimeRoot
-    Write-Host "Runtime manifest    : $(if (Test-LeafPath -Path $manifestPath) { $manifestPath } else { 'missing' })"
+    if ($Report.LiveContentStatus.PreferClientMatchedRuntime -and $Report.LiveModState) {
+        Write-Host "Live mod stage      : $($Report.LiveModState.StageRoot)"
+        Write-Host "Live mod root       : $($Report.LiveModState.LinkPath)"
+        Write-Host "Live mod manifest   : $(if (Test-LeafPath -Path $Report.LiveModState.ManifestPath) { $Report.LiveModState.ManifestPath } else { 'missing' })"
+        Write-Host "Live game dir       : $($Report.LiveContentStatus.GameDirName)"
+    }
+    else {
+        Write-Host "Runtime manifest    : $(if (Test-LeafPath -Path $manifestPath) { $manifestPath } else { 'missing' })"
+    }
     Write-Host "Runtime hlds.exe    : $(if ($Report.LiveContentStatus.RuntimeHldsExe) { $Report.LiveContentStatus.RuntimeHldsExe } else { 'missing' })"
     Write-Host "Runtime hl.exe      : $(if ($Report.LiveContentStatus.RuntimeHlExe) { $Report.LiveContentStatus.RuntimeHlExe } else { 'not found' })"
     Write-Host "Client hl.exe       : $(if ($Report.LiveContentStatus.ClientHlExe) { $Report.LiveContentStatus.ClientHlExe } else { 'not found' })"
     Write-Host "Launch client exe   : $(if ($Report.LiveContentStatus.ClientLaunchExe) { $Report.LiveContentStatus.ClientLaunchExe } else { 'not found' })"
     Write-Host "Client root         : $(if ($Report.LiveContentStatus.ClientRoot) { $Report.LiveContentStatus.ClientRoot } else { 'not found' })"
-    Write-Host "Live content mode   : $(if ($Report.LiveContentStatus.PreferClientMatchedRuntime) { 'client-matched requested' } else { 'default selection' })"
+    Write-Host "Live content mode   : $(if ($Report.LiveContentStatus.PreferClientMatchedRuntime) { 'same-root live mod requested' } else { 'default selection' })"
     Write-Host "Content source root : $(if ($Report.LiveContentStatus.EffectiveContentRoot) { $Report.LiveContentStatus.EffectiveContentRoot } else { 'unavailable' })"
     Write-Host "Manifest content    : $(if ($Report.LiveContentStatus.ManifestContentRoot) { $Report.LiveContentStatus.ManifestContentRoot } else { 'missing' })"
     Write-Host "Server work dir     : $(if ($Report.LiveContentStatus.ServerWorkingDirectory) { $Report.LiveContentStatus.ServerWorkingDirectory } else { 'unknown' })"
@@ -1710,7 +2077,21 @@ function Write-TestbedDoctorSummary {
         Write-Host "Latest blocker log  : $($Report.LatestLaunchFailure.Path)"
     }
 
-    $entriesToPrint = if ($Report.EntryComparison.Count -gt 0) {
+    $entriesToPrint = if ($Report.LiveContentStatus.PreferClientMatchedRuntime -and $Report.LiveModState) {
+        @(
+            $Report.LiveModState.EntryStates | ForEach-Object {
+                [PSCustomObject]@{
+                    RelativePath = $_.RelativePath
+                    Description = $_.Description
+                    SourcePresent = $null
+                    RuntimePresent = $_.Present
+                    Expected = $_.AlwaysRequired
+                    MissingExpected = $_.AlwaysRequired -and (-not $_.Present)
+                }
+            }
+        )
+    }
+    elseif ($Report.EntryComparison.Count -gt 0) {
         $Report.EntryComparison
     }
     else {
@@ -1871,6 +2252,135 @@ function Get-TestbedRuntimeProcesses {
     return $processes.ToArray()
 }
 
+function Get-TestbedLiveModProcesses {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ClientRoot
+    )
+
+    $fullClientRoot = Get-FullPath -Path $ClientRoot
+    $processes = New-Object System.Collections.Generic.List[object]
+
+    foreach ($process in (Get-Process -ErrorAction SilentlyContinue)) {
+        $processPath = $null
+
+        try {
+            $processPath = $process.Path
+        }
+        catch {
+            $processPath = $null
+        }
+
+        if ([string]::IsNullOrWhiteSpace($processPath)) {
+            continue
+        }
+
+        $fullProcessPath = Get-FullPath -Path $processPath
+        if (($process.ProcessName -in @("hl", "hlds")) -and $fullProcessPath.StartsWith($fullClientRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $processes.Add([PSCustomObject]@{
+                Id = $process.Id
+                ProcessName = $process.ProcessName
+                Path = $fullProcessPath
+            })
+        }
+    }
+
+    return $processes.ToArray()
+}
+
+function Install-TestbedLiveMod {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Configuration,
+        [Parameter(Mandatory = $true)]
+        [string]$BuiltDllPath,
+        [string]$BuiltPdbPath,
+        [string]$ExplicitHlExe
+    )
+
+    $configuration = Get-ValidatedConfiguration -Configuration $Configuration
+    $clientInstall = Resolve-TestbedClientInstall -ExplicitHlExe $ExplicitHlExe
+    if (-not $clientInstall) {
+        throw "Same-root live mod mode requires a stock hl.exe. Set HL_EXE in .env or pass -HlExe <path>."
+    }
+
+    if (-not $clientInstall.Probe.HldsExe) {
+        throw "Same-root live mod mode requires hlds.exe in the same Half-Life root as hl.exe. Resolved client root: $($clientInstall.Root)"
+    }
+
+    $gameDirName = Get-TestbedLiveModName
+    $testbedRoot = Get-TestbedRoot
+    $stageRoot = Get-TestbedLiveModStageRoot -GameDirName $gameDirName
+    $modsRoot = Get-TestbedModsRoot
+    $clientRoot = $clientInstall.Root
+    $linkPath = Get-TestbedLiveModLinkPath -ClientRoot $clientRoot -GameDirName $gameDirName
+    $liveProcesses = @(Get-TestbedLiveModProcesses -ClientRoot $clientRoot)
+
+    if ($liveProcesses.Count -gt 0) {
+        $details = $liveProcesses | ForEach-Object { '{0} (PID {1})' -f $_.Path, $_.Id }
+        throw "Cannot refresh the same-root live mod while Half-Life is still running from ${clientRoot}: $($details -join '; '). Stop the existing HL/HLDS processes and retry."
+    }
+
+    Write-Step "Preparing same-root live mod under $clientRoot"
+    Write-Host "Live game dir       : $gameDirName"
+    Write-Host "Client root         : $clientRoot"
+    Write-Host "Launch hlds         : $($clientInstall.Probe.HldsExe)"
+    Write-Host "Launch hl           : $($clientInstall.HlExe)"
+    Write-Host "Live mod stage      : $stageRoot"
+    Write-Host "Live mod link       : $linkPath"
+
+    Ensure-Directory -Path $modsRoot
+    Reset-DisposableDirectory -Path $stageRoot -AllowedRoot $testbedRoot
+    Ensure-Directory -Path (Join-Path $stageRoot "dlls")
+    Ensure-Directory -Path (Join-Path $stageRoot "logs")
+
+    Copy-Item -LiteralPath $BuiltDllPath -Destination (Join-Path $stageRoot "dlls\hl.dll") -Force
+    if (-not [string]::IsNullOrWhiteSpace($BuiltPdbPath) -and (Test-LeafPath -Path $BuiltPdbPath)) {
+        Copy-Item -LiteralPath $BuiltPdbPath -Destination (Join-Path $stageRoot "dlls\hl.pdb") -Force
+    }
+
+    $libListPath = Write-TestbedLiveModLibList -StageRoot $stageRoot -GameDirName $gameDirName
+
+    foreach ($relativePath in Get-TestbedLiveModContentLinks) {
+        $sourcePath = Join-Path $clientRoot ("valve\" + $relativePath)
+        if (-not (Test-Path -LiteralPath $sourcePath -PathType Container)) {
+            continue
+        }
+
+        Ensure-JunctionPath -Path (Join-Path $stageRoot $relativePath) -Target $sourcePath | Out-Null
+    }
+
+    $markerPath = Join-Path $stageRoot ".hl-server-live-mod.txt"
+    @"
+Managed same-root live mod prepared by hl-server.
+Client root: $clientRoot
+Game dir: $gameDirName
+Installed hl.dll: $BuiltDllPath
+Timestamp: $(Get-Date -Format o)
+"@ | Set-Content -LiteralPath $markerPath -Encoding ASCII
+
+    Ensure-JunctionPath -Path $linkPath -Target $stageRoot | Out-Null
+    $manifestPath = Write-TestbedLiveModManifest -StageRoot $stageRoot -Configuration $configuration -ClientRoot $clientRoot -GameDirName $gameDirName -ClientHlExe $clientInstall.HlExe -ClientHldsExe $clientInstall.Probe.HldsExe -InstalledDllPath (Join-Path $stageRoot "dlls\hl.dll") -InstalledPdbPath $(if (Test-LeafPath -Path (Join-Path $stageRoot "dlls\hl.pdb")) { Join-Path $stageRoot "dlls\hl.pdb" } else { $null })
+    $liveModState = Get-TestbedLiveModState -ClientRoot $clientRoot -GameDirName $gameDirName
+
+    if (-not $liveModState.IsReady) {
+        throw "Same-root live mod is incomplete after refresh: $($liveModState.MissingRequired -join ', ')"
+    }
+
+    return [PSCustomObject]@{
+        ClientInstall = $clientInstall
+        GameDirName = $gameDirName
+        StageRoot = $stageRoot
+        LinkPath = $linkPath
+        ManifestPath = $manifestPath
+        MarkerPath = $markerPath
+        LibListPath = $libListPath
+        InstalledDllPath = (Join-Path $stageRoot "dlls\hl.dll")
+        InstalledPdbPath = if (Test-LeafPath -Path (Join-Path $stageRoot "dlls\hl.pdb")) { Join-Path $stageRoot "dlls\hl.pdb" } else { $null }
+        LiveModState = $liveModState
+    }
+}
+
 function Install-TestbedRuntime {
     param(
         [Parameter(Mandatory = $true)]
@@ -1896,7 +2406,7 @@ function Install-TestbedRuntime {
     if ($PreferClientMatchedRuntime) {
         $clientInstall = Resolve-TestbedClientInstall -ExplicitHlExe $ExplicitHlExe
         if (-not $clientInstall) {
-            throw "Client-matched live mode was requested, but no stock hl.exe could be resolved. Set HL_EXE in .env or pass -HlExe <path>."
+            throw "Same-root live mod mode was requested, but no stock hl.exe could be resolved. Set HL_EXE in .env or pass -HlExe <path>."
         }
 
         $mirrorRoot = $clientInstall.Root
@@ -1967,7 +2477,7 @@ Timestamp: $(Get-Date -Format o)
     }
 
     if ($PreferClientMatchedRuntime -and (-not $liveContentStatus.RuntimeMatchesClientHash)) {
-        throw "Client-matched live mode expected $($liveContentStatus.RuntimeMap.Path) to match $($liveContentStatus.ClientMap.Path), but the hashes still differ."
+        throw "Same-root live mod mode expected $($liveContentStatus.RuntimeMap.Path) to match $($liveContentStatus.ClientMap.Path), but the hashes still differ."
     }
 
     return [PSCustomObject]@{
@@ -1995,12 +2505,13 @@ function Get-HldsArgumentList {
         [Parameter(Mandatory = $true)]
         [int]$MaxPlayers,
 
-        [string]$ServerCfgName
+        [string]$ServerCfgName,
+        [string]$GameDirName = "valve"
     )
 
     $arguments = @(
         "-console",
-        "-game", "valve",
+        "-game", $GameDirName,
         "-norestart",
         "-condebug",
         "-port", $Port,
@@ -2848,14 +3359,15 @@ function Write-HldsLaunchCvarConfig {
         [Parameter(Mandatory = $true)]
         [string]$RuntimeRoot,
 
-        [System.Collections.IDictionary]$Cvars
+        [System.Collections.IDictionary]$Cvars,
+        [string]$GameDirName = "valve"
     )
 
     if (-not $Cvars -or $Cvars.Count -eq 0) {
         return $null
     }
 
-    $modRoot = Join-Path (Get-FullPath -Path $RuntimeRoot) "valve"
+    $modRoot = Join-Path (Get-FullPath -Path $RuntimeRoot) $GameDirName
     Ensure-Directory -Path $modRoot
 
     $configName = "hlserver_launch.cfg"
@@ -3022,11 +3534,17 @@ function Start-HldsDetached {
         [int]$MaxPlayers,
 
         [string[]]$SetCvar = @(),
-        [hashtable]$Cvars
+        [hashtable]$Cvars,
+        [string]$GameDirName = "valve",
+        [string]$HldsExePath,
+        [string]$WorkingDirectory,
+        [string]$SteamAppIdRoot
     )
 
     $runtimeRoot = Get-FullPath -Path $RuntimeRoot
-    $hldsExe = Join-Path $runtimeRoot "hlds.exe"
+    $hldsExe = if ([string]::IsNullOrWhiteSpace($HldsExePath)) { Join-Path $runtimeRoot "hlds.exe" } else { Get-FullPath -Path $HldsExePath }
+    $workingDirectory = if ([string]::IsNullOrWhiteSpace($WorkingDirectory)) { $runtimeRoot } else { Get-FullPath -Path $WorkingDirectory }
+    $steamAppIdRoot = if ([string]::IsNullOrWhiteSpace($SteamAppIdRoot)) { $runtimeRoot } else { Get-FullPath -Path $SteamAppIdRoot }
 
     if (-not (Test-LeafPath -Path $hldsExe)) {
         throw "No hlds.exe was found in the disposable runtime: $hldsExe"
@@ -3038,13 +3556,13 @@ function Start-HldsDetached {
     $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $stdoutLog = Join-Path $logsRoot ("hlds-" + $timestamp + "-stdout.log")
     $stderrLog = Join-Path $logsRoot ("hlds-" + $timestamp + "-stderr.log")
-    $serverCfgName = Write-HldsLaunchCvarConfig -RuntimeRoot $runtimeRoot -Cvars (Get-HldsLaunchCvars -SetCvar $SetCvar -Cvars $Cvars)
-    $argumentList = Get-HldsArgumentList -Map $Map -Port $Port -MaxPlayers $MaxPlayers -ServerCfgName $serverCfgName
-    $environmentState = Push-HldsRuntimeEnvironment -RuntimeRoot $runtimeRoot
+    $serverCfgName = Write-HldsLaunchCvarConfig -RuntimeRoot $runtimeRoot -Cvars (Get-HldsLaunchCvars -SetCvar $SetCvar -Cvars $Cvars) -GameDirName $GameDirName
+    $argumentList = Get-HldsArgumentList -Map $Map -Port $Port -MaxPlayers $MaxPlayers -ServerCfgName $serverCfgName -GameDirName $GameDirName
+    $environmentState = Push-HldsRuntimeEnvironment -RuntimeRoot $steamAppIdRoot
 
     try {
-        $launchMetadataPath = Write-HldsLaunchMetadata -RuntimeRoot $runtimeRoot -HldsExe $hldsExe -ArgumentList $argumentList -Timestamp $timestamp -ServerCfgName $serverCfgName -SteamAppId $environmentState.EffectiveSteamAppId
-        $process = Start-Process -FilePath $hldsExe -WorkingDirectory $runtimeRoot -WindowStyle Hidden -ArgumentList $argumentList -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -PassThru
+        $launchMetadataPath = Write-HldsLaunchMetadata -RuntimeRoot $workingDirectory -HldsExe $hldsExe -ArgumentList $argumentList -Timestamp $timestamp -ServerCfgName $serverCfgName -SteamAppId $environmentState.EffectiveSteamAppId
+        $process = Start-Process -FilePath $hldsExe -WorkingDirectory $workingDirectory -WindowStyle Hidden -ArgumentList $argumentList -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -PassThru
     }
     finally {
         Pop-HldsRuntimeEnvironment -State $environmentState
@@ -3052,12 +3570,13 @@ function Start-HldsDetached {
 
     return [PSCustomObject]@{
         Process = $process
-        RuntimeRoot = $runtimeRoot
+        RuntimeRoot = $workingDirectory
+        GameDirName = $GameDirName
         StdOutLog = $stdoutLog
         StdErrLog = $stderrLog
-        RuntimeLogsRoot = Join-Path $runtimeRoot "logs"
-        QConsoleLog = Join-Path $runtimeRoot "qconsole.log"
-        ValveQConsoleLog = Join-Path $runtimeRoot "valve\qconsole.log"
+        RuntimeLogsRoot = Join-Path $workingDirectory "logs"
+        QConsoleLog = Join-Path $workingDirectory "qconsole.log"
+        ValveQConsoleLog = Join-Path $workingDirectory ($GameDirName + "\qconsole.log")
         LaunchMetadataPath = $launchMetadataPath
     }
 }
@@ -3077,11 +3596,17 @@ function Invoke-HldsForeground {
         [int]$MaxPlayers,
 
         [string[]]$SetCvar = @(),
-        [hashtable]$Cvars
+        [hashtable]$Cvars,
+        [string]$GameDirName = "valve",
+        [string]$HldsExePath,
+        [string]$WorkingDirectory,
+        [string]$SteamAppIdRoot
     )
 
     $runtimeRoot = Get-FullPath -Path $RuntimeRoot
-    $hldsExe = Join-Path $runtimeRoot "hlds.exe"
+    $hldsExe = if ([string]::IsNullOrWhiteSpace($HldsExePath)) { Join-Path $runtimeRoot "hlds.exe" } else { Get-FullPath -Path $HldsExePath }
+    $workingDirectory = if ([string]::IsNullOrWhiteSpace($WorkingDirectory)) { $runtimeRoot } else { Get-FullPath -Path $WorkingDirectory }
+    $steamAppIdRoot = if ([string]::IsNullOrWhiteSpace($SteamAppIdRoot)) { $runtimeRoot } else { Get-FullPath -Path $SteamAppIdRoot }
     if (-not (Test-LeafPath -Path $hldsExe)) {
         throw "No hlds.exe was found in the disposable runtime: $hldsExe"
     }
@@ -3091,13 +3616,13 @@ function Invoke-HldsForeground {
 
     $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $stdoutLog = Join-Path $logsRoot ("hlds-" + $timestamp + "-stdout.log")
-    $serverCfgName = Write-HldsLaunchCvarConfig -RuntimeRoot $runtimeRoot -Cvars (Get-HldsLaunchCvars -SetCvar $SetCvar -Cvars $Cvars)
-    $argumentList = Get-HldsArgumentList -Map $Map -Port $Port -MaxPlayers $MaxPlayers -ServerCfgName $serverCfgName
-    $environmentState = Push-HldsRuntimeEnvironment -RuntimeRoot $runtimeRoot
+    $serverCfgName = Write-HldsLaunchCvarConfig -RuntimeRoot $runtimeRoot -Cvars (Get-HldsLaunchCvars -SetCvar $SetCvar -Cvars $Cvars) -GameDirName $GameDirName
+    $argumentList = Get-HldsArgumentList -Map $Map -Port $Port -MaxPlayers $MaxPlayers -ServerCfgName $serverCfgName -GameDirName $GameDirName
+    $environmentState = Push-HldsRuntimeEnvironment -RuntimeRoot $steamAppIdRoot
 
-    Push-Location $runtimeRoot
+    Push-Location $workingDirectory
     try {
-        Write-HldsLaunchMetadata -RuntimeRoot $runtimeRoot -HldsExe $hldsExe -ArgumentList $argumentList -Timestamp $timestamp -ServerCfgName $serverCfgName -SteamAppId $environmentState.EffectiveSteamAppId | Out-Null
+        Write-HldsLaunchMetadata -RuntimeRoot $workingDirectory -HldsExe $hldsExe -ArgumentList $argumentList -Timestamp $timestamp -ServerCfgName $serverCfgName -SteamAppId $environmentState.EffectiveSteamAppId | Out-Null
         & $hldsExe @argumentList 2>&1 | Tee-Object -FilePath $stdoutLog
         return $stdoutLog
     }
@@ -3134,7 +3659,45 @@ function Wait-ForHldsReady {
         [int]$TimeoutSeconds
     )
 
-    return (Wait-ForLogPattern -Paths (Get-HldsLogCandidates -LaunchInfo $LaunchInfo) -Pattern ('Started map "' + $Map + '"') -TimeoutSeconds $TimeoutSeconds -Process $LaunchInfo.Process)
+    return (Wait-ForAnyLogPattern -Paths (Get-HldsLogCandidates -LaunchInfo $LaunchInfo) -Patterns @(
+            ('Started map "' + $Map + '"'),
+            "Server IP address",
+            "Server logging data to file"
+        ) -TimeoutSeconds $TimeoutSeconds -Process $LaunchInfo.Process)
+}
+
+function Wait-ForAnyLogPattern {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Paths,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$Patterns,
+
+        [Parameter(Mandatory = $true)]
+        [int]$TimeoutSeconds,
+
+        [System.Diagnostics.Process]$Process
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+
+    while ((Get-Date) -lt $deadline) {
+        foreach ($pattern in $Patterns) {
+            if (Wait-ForLogPattern -Paths $Paths -Pattern $pattern -TimeoutSeconds 1 -Process $Process) {
+                return $true
+            }
+        }
+
+        if ($Process) {
+            $Process.Refresh()
+            if ($Process.HasExited) {
+                return $false
+            }
+        }
+    }
+
+    return $false
 }
 
 function Wait-ForLogPattern {

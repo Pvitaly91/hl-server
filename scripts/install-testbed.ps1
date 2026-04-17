@@ -30,18 +30,34 @@ if (-not (Test-LeafPath -Path $dllPath)) {
 }
 
 $pdbPath = Get-HlPdbPath -Configuration $configuration
-$installResult = Install-TestbedRuntime -Configuration $configuration -BuiltDllPath $dllPath -BuiltPdbPath $pdbPath -ExplicitTemplateRoot $TemplateRoot -ExplicitHldsExe $HldsExe -ExplicitHlExe $HlExe -ExplicitSteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload -PreferClientMatchedRuntime:$PreferClientMatchedRuntime -ForceTemplateRefresh:$ForceTemplateRefresh
-
-Write-Step "Disposable runtime ready"
-Write-Host "Runtime root       : $($installResult.RuntimeRoot)"
-Write-Host "Installed DLL      : $($installResult.InstalledDllPath)"
-Write-Host "Runtime manifest   : $($installResult.ManifestPath)"
-Write-Host "Created steam_appid: $($installResult.CreatedSteamAppIdFile)"
-if ($installResult.ClientInstall) {
-    Write-Host "Client root        : $($installResult.ClientInstall.Root)"
+$installResult = if ($PreferClientMatchedRuntime) {
+    Install-TestbedLiveMod -Configuration $configuration -BuiltDllPath $dllPath -BuiltPdbPath $pdbPath -ExplicitHlExe $HlExe
 }
-Write-Host "Launch hlds        : $(if ($installResult.LiveContentStatus.RuntimeHldsExe) { $installResult.LiveContentStatus.RuntimeHldsExe } else { 'missing' })"
-Write-Host "Launch hl          : $(if ($installResult.LiveContentStatus.ClientLaunchExe) { $installResult.LiveContentStatus.ClientLaunchExe } else { 'not found' })"
-Write-Host "Same-root launch   : $($installResult.LiveContentStatus.SameRootLaunchLabel)"
-Write-Host "content_match      : $($installResult.LiveContentStatus.ContentMatchLabel)"
-Write-Host "Live content       : $($installResult.LiveContentStatus.Verdict)"
+else {
+    Install-TestbedRuntime -Configuration $configuration -BuiltDllPath $dllPath -BuiltPdbPath $pdbPath -ExplicitTemplateRoot $TemplateRoot -ExplicitHldsExe $HldsExe -ExplicitHlExe $HlExe -ExplicitSteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload -PreferClientMatchedRuntime:$PreferClientMatchedRuntime -ForceTemplateRefresh:$ForceTemplateRefresh
+}
+
+if ($PreferClientMatchedRuntime) {
+    Write-Step "Same-root live mod ready"
+    Write-Host "Live mod stage     : $($installResult.StageRoot)"
+    Write-Host "Live mod root      : $($installResult.LinkPath)"
+    Write-Host "Live game dir      : $($installResult.GameDirName)"
+    Write-Host "Client root        : $($installResult.ClientInstall.Root)"
+    Write-Host "Installed DLL      : $($installResult.InstalledDllPath)"
+    Write-Host "Live manifest      : $($installResult.ManifestPath)"
+}
+else {
+    Write-Step "Disposable runtime ready"
+    Write-Host "Runtime root       : $($installResult.RuntimeRoot)"
+    Write-Host "Installed DLL      : $($installResult.InstalledDllPath)"
+    Write-Host "Runtime manifest   : $($installResult.ManifestPath)"
+    Write-Host "Created steam_appid: $($installResult.CreatedSteamAppIdFile)"
+    if ($installResult.ClientInstall) {
+        Write-Host "Client root        : $($installResult.ClientInstall.Root)"
+    }
+    Write-Host "Launch hlds        : $(if ($installResult.LiveContentStatus.RuntimeHldsExe) { $installResult.LiveContentStatus.RuntimeHldsExe } else { 'missing' })"
+    Write-Host "Launch hl          : $(if ($installResult.LiveContentStatus.ClientLaunchExe) { $installResult.LiveContentStatus.ClientLaunchExe } else { 'not found' })"
+    Write-Host "Same-root launch   : $($installResult.LiveContentStatus.SameRootLaunchLabel)"
+    Write-Host "content_match      : $($installResult.LiveContentStatus.ContentMatchLabel)"
+    Write-Host "Live content       : $($installResult.LiveContentStatus.Verdict)"
+}

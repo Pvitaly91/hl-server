@@ -105,7 +105,8 @@ function Write-Checklist {
         [string]$WeaponLogPath,
         [bool]$TailWindowRequested,
         [string]$ClientLaunchStatus,
-        [bool]$LabDummy
+        [bool]$LabDummy,
+        [string]$GameDirName = "valve"
     )
 
     Write-Host ""
@@ -114,7 +115,7 @@ function Write-Checklist {
     Write-Host "  map           : $Map"
     Write-Host "  port          : $Port"
     Write-Host "  connect       : $ConnectAddress"
-    Write-Host "  game          : valve"
+    Write-Host "  game          : $GameDirName"
     Write-Host "  runtime root  : $RuntimeRoot"
     Write-Host "  server log    : $ServerLogPath"
     Write-Host "  glock profile : $(if ([string]::IsNullOrWhiteSpace($GlockProfile)) { 'default' } else { $GlockProfile })"
@@ -216,12 +217,20 @@ if ($resolvedPort -ne $Port) {
 }
 
 $runtimeRoot = Get-TestbedRuntimeRoot
+$sessionGameDir = if ($PreferClientMatchedRuntime) { Get-TestbedLiveModName } else { "valve" }
 $previousWeaponLog = Get-LatestWeaponDebugLog
 $useLabDummy = $LabDummy -or (-not [string]::IsNullOrWhiteSpace($LabTargetProfile))
 $maxPlayers = if ($useLabDummy) { 1 } else { 4 }
 
 Write-Step $(if ($useLabDummy) { "Installing disposable runtime for the Glock lab session" } else { "Installing disposable runtime for the Glock manual session" })
 & "$PSScriptRoot\install-testbed.ps1" -Configuration $configuration -TemplateRoot $TemplateRoot -HldsExe $HldsExe -HlExe $HlExe -SteamCmdExe $SteamCmdExe -AllowSteamCmdDownload:$AllowSteamCmdDownload -PreferClientMatchedRuntime:$PreferClientMatchedRuntime
+
+if ($PreferClientMatchedRuntime) {
+    $clientInstall = Resolve-TestbedClientInstall -ExplicitHlExe $HlExe
+    if ($clientInstall) {
+        $runtimeRoot = Get-TestbedLiveModLinkPath -ClientRoot $clientInstall.Root -GameDirName $sessionGameDir
+    }
+}
 
 Write-Step $(if ($useLabDummy) { "Launching disposable HLDS in experimental-debug lab mode" } else { "Launching disposable HLDS in experimental-debug mode" })
 $sessionMetadataCvars = @(Get-SessionMetadataLaunchAssignments -SessionTag $SessionTag -MatrixName $MatrixName -MatrixStep $MatrixStep -WeaponUnderTest glock)
@@ -264,19 +273,20 @@ $connectAddress = "127.0.0.1:$resolvedPort"
 $clientLaunchStatus = "disabled by -NoClient"
 
 if (-not $NoClient) {
-    $clientExe = Get-TestbedSessionClientExe -RuntimeRoot $runtimeRoot
+    $clientExe = Get-TestbedSessionClientExe -RuntimeRoot $runtimeRoot -ExplicitHlExe $HlExe -PreferClientMatchedRuntime:$PreferClientMatchedRuntime
     if ($clientExe) {
-        & "$PSScriptRoot\run-client.ps1" -ConnectAddress $connectAddress -HlExe $clientExe
-        $clientLaunchStatus = "launch requested via $clientExe"
+        $clientWorkingDirectory = if ($PreferClientMatchedRuntime) { Split-Path -Parent $clientExe } else { $null }
+        & "$PSScriptRoot\run-client.ps1" -ConnectAddress $connectAddress -HlExe $clientExe -Game $sessionGameDir -WorkingDirectory $clientWorkingDirectory
+        $clientLaunchStatus = "launch requested via $clientExe (-game $sessionGameDir)"
     }
     else {
-        $clientLaunchStatus = "skipped because no stock hl.exe was found in testbed/runtime or via HL_EXE"
-        Write-Host "No stock Half-Life client executable was found. Set HL_EXE in .env if your runtime template does not contain hl.exe."
+        $clientLaunchStatus = "skipped because no stock hl.exe was found for the live session"
+        Write-Host "No stock Half-Life client executable was found. Set HL_EXE in .env if your Half-Life root is not auto-detected."
     }
 }
 
 if (-not $SkipChecklist) {
-    Write-Checklist -Configuration $configuration -Port $resolvedPort -Map $Map -ConnectAddress $connectAddress -RuntimeRoot $runtimeRoot -ServerLogPath $launchInfo.StdOutLog -GlockProfile $GlockProfile -LabTargetProfile $LabTargetProfile -WeaponLogPath $(if ($weaponLog) { $weaponLog.FullName } else { $null }) -TailWindowRequested $tailWindowRequested -ClientLaunchStatus $clientLaunchStatus -LabDummy:$useLabDummy
+    Write-Checklist -Configuration $configuration -Port $resolvedPort -Map $Map -ConnectAddress $connectAddress -RuntimeRoot $runtimeRoot -ServerLogPath $launchInfo.StdOutLog -GlockProfile $GlockProfile -LabTargetProfile $LabTargetProfile -WeaponLogPath $(if ($weaponLog) { $weaponLog.FullName } else { $null }) -TailWindowRequested $tailWindowRequested -ClientLaunchStatus $clientLaunchStatus -LabDummy:$useLabDummy -GameDirName $sessionGameDir
 }
 
 if ($AnalyzeLatestOnExit) {

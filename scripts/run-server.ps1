@@ -56,10 +56,40 @@ if ($preflightReport.LiveContentStatus) {
     Write-Host "Launch hlds   : $(if ($preflightReport.LiveContentStatus.RuntimeHldsExe) { $preflightReport.LiveContentStatus.RuntimeHldsExe } else { 'missing' })"
     Write-Host "Launch hl     : $(if ($preflightReport.LiveContentStatus.ClientLaunchExe) { $preflightReport.LiveContentStatus.ClientLaunchExe } else { 'not found' })"
     Write-Host "Client root   : $(if ($preflightReport.LiveContentStatus.ClientRoot) { $preflightReport.LiveContentStatus.ClientRoot } else { 'not found' })"
+    Write-Host "Game dir      : $($preflightReport.LiveContentStatus.GameDirName)"
     Write-Host "Content root  : $(if ($preflightReport.LiveContentStatus.EffectiveContentRoot) { $preflightReport.LiveContentStatus.EffectiveContentRoot } else { 'unavailable' })"
     Write-Host "Same-root     : $($preflightReport.LiveContentStatus.SameRootLaunchLabel)"
     Write-Host "content_match : $($preflightReport.LiveContentStatus.ContentMatchLabel)"
     Write-Host "Live verdict  : $($preflightReport.LiveContentStatus.Verdict)"
+    if ($preflightReport.LiveModState) {
+        Write-Host "Live mod root : $($preflightReport.LiveModState.LinkPath)"
+        Write-Host "Live mod stage: $($preflightReport.LiveModState.StageRoot)"
+    }
+}
+
+$serverRoot = if ($PreferClientMatchedRuntime) {
+    $preflightReport.LiveContentStatus.ServerWorkingDirectory
+}
+else {
+    $runtimeRoot
+}
+$serverHldsExe = if ($PreferClientMatchedRuntime) {
+    $preflightReport.LiveContentStatus.RuntimeHldsExe
+}
+else {
+    Join-Path $runtimeRoot "hlds.exe"
+}
+$serverGameDir = if ($PreferClientMatchedRuntime) {
+    $preflightReport.LiveContentStatus.GameDirName
+}
+else {
+    "valve"
+}
+$steamAppIdRoot = if ($PreferClientMatchedRuntime) {
+    $preflightReport.LiveContentStatus.ClientRoot
+}
+else {
+    $runtimeRoot
 }
 
 Assert-UdpPortAvailable -Port $Port
@@ -104,7 +134,7 @@ $effectiveSetCvars += @($SetCvar)
 
 if ($Detached) {
     Write-Step "Launching HLDS in detached mode"
-    $launchInfo = Start-HldsDetached -RuntimeRoot $runtimeRoot -Map $Map -Port $Port -MaxPlayers $MaxPlayers -SetCvar $effectiveSetCvars -Cvars $Cvars
+    $launchInfo = Start-HldsDetached -RuntimeRoot $serverRoot -Map $Map -Port $Port -MaxPlayers $MaxPlayers -SetCvar $effectiveSetCvars -Cvars $Cvars -GameDirName $serverGameDir -HldsExePath $serverHldsExe -WorkingDirectory $serverRoot -SteamAppIdRoot $steamAppIdRoot
     if ($PassThru) {
         return $launchInfo
     }
@@ -117,6 +147,6 @@ if ($Detached) {
 }
 else {
     Write-Step "Launching HLDS in the foreground"
-    $logPath = Invoke-HldsForeground -RuntimeRoot $runtimeRoot -Map $Map -Port $Port -MaxPlayers $MaxPlayers -SetCvar $effectiveSetCvars -Cvars $Cvars
+    $logPath = Invoke-HldsForeground -RuntimeRoot $serverRoot -Map $Map -Port $Port -MaxPlayers $MaxPlayers -SetCvar $effectiveSetCvars -Cvars $Cvars -GameDirName $serverGameDir -HldsExePath $serverHldsExe -WorkingDirectory $serverRoot -SteamAppIdRoot $steamAppIdRoot
     Write-Host "Log: $logPath"
 }

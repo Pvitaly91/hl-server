@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [string]$ConnectAddress = "127.0.0.1:27015",
-    [string]$HlExe
+    [string]$HlExe,
+    [string]$Game = "valve",
+    [string]$WorkingDirectory
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,5 +18,9 @@ if (-not $resolvedHlExe) {
 
 Write-Step "Launching stock Half-Life client"
 
-Start-Process -FilePath $resolvedHlExe -WorkingDirectory (Split-Path -Parent $resolvedHlExe) -ArgumentList @("-game", "valve", "-console", "+connect", $ConnectAddress) | Out-Null
+if ([string]::IsNullOrWhiteSpace($WorkingDirectory)) {
+    $WorkingDirectory = Split-Path -Parent $resolvedHlExe
+}
+
+Start-Process -FilePath $resolvedHlExe -WorkingDirectory $WorkingDirectory -ArgumentList @("-game", $Game, "-console", "+connect", $ConnectAddress) | Out-Null
 Write-Host "Client launch requested: $resolvedHlExe"

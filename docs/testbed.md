@@ -2,11 +2,12 @@
 
 ## Goal
 
-The testbed exists to run HLDS with the locally built `hl.dll` without modifying the user's real Steam install.
+The testbed exists to run HLDS with the locally built `hl.dll` without modifying the user's real Steam install for no-client flows, while still allowing live client-attached play through a managed same-root mod under the user's real Half-Life install.
 
 ## Layout
 
-- `testbed/runtime/` - disposable mirrored runtime used for execution
+- `testbed/runtime/` - disposable mirrored runtime used for no-client and dedicated execution
+- `testbed/mods/hlserver_testbed/` - staged payload for the managed same-root live mod
 - `testbed/logs/` - launch logs captured by the scripts
 - `testbed/cache/` - reusable cache for SteamCMD downloads and optional HLDS template installs
 
@@ -23,13 +24,13 @@ The testbed exists to run HLDS with the locally built `hl.dll` without modifying
 7. regular Half-Life client install only as a fallback
 8. SteamCMD-driven dedicated-template provisioning when repair or explicit download is allowed
 
-The scripts do not write back into the original template root. They mirror the selected source into `testbed/runtime/`, validate key executable-side dependencies, generate `steam_appid.txt` inside the disposable runtime when the source type makes the AppID unambiguous, then install the built DLL into `testbed/runtime/valve/dlls/`.
+The scripts do not write back into the original template root for no-client flows. They mirror the selected source into `testbed/runtime/`, validate key executable-side dependencies, generate `steam_appid.txt` inside the disposable runtime when the source type makes the AppID unambiguous, then install the built DLL into `testbed/runtime/valve/dlls/`.
 
-For no-client or dedicated-only flows, that means the cached dedicated template can remain the preferred executable source. For live client-attached flows, the repo now has an explicit same-root/client-matched mode: it resolves the stock `hl.exe` root, mirrors that client root into `testbed/runtime/`, and then supplements missing server-side files from the selected HLDS-capable source when needed. That keeps `-game valve` while making the runtime content match the launched stock client.
+For no-client or dedicated-only flows, that means the cached dedicated template can remain the preferred executable source. For live client-attached flows, the repo now has an explicit same-root live-mod mode: it resolves the stock `hl.exe` root, stages a managed `hlserver_testbed` payload under `testbed/mods/hlserver_testbed`, creates a junction at `Half-Life\hlserver_testbed`, and launches both `hlds.exe` and `hl.exe` from the same Half-Life root on `-game hlserver_testbed`.
 
 ## HLDS launch behavior
 
-`run-server.ps1` launches the disposable runtime as:
+`run-server.ps1` launches the no-client disposable runtime as:
 
 - `-game valve`
 - default map `crossfire`
@@ -38,7 +39,14 @@ For no-client or dedicated-only flows, that means the cached dedicated template 
 
 It also records a small `hlds-*-launch.txt` file so the working directory, executable path, Steam AppID, and exact launch arguments are visible after the fact.
 
-That preserves stock client compatibility while still swapping in the custom server DLL.
+For live client-attached sessions, `run-server.ps1 -PreferClientMatchedRuntime` instead launches:
+
+- `D:\Steam\steamapps\common\Half-Life\hlds.exe`
+- working directory `D:\Steam\steamapps\common\Half-Life`
+- `-game hlserver_testbed`
+- with the custom `hl.dll` served from the managed live-mod stage
+
+That preserves stock client compatibility while making both processes share the same Half-Life root.
 
 ## Live BAT launchers
 
@@ -54,8 +62,9 @@ For Explorer or `cmd.exe` usage, the repo now includes thin BAT wrappers that ca
 The live launchers always:
 
 - run `doctor-testbed.ps1 -PreferClientMatchedRuntime -Repair -BuildIfMissing` first
-- keep the disposable runtime on `-game valve`
-- print the chosen client root, runtime source root, content source root, launched `hlds.exe`, launched `hl.exe`, `Same-root launch`, `content_match`, chosen map, `testbed/logs/`, and `testbed/logs/reports/`
+- build or refresh `testbed/mods/hlserver_testbed`
+- create or validate the `Half-Life\hlserver_testbed` junction
+- print the chosen client root, live mod root, live mod stage, launched `hlds.exe`, launched `hl.exe`, `Same-root launch`, `content_match`, chosen map, `testbed/logs/`, and `testbed/logs/reports/`
 - require a stock `hl.exe` for client-attached play unless `-NoClient` is explicitly forwarded
 - delegate the actual session startup to `run-glock-test-session.ps1` or `run-mp5-test-session.ps1`
 
@@ -100,7 +109,9 @@ Success for the live same-root path looks like this:
 
 - `Same-root launch    : yes`
 - `content_match       : yes`
-- `Launch hlds` and `Launch hl` both point into `testbed/runtime/`
+- `Game dir            : hlserver_testbed`
+- `Launch hlds` and `Launch hl` both point into `D:\Steam\steamapps\common\Half-Life\`
+- `Live mod root` points at `D:\Steam\steamapps\common\Half-Life\hlserver_testbed`
 - the client joins without `Your map [maps/crossfire.bsp] differs from the server's.`
 
 ## Smoke test signal
