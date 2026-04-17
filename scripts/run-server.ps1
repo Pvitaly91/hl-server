@@ -62,8 +62,7 @@ if ($preflightReport.LiveContentStatus) {
     Write-Host "content_match : $($preflightReport.LiveContentStatus.ContentMatchLabel)"
     Write-Host "Live verdict  : $($preflightReport.LiveContentStatus.Verdict)"
     if ($preflightReport.LiveModState) {
-        Write-Host "Live mod root : $($preflightReport.LiveModState.LinkPath)"
-        Write-Host "Live mod stage: $($preflightReport.LiveModState.StageRoot)"
+        Write-Host "Live mod root : $($preflightReport.LiveModState.ModRoot)"
     }
 }
 

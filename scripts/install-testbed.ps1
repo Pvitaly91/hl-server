@@ -39,8 +39,7 @@ else {
 
 if ($PreferClientMatchedRuntime) {
     Write-Step "Same-root live mod ready"
-    Write-Host "Live mod stage     : $($installResult.StageRoot)"
-    Write-Host "Live mod root      : $($installResult.LinkPath)"
+    Write-Host "Live mod root      : $($installResult.ModRoot)"
     Write-Host "Live game dir      : $($installResult.GameDirName)"
     Write-Host "Client root        : $($installResult.ClientInstall.Root)"
     Write-Host "Installed DLL      : $($installResult.InstalledDllPath)"

@@ -42,7 +42,6 @@ Write-Host "Runtime source root : $(if ($live.RuntimeSourceRoot) { $live.Runtime
 Write-Host "Content source root : $(if ($live.EffectiveContentRoot) { $live.EffectiveContentRoot } else { 'unavailable' })"
 Write-Host "Manifest content    : $(if ($live.ManifestContentRoot) { $live.ManifestContentRoot } else { 'missing' })"
 Write-Host "Live mod root       : $(if ($live.LiveModLinkPath) { $live.LiveModLinkPath } else { 'not used' })"
-Write-Host "Live mod stage      : $(if ($live.LiveModStageRoot) { $live.LiveModStageRoot } else { 'not used' })"
 Write-Host "Server work dir     : $(if ($live.ServerWorkingDirectory) { $live.ServerWorkingDirectory } else { 'unknown' })"
 Write-Host "Client work dir     : $(if ($live.ClientWorkingDirectory) { $live.ClientWorkingDirectory } else { 'unknown' })"
 Write-Host "Same-root launch    : $($live.SameRootLaunchLabel)"

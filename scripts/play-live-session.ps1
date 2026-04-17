@@ -95,8 +95,7 @@ Write-Host "  client root    : $(if ($doctorReport.LiveContentStatus.ClientRoot)
 Write-Host "  runtime source : $(if ($doctorReport.LiveContentStatus.RuntimeSourceRoot) { $doctorReport.LiveContentStatus.RuntimeSourceRoot } else { 'unavailable' })"
 Write-Host "  content source : $(if ($doctorReport.LiveContentStatus.EffectiveContentRoot) { $doctorReport.LiveContentStatus.EffectiveContentRoot } else { 'unavailable' })"
 if ($doctorReport.LiveModState) {
-    Write-Host "  live mod root  : $($doctorReport.LiveModState.LinkPath)"
-    Write-Host "  live mod stage : $($doctorReport.LiveModState.StageRoot)"
+    Write-Host "  live mod root  : $($doctorReport.LiveModState.ModRoot)"
 }
 Write-Host "  same-root      : $($doctorReport.LiveContentStatus.SameRootLaunchLabel)"
 Write-Host "  content_match  : $($doctorReport.LiveContentStatus.ContentMatchLabel)"

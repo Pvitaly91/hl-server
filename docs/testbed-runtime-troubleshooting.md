@@ -2,7 +2,7 @@
 
 ## What this doc covers
 
-This repository keeps no-client runtime writes inside `testbed/runtime/`, but HLDS still depends on a valid local source runtime outside the repo. Live client-attached sessions now use a managed `hlserver_testbed` mod under the real Half-Life root, backed by `testbed/mods/`. The doctor and repair tooling exists to make those dependencies visible instead of leaving failures as opaque `hlds.exe` crashes.
+This repository keeps no-client runtime writes inside `testbed/runtime/`, but HLDS still depends on a valid local source runtime outside the repo. Live client-attached sessions now use a managed `hlserver_testbed` mod folder directly under the real Half-Life root. The doctor and repair tooling exists to make those dependencies visible instead of leaving failures as opaque `hlds.exe` crashes.
 
 ## Symptoms the doctor now diagnoses
 
@@ -113,10 +113,10 @@ That fallback matters. A Half-Life client install can be good enough for some lo
 When `-PreferClientMatchedRuntime` is requested, the live policy changes intentionally:
 
 1. the repo resolves the stock `hl.exe` root that will be used for the live session
-2. the repo stages a managed `hlserver_testbed` payload under `testbed/mods/hlserver_testbed`
-3. a junction appears at `Half-Life\hlserver_testbed` so both `hlds.exe` and `hl.exe` can launch from the same Half-Life root
-4. the staged mod contains the built `hl.dll`, a generated `liblist.gam`, and stock-content junctions such as `maps`
-5. the doctor records the client root and live-mod stage in `.hl-server-live-mod.json`
+2. the repo creates or refreshes `Half-Life\hlserver_testbed` as a normal mod folder
+3. the built `hl.dll` is copied into `Half-Life\hlserver_testbed\dlls\`
+4. `liblist.gam` points at `fallback_dir "valve"` so stock maps and assets come from the standard Half-Life content base
+5. the doctor records the client root and live-mod root in `.hl-server-live-mod.json`
 
 This is what prevents `Your map [maps/crossfire.bsp] differs from the server's.` when the server and the stock client would otherwise resolve content from different roots.
 
@@ -150,7 +150,7 @@ The symptom looks like:
 
 That happens when the server and the launched stock client resolve map content from different roots and at least one representative map file differs. Before this patch, the repo could prepare `testbed/runtime/` from `testbed/cache/hlds-template` while the stock client launched from a separate Half-Life install. If those trees diverged, the connect failed.
 
-The new same-root live-mod mode keeps the dedicated-template preference for no-client flows, but for live play it builds `hlserver_testbed` from the stock Half-Life root and launches both processes from that same root. The mod's `maps` junction and `fallback_dir "valve"` keep the live mod aligned with the stock `valve` content base without copying the whole game into `testbed/runtime/`.
+The new same-root live-mod mode keeps the dedicated-template preference for no-client flows, but for live play it builds `hlserver_testbed` directly under the stock Half-Life root and launches both processes from that same root. The mod uses `fallback_dir "valve"` so the live session resolves stock maps and assets from the standard `Half-Life\valve` tree without copying the whole game into `testbed/runtime/`.
 
 ## External blockers the repo cannot solve automatically
 

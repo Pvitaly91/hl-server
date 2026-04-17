@@ -2,7 +2,7 @@
 
 `hl-server` bootstraps an empty repository into a Windows-first, VS2022-ready server-side Half-Life workspace for gameplay experiments that must stay compatible with the stock Steam Half-Life client.
 
-The repository vendors a pinned snapshot of Valve's official Half-Life source base under `third_party/valve-halflife-sdk/`, builds only the server-side GameDLL (`hl.dll`) first, keeps no-client runtime edits inside `testbed/runtime/`, and now stages live client-attached testing through a managed `hlserver_testbed` mod rooted at the user's real Half-Life install and backed by `testbed/mods/`.
+The repository vendors a pinned snapshot of Valve's official Half-Life source base under `third_party/valve-halflife-sdk/`, builds only the server-side GameDLL (`hl.dll`) first, keeps no-client runtime edits inside `testbed/runtime/`, and now runs live client-attached testing through a managed `hlserver_testbed` mod folder created directly under the user's real Half-Life install.
 
 ## Why the official Valve SDK
 
@@ -14,7 +14,7 @@ The repository vendors a pinned snapshot of Valve's official Half-Life source ba
 
 - A reproducible VS2022 Win32 build for the vanilla Half-Life server GameDLL.
 - A disposable HLDS test stand for no-client and dedicated flows under `testbed/runtime/`.
-- A managed same-root live mod at `Half-Life\hlserver_testbed` that links back to `testbed/mods/hlserver_testbed` for client-attached sessions.
+- A managed same-root live mod at `Half-Life\hlserver_testbed` for client-attached sessions.
 - Server-only experimental Glock and MP5 paths for manual stock-client-compatible gameplay iteration without changing the stock client DLL.
 
 It is not yet a gameplay conversion and it does not ship any proprietary game assets, Steam files, or HLDS binaries.
@@ -51,7 +51,7 @@ To smoke-test the whole flow non-interactively:
 
 ## Live BAT launchers
 
-These BAT files are the ready-to-run entry points for live server testing from Explorer or `cmd.exe`. They run the doctor with repair before launching, create or refresh the managed `hlserver_testbed` live mod under the stock Half-Life root, keep the mod payload staged under `testbed/mods/`, and then launch both `hlds.exe` and `hl.exe` from the same `D:\Steam\steamapps\common\Half-Life` root on `-game hlserver_testbed`.
+These BAT files are the ready-to-run entry points for live server testing from Explorer or `cmd.exe`. They run the doctor with repair before launching, create or refresh the managed `hlserver_testbed` mod directory directly under the stock Half-Life root, copy the built `hl.dll` there, and then launch both `hlds.exe` and `hl.exe` from the same `D:\Steam\steamapps\common\Half-Life` root on `-game hlserver_testbed`.
 
 Launch the default Glock live lab:
 
@@ -112,20 +112,21 @@ scripts\play-mp5-live.bat -Preset cs_mobile -TargetProfile vest_headprotected
 
 What to expect from the live launchers:
 
-- the managed `testbed/mods/hlserver_testbed` stage is repaired or refreshed first
-- a junction appears at `Half-Life\hlserver_testbed` pointing at that staged mod payload
+- the managed `Half-Life\hlserver_testbed` mod directory is repaired or refreshed first
+- the built `hl.dll` is copied into `Half-Life\hlserver_testbed\dlls\`
 - HLDS starts from the real Half-Life root on `-game hlserver_testbed`
 - the stock client launch is requested from the same Half-Life root on `-game hlserver_testbed`
+- stock maps and assets still come from standard `Half-Life\valve\` through `fallback_dir "valve"`
 - the one-player lab dummy appears for the live session flow
 - logs are written under `testbed/logs/`
 - analyzer output remains under `testbed/logs/reports/`
-- the console prints the chosen client root, live mod root, live mod stage, actual launched `hlds.exe`, actual launched `hl.exe`, `Same-root launch`, `content_match`, chosen map, and the log locations
+- the console prints the chosen client root, live mod root, actual launched `hlds.exe`, actual launched `hl.exe`, `Same-root launch`, `content_match`, chosen map, and the log locations
 
 If the fix is working, the live launcher and the doctor will show:
 
 - the stock client root under `Client root`
 - `Game dir            : hlserver_testbed`
-- the managed live mod under `Live mod root` and `Live mod stage`
+- the managed live mod under `Live mod root`
 - `Same-root launch    : yes`
 - `content_match       : yes`
 - `Launch hlds` and `Launch hl` under `D:\Steam\steamapps\common\Half-Life\`
@@ -184,7 +185,7 @@ If you only want to refresh the disposable runtime without the full repair flow:
 - the launched `testbed/runtime\hlds.exe`
 - the launched client executable path that will be used for the live session
 - the resolved stock client root used for live play
-- the effective content source root that will be mirrored into `testbed/runtime/`
+- the effective content source root used for the live mod and standard `valve` fallback
 - `Same-root launch` and `content_match` as explicit `yes` / `no` preflight verdicts
 - the representative `valve\maps\crossfire.bsp` paths and SHA256 hashes for the runtime, the selected source, and the client root
 - the disposable runtime root and runtime manifest
@@ -206,7 +207,7 @@ Runtime source selection now prefers, in order:
 5. an installed `Half-Life Dedicated Server` runtime
 6. a regular Half-Life client install only as a fallback when it already contains `hlds.exe`
 
-That preference order is still correct for no-client or dedicated-only flows. Live client-attached play is different: `play-glock-live.bat`, `play-mp5-live.bat`, and `.\scripts\doctor-testbed.ps1 -PreferClientMatchedRuntime` now create or refresh the managed `hlserver_testbed` mod under the real Half-Life root, backed by `testbed/mods/hlserver_testbed`, so the client and server launch from the same root and use the same stock `valve` content base without copying the whole game into `testbed/runtime/`.
+That preference order is still correct for no-client or dedicated-only flows. Live client-attached play is different: `play-glock-live.bat`, `play-mp5-live.bat`, and `.\scripts\doctor-testbed.ps1 -PreferClientMatchedRuntime` now create or refresh the managed `hlserver_testbed` mod directly under the real Half-Life root, copy the built `hl.dll` into `dlls\`, and rely on standard `valve` fallback content so the client and server launch from the same root without copying the whole game into `testbed/runtime/`.
 
 To build Release instead:
 
@@ -790,11 +791,10 @@ The CMake preset is the source of truth.
 ## Disposable testbed layout
 
 - `testbed/runtime/` - disposable HLDS runtime mirror for no-client and dedicated flows
-- `testbed/mods/hlserver_testbed/` - staged payload for the managed live mod
 - `testbed/logs/` - `hlds-*.log` server launch logs and `weapon-debug-*.log` Glock telemetry logs
 - `testbed/cache/` - downloaded SteamCMD and optional HLDS template cache
 - `testbed/runtime/.hl-server-runtime.json` - runtime manifest recording which source root was mirrored
-- `testbed/mods/hlserver_testbed/.hl-server-live-mod.json` - manifest recording the managed live-mod stage and client root
+- `Half-Life\hlserver_testbed\.hl-server-live-mod.json` - manifest recording the managed live mod and client root
 
 `install-testbed.ps1` now mirrors the selected source root into `testbed/runtime/`, validates the executable-side dependencies HLDS needs to start, repairs missing key sidecars when the source provides them, and then overwrites only:
 
@@ -813,14 +813,14 @@ Key runtime-side entries checked by the doctor include:
 - `platform/`
 - `bin/` when the selected source uses it
 
-Live client-attached mode does create one managed junction at `Half-Life\hlserver_testbed`, but the mod payload itself stays in `testbed/mods/hlserver_testbed` and no script copies proprietary `valve` content into git.
+Live client-attached mode creates or refreshes a managed mod folder at `Half-Life\hlserver_testbed`, copies the built `hl.dll` there, and keeps stock content in the standard `Half-Life\valve` tree through `fallback_dir "valve"`.
 
 ## Script reference
 
 - `scripts/bootstrap.ps1` verifies prerequisites, ensures the vendored SDK and docs are present, and writes `.env.example`.
 - `scripts/configure.ps1` configures the VS2022 Win32 CMake preset.
 - `scripts/build.ps1` builds Debug or Release and prints the resulting artifact paths.
-- `scripts/install-testbed.ps1` prepares either the disposable runtime for no-client flows or the managed `hlserver_testbed` live mod for client-attached flows, then installs the built `hl.dll`.
+- `scripts/install-testbed.ps1` prepares either the disposable runtime for no-client flows or the managed `hlserver_testbed` live mod folder for client-attached flows, then installs the built `hl.dll`.
 - `scripts/doctor-testbed.ps1` diagnoses the selected runtime source, the disposable runtime, and common Windows startup blockers such as Steam initialization or missing executable-side DLL issues, and `-Repair` can refresh the runtime plus provision a dedicated HLDS cache.
 - `scripts/run-server.ps1` launches HLDS against `testbed/runtime` on `-game valve` for no-client flows or from the stock Half-Life root on `-game hlserver_testbed` for live client-attached flows, defaults to `crossfire`, accepts `-EnableExperimentalGlock`, `-EnableExperimentalGlockDebug`, `-GlockProfile <name>`, and `-LabTargetProfile <name>` for server-only Glock tuning plus dummy-target selection, and still supports launch-time overrides through `-SetCvar @('name=value', ...)` or `-Cvars @{ name = 'value' }`.
 - `scripts/play-live-session.ps1` is the shared live BAT helper that runs the doctor repair flow, verifies that a stock client and same-root `hlds.exe` are available for live visual testing unless `-NoClient` is explicitly requested, prints the managed live-mod paths plus log locations, and then delegates to the existing Glock or MP5 session script.
