@@ -647,7 +647,12 @@ std::string GetSafeEntityName(CBaseEntity *pEntity)
 
     if (IsExpGlockLabDummyEntity(pEntity))
     {
-        return "Glock Lab Dummy";
+        if (pEntity->pev != NULL && pEntity->pev->netname != 0)
+        {
+            return SanitizeLogValue(STRING(pEntity->pev->netname));
+        }
+
+        return SanitizeLogValue(ExpGlockLabDummyDisplayName());
     }
 
     if (pEntity->IsPlayer())
@@ -902,6 +907,49 @@ void LogGlockLabDummySpawn(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, bool
     WriteTelemetryLine(telemetryLine.c_str());
 }
 
+void LogGlockLabDummyReposition(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, const Vector &origin, const Vector &angles, const char *reason)
+{
+    if (!ExpDebugWeaponLogEnabled())
+    {
+        return;
+    }
+
+    EnsureWeaponDebugLogOpen();
+
+    char timestamp[64];
+    char originValue[64];
+    char line[2048];
+    FormatTimestamp(timestamp, sizeof(timestamp));
+    FormatVector3(originValue, sizeof(originValue), origin);
+
+    _snprintf_s(
+        line,
+        sizeof(line),
+        _TRUNCATE,
+        "[weaponlog] type=dummy_reposition ts=%s map=%s dummy=\"%s\" entindex=%d dummy_class=%s dummy_model=\"%s\" reason=\"%s\" health=%.1f armor=%.1f head_protected=%d anchor=\"%s\" anchor_entindex=%d anchor_userid=%d origin=\"%s\" yaw=%.1f profile=\"%s\" target_profile=\"%s\"",
+        timestamp,
+        SanitizeLogValue(GetSafeMapName()).c_str(),
+        GetSafeEntityName(pDummy).c_str(),
+        GetEntityIndex(pDummy),
+        GetSafeEntityClassname(pDummy).c_str(),
+        GetSafeEntityModel(pDummy).c_str(),
+        SanitizeLogValue(reason).c_str(),
+        pDummy != NULL && pDummy->pev != NULL ? pDummy->pev->health : ExpGlockLabDummyHealth(),
+        pDummy != NULL && pDummy->pev != NULL ? pDummy->pev->armorvalue : ExpGlockLabDummyArmor(),
+        ExpGlockLabDummyHeadProtected() ? 1 : 0,
+        GetSafePlayerName(pAnchorPlayer).c_str(),
+        GetPlayerEntityIndex(pAnchorPlayer),
+        GetPlayerUserId(pAnchorPlayer),
+        originValue,
+        angles.y,
+        SanitizeLogValue(GetSessionProfileName()).c_str(),
+        SanitizeLogValue(ExpGlockLabTargetProfileName()).c_str());
+
+    std::string telemetryLine = line;
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "weapon_under_test", ExpWeaponUnderTest());
+    WriteTelemetryLine(telemetryLine.c_str());
+}
+
 void LogGlockLabDummyClear(CBaseEntity *pDummy, const char *reason)
 {
     if (!ExpDebugWeaponLogEnabled())
@@ -912,14 +960,16 @@ void LogGlockLabDummyClear(CBaseEntity *pDummy, const char *reason)
     EnsureWeaponDebugLogOpen();
 
     char timestamp[64];
+    char originValue[64];
     char line[1536];
     FormatTimestamp(timestamp, sizeof(timestamp));
+    FormatVector3(originValue, sizeof(originValue), pDummy != NULL && pDummy->pev != NULL ? pDummy->pev->origin : g_vecZero);
 
     _snprintf_s(
         line,
         sizeof(line),
         _TRUNCATE,
-        "[weaponlog] type=dummy_clear ts=%s map=%s dummy=\"%s\" entindex=%d dummy_class=%s dummy_model=\"%s\" reason=\"%s\" profile=\"%s\" target_profile=\"%s\"",
+        "[weaponlog] type=dummy_clear ts=%s map=%s dummy=\"%s\" entindex=%d dummy_class=%s dummy_model=\"%s\" reason=\"%s\" health=%.1f armor=%.1f head_protected=%d origin=\"%s\" yaw=%.1f profile=\"%s\" target_profile=\"%s\"",
         timestamp,
         SanitizeLogValue(GetSafeMapName()).c_str(),
         GetSafeEntityName(pDummy).c_str(),
@@ -927,6 +977,11 @@ void LogGlockLabDummyClear(CBaseEntity *pDummy, const char *reason)
         GetSafeEntityClassname(pDummy).c_str(),
         GetSafeEntityModel(pDummy).c_str(),
         SanitizeLogValue(reason).c_str(),
+        pDummy != NULL && pDummy->pev != NULL ? pDummy->pev->health : 0.0f,
+        pDummy != NULL && pDummy->pev != NULL ? pDummy->pev->armorvalue : 0.0f,
+        ExpGlockLabDummyHeadProtected() ? 1 : 0,
+        originValue,
+        pDummy != NULL && pDummy->pev != NULL ? pDummy->pev->angles.y : 0.0f,
         SanitizeLogValue(GetSessionProfileName()).c_str(),
         SanitizeLogValue(ExpGlockLabTargetProfileName()).c_str());
 

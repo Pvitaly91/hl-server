@@ -11,6 +11,7 @@ set "DEFAULT_ARGS=-Detached"
 
 if /I "%MODE%"=="play-glock" goto mode_play_glock
 if /I "%MODE%"=="play-mp5" goto mode_play_mp5
+if /I "%MODE%"=="play-target" goto mode_play_target
 if /I "%MODE%"=="play-direct" goto mode_play_direct
 if /I "%MODE%"=="play-glock-clientmatched" goto mode_play_glock_clientmatched
 if /I "%MODE%"=="play-mp5-clientmatched" goto mode_play_mp5_clientmatched
@@ -50,6 +51,13 @@ goto collect_args
 
 :mode_play_mp5
 set "TARGET_BAT=%SCRIPT_DIR%play-mp5-live.bat"
+set "TARGET_SCRIPT="
+set "DEFAULT_ARGS="
+shift
+goto collect_args
+
+:mode_play_target
+set "TARGET_BAT=%SCRIPT_DIR%play-target-test-live.bat"
 set "TARGET_SCRIPT="
 set "DEFAULT_ARGS="
 shift

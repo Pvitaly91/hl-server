@@ -94,6 +94,7 @@ Use the new aliases from the existing BAT dispatcher:
 ```bat
 scripts\run-testbed.bat play-glock
 scripts\run-testbed.bat play-mp5
+scripts\run-testbed.bat play-target
 scripts\run-testbed.bat play-glock-clientmatched
 scripts\run-testbed.bat play-mp5-clientmatched
 scripts\run-testbed.bat play-menu
@@ -103,6 +104,7 @@ Defaults:
 
 - `scripts\play-glock-live.bat` launches the Glock lab with preset `cs_tight` and target profile `vest_headprotected`.
 - `scripts\play-mp5-live.bat` launches the MP5 lab with preset `cs_burst` and target profile `vest`.
+- `scripts\play-target-test-live.bat` launches the same direct `hlserver_testbed` live path in Glock mode and prints the target-control command reminder before the session hand-off.
 - You can override the defaults, for example:
 
 ```bat
@@ -135,6 +137,65 @@ If the fix is working, the live launcher and the doctor will show:
 - the client connects without `Your map [maps/crossfire.bsp] differs from the server's.`
 
 If `hl.exe` is not found, the live BAT wrappers stop before the session hand-off and print the remediation path. Set `HL_EXE` in `.env` or pass `-HlExe D:\Steam\steamapps\common\Half-Life\hl.exe`.
+
+## Live target dummy commands
+
+The live target is a server-side standing dummy named `Damage Dummy`. It uses a stock human model and stock assets, stays compatible with the standard Steam Half-Life client, and is not a real networked player or bot.
+
+Quick launch:
+
+```bat
+scripts\play-target-test-live.bat
+scripts\run-testbed.bat play-target
+```
+
+Useful server console commands:
+
+```text
+exp_target_spawn
+exp_target_clear
+exp_target_respawn
+exp_target_status
+exp_target_tp_front
+exp_target_profile unarmored
+exp_target_profile vest
+exp_target_profile vest_headprotected
+```
+
+What the commands do:
+
+- `exp_target_spawn` enables the target and spawns it now if a live player anchor or saved target position is available.
+- `exp_target_clear` removes the current target and disables automatic target spawning until you enable it again.
+- `exp_target_respawn` recreates the target immediately, preferring the current player-facing position when a live anchor exists.
+- `exp_target_status` prints the current target state, profile, placement settings, saved target spot, and active anchor to the server console.
+- `exp_target_tp_front` moves the current target, or spawns a fresh one, into a predictable position in front of the live player.
+- `exp_target_profile <name>` switches the built-in live profile and refreshes the target immediately when practical.
+
+Built-in live profiles:
+
+- `unarmored`
+  Baseline unarmored target.
+- `vest`
+  Armored torso target.
+- `vest_headprotected`
+  Armored target with protected head enabled.
+
+Practical live flow:
+
+1. Launch `scripts\play-target-test-live.bat`.
+2. Join the live session on `-game hlserver_testbed`.
+3. Run `exp_target_status` once to confirm the anchor, current profile, and saved target spot.
+4. Use `exp_target_tp_front` if you want the standing target reset directly in front of you.
+5. Use `exp_target_profile unarmored`, `vest`, or `vest_headprotected` before comparing body shots, headshots, and protected-head behavior.
+6. Use `exp_target_respawn` after a kill when you want a clean full-health target immediately.
+
+After the session, analyze the latest telemetry:
+
+```powershell
+.\scripts\analyze-weapon-log.ps1 -Latest
+```
+
+The analyzer now summarizes target lifecycle counts for spawn, clear, respawn, reposition, hit, kill, headshot hit, and headshot kill evidence alongside the existing Glock and MP5 telemetry.
 
 ## Runtime doctor
 

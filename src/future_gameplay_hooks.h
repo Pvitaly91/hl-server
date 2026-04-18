@@ -45,6 +45,7 @@ bool ExpMP5LabLoadoutEnabled();
 float ExpMP5LabAmmo();
 bool ExpMP5LabAutoswitch();
 bool ExpGlockLabDummyEnabled();
+const char *ExpGlockLabDummyDisplayName();
 const char *ExpGlockLabTargetProfileName();
 float ExpGlockLabDummyHealth();
 float ExpGlockLabDummyArmor();

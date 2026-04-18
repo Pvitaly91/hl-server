@@ -52,6 +52,7 @@ void LogAcceptedGlockPrimaryShot(CBasePlayer *pPlayer, const GlockAcceptedShotTe
 void LogAcceptedMp5PrimaryShot(CBasePlayer *pPlayer, const Mp5AcceptedShotTelemetry &telemetry);
 void LogRejectedGlockPrimaryHold(CBasePlayer *pPlayer, const GlockRejectedShotTelemetry &telemetry);
 void LogGlockLabDummySpawn(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, bool respawn, const Vector &origin, const Vector &angles);
+void LogGlockLabDummyReposition(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, const Vector &origin, const Vector &angles, const char *reason);
 void LogGlockLabDummyClear(CBaseEntity *pDummy, const char *reason);
 void BeginGlockPrimaryShotContext(CBasePlayer *pPlayer);
 void BeginMp5PrimaryShotContext(CBasePlayer *pPlayer);
