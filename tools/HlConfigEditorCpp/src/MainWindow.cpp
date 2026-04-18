@@ -2,6 +2,7 @@
 
 #include <commctrl.h>
 #include <commdlg.h>
+#include <cwctype>
 #include <filesystem>
 #include <fstream>
 #include <cstring>
@@ -103,9 +104,11 @@ enum ControlId : int {
     IDC_DUMMY_PRESET_VEST,
     IDC_DUMMY_PRESET_VEST_HEADPROTECTED,
 
-    IDC_EXPORT_FOLDER = 1400,
+    IDC_LIVE_MOD_FOLDER_PREVIEW = 1400,
+    IDC_EXPORT_FOLDER,
     IDC_BROWSE_EXPORT_FOLDER,
     IDC_EXPORT_FILE_NAME,
+    IDC_QUICK_EXPORT_LIVE_MOD,
     IDC_EXPORT_CFG,
     IDC_COPY_EXEC_COMMAND,
     IDC_COPY_LAUNCHER_COMMAND,
@@ -321,6 +324,74 @@ std::wstring FileNameFromPath(const std::wstring& path) {
     return path.empty() ? std::wstring() : std::filesystem::path(path).filename().wstring();
 }
 
+bool IsAsciiAlphaNumeric(wchar_t value) {
+    return (value >= L'0' && value <= L'9') ||
+           (value >= L'A' && value <= L'Z') ||
+           (value >= L'a' && value <= L'z');
+}
+
+std::wstring BuildSafeCfgStem(const std::wstring& value) {
+    std::wstring stem;
+    stem.reserve(value.size());
+
+    bool previousWasSeparator = false;
+    for (const wchar_t ch : value) {
+        if (IsAsciiAlphaNumeric(ch)) {
+            stem.push_back(static_cast<wchar_t>(std::towlower(ch)));
+            previousWasSeparator = false;
+            continue;
+        }
+
+        if (stem.empty() || previousWasSeparator) {
+            continue;
+        }
+
+        stem.push_back(L'_');
+        previousWasSeparator = true;
+    }
+
+    while (!stem.empty() && stem.back() == L'_') {
+        stem.pop_back();
+    }
+
+    return stem;
+}
+
+std::wstring BuildSuggestedCfgFileName(const hlcfg::ProjectDocument& document) {
+    const hlcfg::ProjectDocument defaults = hlcfg::CreateDefaultProject();
+    const std::wstring weaponUnderTest = hlcfg::Trimmed(document.general.weaponUnderTest);
+
+    std::wstring candidate = hlcfg::Trimmed(document.metadata.projectName);
+    if (candidate.empty() || candidate == defaults.metadata.projectName) {
+        if (weaponUnderTest == L"glock") {
+            const std::wstring profileName = hlcfg::Trimmed(document.glock.profileName);
+            if (!profileName.empty() && profileName != defaults.glock.profileName) {
+                candidate = profileName;
+            }
+        } else if (weaponUnderTest == L"mp5") {
+            const std::wstring profileName = hlcfg::Trimmed(document.mp5.profileName);
+            if (!profileName.empty() && profileName != defaults.mp5.profileName) {
+                candidate = profileName;
+            }
+        }
+    }
+
+    if (candidate.empty()) {
+        candidate = hlcfg::Trimmed(document.general.sessionTag);
+    }
+
+    if (candidate.empty()) {
+        candidate = weaponUnderTest.empty() ? L"weapon_config" : (weaponUnderTest + L"_config");
+    }
+
+    std::wstring safeStem = BuildSafeCfgStem(candidate);
+    if (safeStem.empty()) {
+        safeStem = L"weapon_config";
+    }
+
+    return hlcfg::EnsureCfgFileName(safeStem);
+}
+
 class EditorWindow {
 public:
     EditorWindow(HINSTANCE instance, const std::wstring& moduleFilePath)
@@ -493,6 +564,9 @@ private:
         case IDC_BROWSE_EXPORT_FOLDER:
             BrowseExportFolder();
             return 0;
+        case IDC_QUICK_EXPORT_LIVE_MOD:
+            QuickExportToLiveMod();
+            return 0;
         case IDC_EXPORT_CFG:
             ExportCfg();
             return 0;
@@ -523,7 +597,9 @@ private:
         }
 
         if (notifyCode == EN_CHANGE || notifyCode == BN_CLICKED || notifyCode == CBN_SELCHANGE) {
-            if (controlId != IDC_EXEC_PREVIEW && controlId != IDC_CFG_PREVIEW) {
+            if (controlId != IDC_LIVE_MOD_FOLDER_PREVIEW && controlId != IDC_LAUNCHER_PREVIEW &&
+                controlId != IDC_EXEC_PREVIEW && controlId != IDC_CFG_PREVIEW) {
+                MaybeRefreshSuggestedCfgFileName(controlId);
                 dirty_ = true;
                 UpdateWindowTitle();
                 if (controlId == IDC_EXPORT_FOLDER || controlId == IDC_EXPORT_FILE_NAME || TabCtrl_GetCurSel(tab_) == 4) {
@@ -604,7 +680,7 @@ private:
         CreateCheckBox(page, L"Include rejection reasons", IDC_DEBUG_WEAPON_LOG_REJECTIONS, 560, 235, 220, 20);
 
         CreateGroupBox(page, L"How this editor works", 20, 220, 500, 120);
-        CreateLabel(page, L"Save .hlcfg.json files for editing. Export .cfg files for HLDS and load them manually with exec.", 40, 255, 450, 40);
+        CreateLabel(page, L"Save .hlcfg.json files for editing. Quick Export writes a live-mod .cfg that HLDS can load with exec my_config.cfg.", 40, 255, 450, 40);
     }
 
     void CreateGlockPage() {
@@ -731,29 +807,33 @@ private:
 
     void CreateExportPage() {
         HWND page = pages_[4];
-        CreateGroupBox(page, L"Destination", 20, 20, 1040, 120);
-        CreateLabel(page, L"Export folder", 40, 55, 120, 20);
-        CreateEdit(page, IDC_EXPORT_FOLDER, 160, 50, 720, 24);
-        CreateButton(page, L"Browse...", IDC_BROWSE_EXPORT_FOLDER, 900, 50, 110, 24);
-        CreateLabel(page, L"CFG file name", 40, 95, 120, 20);
-        CreateEdit(page, IDC_EXPORT_FILE_NAME, 160, 90, 250, 24);
+        CreateGroupBox(page, L"Simple Default", 20, 20, 1040, 155);
+        CreateLabel(page, L"Live mod root", 40, 55, 120, 20);
+        CreateEdit(page, IDC_LIVE_MOD_FOLDER_PREVIEW, 160, 50, 850, 24, ES_READONLY);
+        CreateLabel(page, L"Custom folder", 40, 90, 120, 20);
+        CreateEdit(page, IDC_EXPORT_FOLDER, 160, 85, 720, 24);
+        CreateButton(page, L"Browse...", IDC_BROWSE_EXPORT_FOLDER, 900, 85, 110, 24);
+        CreateLabel(page, L"CFG file name", 40, 125, 120, 20);
+        CreateEdit(page, IDC_EXPORT_FILE_NAME, 160, 120, 250, 24);
+        CreateLabel(page, L"Quick Export writes <live mod root>\\<name>.cfg so HLDS can run exec <name>.cfg.", 430, 123, 560, 24);
 
-        CreateGroupBox(page, L"Actions", 20, 160, 1040, 85);
-        CreateButton(page, L"Export CFG", IDC_EXPORT_CFG, 40, 190, 130, 24);
-        CreateButton(page, L"Copy exec", IDC_COPY_EXEC_COMMAND, 185, 190, 130, 24);
-        CreateButton(page, L"Copy launcher", IDC_COPY_LAUNCHER_COMMAND, 330, 190, 130, 24);
-        CreateButton(page, L"Copy raw cfg", IDC_COPY_RAW_CFG, 475, 190, 130, 24);
-        CreateButton(page, L"Open export folder", IDC_OPEN_EXPORT_FOLDER, 620, 190, 150, 24);
-        CreateButton(page, L"Open live mod", IDC_OPEN_LIVE_MOD_FOLDER, 785, 190, 130, 24);
-        CreateButton(page, L"Open logs", IDC_OPEN_LOGS_FOLDER, 930, 190, 80, 24);
+        CreateGroupBox(page, L"Actions", 20, 195, 1040, 120);
+        CreateButton(page, L"Quick Export to Live Mod", IDC_QUICK_EXPORT_LIVE_MOD, 40, 225, 210, 24);
+        CreateButton(page, L"Copy exec command", IDC_COPY_EXEC_COMMAND, 265, 225, 160, 24);
+        CreateButton(page, L"Export to chosen folder", IDC_EXPORT_CFG, 440, 225, 185, 24);
+        CreateButton(page, L"Copy launcher", IDC_COPY_LAUNCHER_COMMAND, 640, 225, 135, 24);
+        CreateButton(page, L"Open live mod", IDC_OPEN_LIVE_MOD_FOLDER, 790, 225, 120, 24);
+        CreateButton(page, L"Open export folder", IDC_OPEN_EXPORT_FOLDER, 40, 260, 160, 24);
+        CreateButton(page, L"Copy raw cfg", IDC_COPY_RAW_CFG, 215, 260, 135, 24);
+        CreateButton(page, L"Open logs", IDC_OPEN_LOGS_FOLDER, 365, 260, 110, 24);
 
-        CreateGroupBox(page, L"Preview", 20, 265, 1040, 380);
-        CreateLabel(page, L"Launcher command", 40, 300, 120, 20);
-        CreateEdit(page, IDC_LAUNCHER_PREVIEW, 160, 295, 850, 24, ES_READONLY);
-        CreateLabel(page, L"Exec command", 40, 335, 120, 20);
-        CreateEdit(page, IDC_EXEC_PREVIEW, 160, 330, 850, 24, ES_READONLY);
-        CreateLabel(page, L"Generated cfg", 40, 370, 120, 20);
-        CreateMultiLineEdit(page, IDC_CFG_PREVIEW, 160, 365, 850, 245, true);
+        CreateGroupBox(page, L"Preview", 20, 330, 1040, 315);
+        CreateLabel(page, L"Launcher command", 40, 365, 120, 20);
+        CreateEdit(page, IDC_LAUNCHER_PREVIEW, 160, 360, 850, 24, ES_READONLY);
+        CreateLabel(page, L"Exec command", 40, 400, 120, 20);
+        CreateEdit(page, IDC_EXEC_PREVIEW, 160, 395, 850, 24, ES_READONLY);
+        CreateLabel(page, L"Generated cfg", 40, 435, 120, 20);
+        CreateMultiLineEdit(page, IDC_CFG_PREVIEW, 160, 430, 850, 185, true);
     }
 
     void LayoutPages(int clientWidth, int clientHeight) {
@@ -785,7 +865,106 @@ private:
     void ResetToNewDocument() {
         document_ = hlcfg::CreateDefaultProject();
         document_.exportSettings.exportFolder = environment_.defaultExportFolder;
+        document_.exportSettings.cfgFileName = BuildSuggestedCfgFileName(document_);
         dirty_ = false;
+    }
+
+    void MaybeRefreshSuggestedCfgFileName(int controlId) {
+        if (controlId != IDC_PROJECT_NAME &&
+            controlId != IDC_SESSION_TAG &&
+            controlId != IDC_WEAPON_UNDER_TEST &&
+            controlId != IDC_GLOCK_PROFILE_NAME &&
+            controlId != IDC_MP5_PROFILE_NAME) {
+            return;
+        }
+
+        const std::wstring currentFileName = hlcfg::EnsureCfgFileName(GetTextValue(IDC_EXPORT_FILE_NAME));
+        if (!currentFileName.empty() &&
+            currentFileName != hlcfg::CreateDefaultProject().exportSettings.cfgFileName &&
+            currentFileName != lastSuggestedCfgFileName_) {
+            return;
+        }
+
+        hlcfg::ProjectDocument previewDocument = document_;
+        previewDocument.metadata.projectName = GetTextValue(IDC_PROJECT_NAME);
+        previewDocument.general.sessionTag = GetTextValue(IDC_SESSION_TAG);
+        previewDocument.general.weaponUnderTest = GetWeaponSelection();
+        previewDocument.glock.profileName = GetTextValue(IDC_GLOCK_PROFILE_NAME);
+        previewDocument.mp5.profileName = GetTextValue(IDC_MP5_PROFILE_NAME);
+
+        const std::wstring suggestedFileName = BuildSuggestedCfgFileName(previewDocument);
+        lastSuggestedCfgFileName_ = suggestedFileName;
+
+        loadingControls_ = true;
+        SetTextValue(IDC_EXPORT_FILE_NAME, suggestedFileName);
+        loadingControls_ = false;
+    }
+
+    void PrepareDocumentForExport(hlcfg::ProjectDocument& exportDocument, const std::wstring* forcedExportFolder) {
+        SyncDocumentFromControls();
+        exportDocument = document_;
+
+        if (forcedExportFolder != nullptr) {
+            exportDocument.exportSettings.exportFolder = *forcedExportFolder;
+        }
+
+        const std::wstring normalizedFileName = hlcfg::EnsureCfgFileName(exportDocument.exportSettings.cfgFileName);
+        if (hlcfg::Trimmed(exportDocument.exportSettings.cfgFileName).empty() ||
+            normalizedFileName == hlcfg::CreateDefaultProject().exportSettings.cfgFileName ||
+            normalizedFileName == lastSuggestedCfgFileName_) {
+            exportDocument.exportSettings.cfgFileName = BuildSuggestedCfgFileName(exportDocument);
+        } else {
+            exportDocument.exportSettings.cfgFileName = normalizedFileName;
+        }
+    }
+
+    bool ConfirmOverwrite(const std::wstring& exportPath, const wchar_t* actionLabel) const {
+        std::error_code error;
+        if (!std::filesystem::exists(exportPath, error) || error) {
+            return true;
+        }
+
+        std::wstring message = std::wstring(actionLabel) + L" will overwrite:\n" + exportPath + L"\n\nContinue?";
+        return MessageBoxW(hwnd_, message.c_str(), kWindowTitle, MB_ICONWARNING | MB_YESNO) == IDYES;
+    }
+
+    void RunExportWorkflow(const std::wstring* forcedExportFolder, bool quickExport) {
+        hlcfg::ProjectDocument exportDocument;
+        PrepareDocumentForExport(exportDocument, forcedExportFolder);
+
+        hlcfg::ExportResult preview;
+        std::wstring errorMessage;
+        if (!hlcfg::BuildExportResult(exportDocument, environment_, preview, errorMessage)) {
+            RefreshExportPreview(true);
+            MessageBoxW(hwnd_, errorMessage.c_str(), kWindowTitle, MB_ICONERROR | MB_OK);
+            return;
+        }
+
+        const wchar_t* actionLabel = quickExport ? L"Quick Export to Live Mod" : L"Export to chosen folder";
+        if (!ConfirmOverwrite(preview.exportPath, actionLabel)) {
+            return;
+        }
+
+        hlcfg::ExportResult result;
+        if (!hlcfg::ExportCfgToFile(exportDocument, environment_, result, errorMessage)) {
+            RefreshExportPreview(true);
+            MessageBoxW(hwnd_, errorMessage.c_str(), kWindowTitle, MB_ICONERROR | MB_OK);
+            return;
+        }
+
+        document_ = std::move(exportDocument);
+        document_.exportSettings.exportFolder = std::filesystem::path(result.exportPath).parent_path().wstring();
+        document_.exportSettings.cfgFileName = std::filesystem::path(result.exportPath).filename().wstring();
+        LoadDocumentToControls();
+        dirty_ = true;
+        UpdateWindowTitle();
+
+        std::wstring successMessage = (quickExport ? L"Quick-exported cfg to:\n" : L"Exported cfg to:\n") + result.exportPath +
+                                      L"\n\nLoad it in HLDS with:\n" + result.execCommand;
+        if (!result.launcherCommand.empty()) {
+            successMessage += L"\n\nLaunch it directly with:\n" + result.launcherCommand;
+        }
+        MessageBoxW(hwnd_, successMessage.c_str(), kWindowTitle, MB_ICONINFORMATION | MB_OK);
     }
 
     HWND FindControl(int controlId) const {
@@ -861,6 +1040,7 @@ private:
 
     void LoadDocumentToControls() {
         loadingControls_ = true;
+        lastSuggestedCfgFileName_ = BuildSuggestedCfgFileName(document_);
 
         SetTextValue(IDC_PROJECT_NAME, document_.metadata.projectName);
         SetTextValue(IDC_PROJECT_AUTHOR, document_.metadata.author);
@@ -919,6 +1099,7 @@ private:
         Button_SetCheck(FindControl(IDC_DUMMY_FACE_PLAYER), document_.targetDummy.facePlayer ? BST_CHECKED : BST_UNCHECKED);
         SetTextValue(IDC_DUMMY_MODEL, document_.targetDummy.model);
 
+        SetTextValue(IDC_LIVE_MOD_FOLDER_PREVIEW, GetLiveModFolder());
         SetTextValue(IDC_EXPORT_FOLDER, document_.exportSettings.exportFolder);
         SetTextValue(IDC_EXPORT_FILE_NAME, document_.exportSettings.cfgFileName);
 
@@ -1060,6 +1241,10 @@ private:
         if (document_.exportSettings.exportFolder.empty()) {
             document_.exportSettings.exportFolder = environment_.defaultExportFolder;
         }
+        if (document_.exportSettings.cfgFileName.empty() ||
+            hlcfg::EnsureCfgFileName(document_.exportSettings.cfgFileName) == hlcfg::CreateDefaultProject().exportSettings.cfgFileName) {
+            document_.exportSettings.cfgFileName = BuildSuggestedCfgFileName(document_);
+        }
 
         currentProjectPath_ = path;
         dirty_ = false;
@@ -1083,6 +1268,7 @@ private:
         SyncDocumentFromControls();
         std::wstring errorMessage;
         if (!hlcfg::BuildExportResult(document_, environment_, result, errorMessage)) {
+            SetTextValue(IDC_LAUNCHER_PREVIEW, L"");
             SetTextValue(IDC_EXEC_PREVIEW, L"");
             SetTextValue(IDC_CFG_PREVIEW, errorMessage);
             if (!silentErrors) {
@@ -1103,28 +1289,22 @@ private:
         }
     }
 
-    void ExportCfg() {
-        SyncDocumentFromControls();
-
-        hlcfg::ExportResult result;
-        std::wstring errorMessage;
-        if (!hlcfg::ExportCfgToFile(document_, environment_, result, errorMessage)) {
-            RefreshExportPreview(true);
-            MessageBoxW(hwnd_, errorMessage.c_str(), kWindowTitle, MB_ICONERROR | MB_OK);
+    void QuickExportToLiveMod() {
+        const std::wstring liveModFolder = GetLiveModFolder();
+        if (liveModFolder.empty()) {
+            MessageBoxW(
+                hwnd_,
+                L"The live mod folder could not be resolved. Set HL_EXE or HLDS_EXE, or use Export to chosen folder for advanced mode.",
+                kWindowTitle,
+                MB_ICONWARNING | MB_OK);
             return;
         }
 
-        document_.exportSettings.exportFolder = std::filesystem::path(result.exportPath).parent_path().wstring();
-        document_.exportSettings.cfgFileName = std::filesystem::path(result.exportPath).filename().wstring();
-        LoadDocumentToControls();
-        dirty_ = true;
-        UpdateWindowTitle();
+        RunExportWorkflow(&liveModFolder, true);
+    }
 
-        std::wstring successMessage = L"Exported cfg to:\n" + result.exportPath + L"\n\nLoad it in HLDS with:\n" + result.execCommand;
-        if (!result.launcherCommand.empty()) {
-            successMessage += L"\n\nLaunch it directly with:\n" + result.launcherCommand;
-        }
-        MessageBoxW(hwnd_, successMessage.c_str(), kWindowTitle, MB_ICONINFORMATION | MB_OK);
+    void ExportCfg() {
+        RunExportWorkflow(nullptr, false);
     }
 
     void CopyExecCommand() {
@@ -1198,6 +1378,7 @@ private:
     HWND pages_[kPageCount]{};
     hlcfg::ProjectDocument document_;
     std::wstring currentProjectPath_;
+    std::wstring lastSuggestedCfgFileName_;
     bool dirty_ = false;
     bool loadingControls_ = false;
 };
@@ -1231,18 +1412,22 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
         return 1;
     }
 
+    const std::filesystem::path exportRoot = environment.liveModRoot.empty()
+                                                 ? (root / L"hlserver_testbed")
+                                                 : std::filesystem::path(environment.liveModRoot);
+
     hlcfg::ProjectDocument glock = hlcfg::CreateDefaultProject();
     glock.metadata.projectName = L"SelfTest Glock";
     glock.general.sessionTag = L"editor_cfg_test";
     glock.general.debugWeaponLog = true;
     glock.general.debugWeaponLogRejections = true;
-    glock.exportSettings.exportFolder = (root / L"hlserver_testbed" / L"cfg_profiles").wstring();
-    glock.exportSettings.cfgFileName = L"editor_glock_test.cfg";
+    glock.exportSettings.exportFolder = exportRoot.wstring();
+    glock.exportSettings.cfgFileName = L"editor_glock_simple.cfg";
     hlcfg::ApplyGlockPreset(glock, L"cs_tight");
-    glock.glock.profileName = L"editor_glock_test";
+    glock.glock.profileName = L"editor_glock_simple";
     hlcfg::ApplyDummyPreset(glock, L"vest_headprotected");
 
-    const std::filesystem::path glockProjectPath = root / L"editor_glock_test.hlcfg.json";
+    const std::filesystem::path glockProjectPath = root / L"editor_glock_simple.hlcfg.json";
     std::wstring errorMessage;
     if (!hlcfg::SaveProjectDocumentToFile(glock, glockProjectPath.wstring(), errorMessage)) {
         return 1;
@@ -1260,24 +1445,24 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
 
     if (!ValidateContains(glockExport.cfgText, L"sv_exp_weapon_under_test \"glock\"") ||
         !ValidateContains(glockExport.cfgText, L"sv_exp_session_tag \"editor_cfg_test\"") ||
-        !ValidateContains(glockExport.cfgText, L"sv_exp_glock_profile_name \"editor_glock_test\"") ||
+        !ValidateContains(glockExport.cfgText, L"sv_exp_glock_profile_name \"editor_glock_simple\"") ||
         !ValidateContains(glockExport.cfgText, L"sv_exp_glock_primary_headshot_lethal 1") ||
         !ValidateContains(glockExport.cfgText, L"sv_exp_glock_lab_target_profile_name \"vest_headprotected\"") ||
-        glockExport.execCommand != L"exec cfg_profiles/editor_glock_test.cfg" ||
-        glockExport.launcherCommand != L"scripts\\play-hlserver-testbed-direct.bat -CfgProfile \"cfg_profiles\\editor_glock_test.cfg\"") {
+        glockExport.execCommand != L"exec editor_glock_simple.cfg" ||
+        glockExport.launcherCommand != L"scripts\\play-hlserver-testbed-direct.bat -CfgProfile \"editor_glock_simple.cfg\"") {
         return 1;
     }
 
     hlcfg::ProjectDocument mp5 = hlcfg::CreateDefaultProject();
     mp5.metadata.projectName = L"SelfTest MP5";
     mp5.general.sessionTag = L"editor_cfg_test";
-    mp5.exportSettings.exportFolder = (root / L"hlserver_testbed" / L"cfg_profiles").wstring();
-    mp5.exportSettings.cfgFileName = L"editor_mp5_test.cfg";
+    mp5.exportSettings.exportFolder = exportRoot.wstring();
+    mp5.exportSettings.cfgFileName = L"editor_mp5_simple.cfg";
     hlcfg::ApplyMp5Preset(mp5, L"cs_burst");
-    mp5.mp5.profileName = L"editor_mp5_test";
+    mp5.mp5.profileName = L"editor_mp5_simple";
     hlcfg::ApplyDummyPreset(mp5, L"vest");
 
-    const std::filesystem::path mp5ProjectPath = root / L"editor_mp5_test.hlcfg.json";
+    const std::filesystem::path mp5ProjectPath = root / L"editor_mp5_simple.hlcfg.json";
     if (!hlcfg::SaveProjectDocumentToFile(mp5, mp5ProjectPath.wstring(), errorMessage)) {
         return 1;
     }
@@ -1295,11 +1480,11 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
     if (!ValidateContains(mp5Export.cfgText, L"sv_exp_weapon_under_test \"mp5\"") ||
         !ValidateContains(mp5Export.cfgText, L"sv_exp_session_tag \"editor_cfg_test\"") ||
         !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_primary_enabled 1") ||
-        !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_profile_name \"editor_mp5_test\"") ||
+        !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_profile_name \"editor_mp5_simple\"") ||
         !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_lab_loadout 1") ||
         !ValidateContains(mp5Export.cfgText, L"sv_exp_glock_lab_target_profile_name \"vest\"") ||
-        mp5Export.execCommand != L"exec cfg_profiles/editor_mp5_test.cfg" ||
-        mp5Export.launcherCommand != L"scripts\\play-hlserver-testbed-direct.bat -CfgProfile \"cfg_profiles\\editor_mp5_test.cfg\"") {
+        mp5Export.execCommand != L"exec editor_mp5_simple.cfg" ||
+        mp5Export.launcherCommand != L"scripts\\play-hlserver-testbed-direct.bat -CfgProfile \"editor_mp5_simple.cfg\"") {
         return 1;
     }
 

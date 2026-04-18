@@ -149,6 +149,7 @@ Write-Host "Direct hlserver_testbed launcher"
 Write-Host "  launch mode    : $(if ($cfgDrivenMode) { 'cfg-driven' } else { 'demo' })"
 if ($cfgDrivenMode) {
     Write-Host "  cfg requested  : $($cfgSelection.RequestedKind)=$($cfgSelection.RequestedValue)"
+    Write-Host "  cfg resolved   : $($cfgSelection.ResolvedPath)"
     Write-Host "  cfg profile    : $($cfgSelection.ExecProfile)"
     Write-Host "  cfg source     : $($cfgSelection.SourcePath)"
     Write-Host "  cfg active     : $($cfgSelection.ActivePath)"

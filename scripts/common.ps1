@@ -1317,14 +1317,33 @@ function Backup-TestbedLiveModCfgProfiles {
         [string]$ModRoot
     )
 
-    $sourcePath = Join-Path (Get-FullPath -Path $ModRoot) "cfg_profiles"
-    if (-not (Test-Path -LiteralPath $sourcePath)) {
+    $modRootPath = Get-FullPath -Path $ModRoot
+    $backupRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("hl-server-live-mod-backup-" + [System.Guid]::NewGuid().ToString("N"))
+    $preservedContent = $false
+
+    $sourcePath = Join-Path $modRootPath "cfg_profiles"
+    if (Test-Path -LiteralPath $sourcePath) {
+        Ensure-Directory -Path $backupRoot
+        Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $backupRoot "cfg_profiles") -Recurse -Force
+        $preservedContent = $true
+    }
+
+    foreach ($pattern in @("*.cfg", "*.hlcfg.json", "HlConfigEditorCpp.exe", "HlConfigEditorCpp.pdb")) {
+        $matchingFiles = Get-ChildItem -LiteralPath $modRootPath -Filter $pattern -File -Force -ErrorAction SilentlyContinue
+        foreach ($matchingFile in $matchingFiles) {
+            if (-not $preservedContent) {
+                Ensure-Directory -Path $backupRoot
+            }
+
+            Copy-Item -LiteralPath $matchingFile.FullName -Destination (Join-Path $backupRoot $matchingFile.Name) -Force
+            $preservedContent = $true
+        }
+    }
+
+    if (-not $preservedContent) {
         return $null
     }
 
-    $backupRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("hl-server-cfg-profiles-" + [System.Guid]::NewGuid().ToString("N"))
-    Ensure-Directory -Path $backupRoot
-    Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $backupRoot "cfg_profiles") -Recurse -Force
     return $backupRoot
 }
 
@@ -1339,13 +1358,19 @@ function Restore-TestbedLiveModCfgProfiles {
         return
     }
 
-    $sourcePath = Join-Path (Get-FullPath -Path $BackupRoot) "cfg_profiles"
-    if (-not (Test-Path -LiteralPath $sourcePath)) {
-        return
+    $resolvedBackupRoot = Get-FullPath -Path $BackupRoot
+    $destinationRoot = Get-FullPath -Path $ModRoot
+
+    $sourcePath = Join-Path $resolvedBackupRoot "cfg_profiles"
+    if (Test-Path -LiteralPath $sourcePath) {
+        $destinationPath = Join-Path $destinationRoot "cfg_profiles"
+        Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Recurse -Force
     }
 
-    $destinationPath = Join-Path (Get-FullPath -Path $ModRoot) "cfg_profiles"
-    Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Recurse -Force
+    $rootFiles = Get-ChildItem -LiteralPath $resolvedBackupRoot -File -Force -ErrorAction SilentlyContinue
+    foreach ($rootFile in $rootFiles) {
+        Copy-Item -LiteralPath $rootFile.FullName -Destination (Join-Path $destinationRoot $rootFile.Name) -Force
+    }
 }
 
 function Write-TestbedLiveModLibList {
@@ -3519,6 +3544,7 @@ function Resolve-HldsCfgLaunchSelection {
     $selection = [ordered]@{
         RequestedKind = if ($hasCfgPath) { "CfgPath" } else { "CfgProfile" }
         RequestedValue = if ($hasCfgPath) { $CfgPath } else { $CfgProfile }
+        ResolvedPath = $null
         SourcePath = $null
         ActivePath = $null
         ExecProfile = $null
@@ -3528,7 +3554,7 @@ function Resolve-HldsCfgLaunchSelection {
     if ($hasCfgProfile) {
         $relativeProfile = $CfgProfile.Trim().Trim('"').Trim()
         if ([System.IO.Path]::IsPathRooted($relativeProfile)) {
-            throw "-CfgProfile must be a mod-relative path such as cfg_profiles\my_test.cfg."
+            throw "-CfgProfile must be a mod-relative path or bare filename such as my_test.cfg or cfg_profiles\my_test.cfg."
         }
 
         $relativeProfile = $relativeProfile.TrimStart('\', '/')
@@ -3540,23 +3566,50 @@ function Resolve-HldsCfgLaunchSelection {
             throw "-CfgProfile must point to a .cfg file."
         }
 
-        $activePath = Join-Path $modRoot $relativeProfile
-        Assert-PathWithinRoot -Path $activePath -Root $modRoot -Description "Cfg profile path"
-
         $candidatePaths = New-Object System.Collections.Generic.List[string]
-        $candidatePaths.Add($activePath)
-        if (-not [string]::IsNullOrWhiteSpace($stageRoot)) {
-            $stagedPath = Join-Path $stageRoot $relativeProfile
-            if ($stagedPath -ne $activePath) {
-                $candidatePaths.Add($stagedPath)
+        $candidateProfiles = New-Object System.Collections.Generic.List[string]
+        $candidateProfiles.Add($relativeProfile)
+        if ($relativeProfile.IndexOf('\') -lt 0 -and $relativeProfile.IndexOf('/') -lt 0) {
+            $legacyProfile = Join-Path "cfg_profiles" $relativeProfile
+            if ($legacyProfile -ne $relativeProfile) {
+                $candidateProfiles.Add($legacyProfile)
             }
         }
 
-        $resolvedSource = $candidatePaths | Where-Object { Test-LeafPath -Path $_ } | Select-Object -First 1
+        $resolvedProfile = $null
+        $resolvedSource = $null
+        foreach ($candidateProfile in $candidateProfiles) {
+            $candidateActivePath = Join-Path $modRoot $candidateProfile
+            Assert-PathWithinRoot -Path $candidateActivePath -Root $modRoot -Description "Cfg profile path"
+            $candidatePaths.Add($candidateActivePath)
+            if (Test-LeafPath -Path $candidateActivePath) {
+                $resolvedProfile = $candidateProfile
+                $resolvedSource = $candidateActivePath
+                break
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($stageRoot)) {
+                $stagedPath = Join-Path $stageRoot $candidateProfile
+                Assert-PathWithinRoot -Path $stagedPath -Root $stageRoot -Description "Cfg profile stage path"
+                if ($stagedPath -ne $candidateActivePath) {
+                    $candidatePaths.Add($stagedPath)
+                }
+
+                if (Test-LeafPath -Path $stagedPath) {
+                    $resolvedProfile = $candidateProfile
+                    $resolvedSource = $stagedPath
+                    break
+                }
+            }
+        }
+
         if (-not $resolvedSource) {
             $candidateSummary = $candidatePaths -join ", "
             throw "Cfg profile '$relativeProfile' was not found. Checked: $candidateSummary"
         }
+
+        $activePath = Join-Path $modRoot $resolvedProfile
+        Assert-PathWithinRoot -Path $activePath -Root $modRoot -Description "Cfg profile path"
 
         if ((Get-FullPath -Path $resolvedSource) -ne (Get-FullPath -Path $activePath)) {
             Ensure-Directory -Path (Split-Path -Parent $activePath)
@@ -3564,9 +3617,10 @@ function Resolve-HldsCfgLaunchSelection {
             $selection.CopiedIntoLiveMod = $true
         }
 
+        $selection.ResolvedPath = Get-FullPath -Path $resolvedSource
         $selection.SourcePath = Get-FullPath -Path $resolvedSource
         $selection.ActivePath = Get-FullPath -Path $activePath
-        $selection.ExecProfile = ConvertTo-GoldSrcCfgProfilePath -RelativePath $relativeProfile
+        $selection.ExecProfile = ConvertTo-GoldSrcCfgProfilePath -RelativePath $resolvedProfile
         return [PSCustomObject]$selection
     }
 
@@ -3595,7 +3649,7 @@ function Resolve-HldsCfgLaunchSelection {
         $relativeProfile = Get-PathRelativeToRoot -Path $resolvedPath -Root $stageRoot -Description "Cfg path"
     }
     else {
-        $relativeProfile = Join-Path "cfg_profiles" ([System.IO.Path]::GetFileName($resolvedPath))
+        $relativeProfile = [System.IO.Path]::GetFileName($resolvedPath)
     }
 
     $activePath = Join-Path $modRoot $relativeProfile
@@ -3607,6 +3661,7 @@ function Resolve-HldsCfgLaunchSelection {
         $selection.CopiedIntoLiveMod = $true
     }
 
+    $selection.ResolvedPath = Get-FullPath -Path $resolvedPath
     $selection.SourcePath = Get-FullPath -Path $resolvedPath
     $selection.ActivePath = Get-FullPath -Path $activePath
     $selection.ExecProfile = ConvertTo-GoldSrcCfgProfilePath -RelativePath $relativeProfile

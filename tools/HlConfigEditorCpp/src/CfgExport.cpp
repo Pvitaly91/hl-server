@@ -413,8 +413,8 @@ std::wstring BuildExecCommand(const std::filesystem::path& cfgProfile, const std
     return L"exec " + exportPath.filename().generic_wstring();
 }
 
-std::wstring BuildLauncherCommand(const std::filesystem::path& cfgProfile, const EnvironmentPaths& environment) {
-    if (cfgProfile.empty() || environment.repoRoot.empty()) {
+std::wstring BuildLauncherCommand(const std::filesystem::path& cfgProfile) {
+    if (cfgProfile.empty()) {
         return {};
     }
 
@@ -599,9 +599,9 @@ EnvironmentPaths ResolveEnvironmentPaths(const std::wstring& moduleFilePath) {
     const std::wstring halfLifeRoot = DetectHalfLifeRoot(paths.repoRoot);
     if (!halfLifeRoot.empty()) {
         paths.liveModRoot = (std::filesystem::path(halfLifeRoot) / L"hlserver_testbed").wstring();
-        paths.defaultExportFolder = (std::filesystem::path(paths.liveModRoot) / L"cfg_profiles").wstring();
+        paths.defaultExportFolder = paths.liveModRoot;
     } else if (!paths.stagedLiveModRoot.empty()) {
-        paths.defaultExportFolder = (std::filesystem::path(paths.stagedLiveModRoot) / L"cfg_profiles").wstring();
+        paths.defaultExportFolder = paths.stagedLiveModRoot;
     }
 
     return paths;
@@ -637,7 +637,7 @@ bool BuildExportResult(const ProjectDocument& document, const EnvironmentPaths& 
     result.exportPath = exportPath.wstring();
     result.cfgProfile = cfgProfile.generic_wstring();
     result.execCommand = BuildExecCommand(cfgProfile, exportPath);
-    result.launcherCommand = BuildLauncherCommand(cfgProfile, environment);
+    result.launcherCommand = BuildLauncherCommand(cfgProfile);
     return true;
 }
 

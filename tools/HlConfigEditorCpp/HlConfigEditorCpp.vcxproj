@@ -96,5 +96,8 @@
     <ClCompile Include="src\Presets.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="DeployEditorToLiveMod" AfterTargets="Build">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)..\..\scripts\deploy-config-editor.ps1&quot; -BuiltExe &quot;$(TargetPath)&quot; -ProjectDir &quot;$(ProjectDir)&quot;" />
+  </Target>
   <ImportGroup Label="ExtensionTargets" />
 </Project>

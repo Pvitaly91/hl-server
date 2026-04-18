@@ -60,9 +60,10 @@ Exact repo paths:
 - project file: `<repo-root>\tools\HlConfigEditorCpp\HlConfigEditorCpp.vcxproj`
 - `Debug|Win32` executable: `<repo-root>\tools\HlConfigEditorCpp\bin\Debug\Win32\HlConfigEditorCpp.exe`
 - `Release|Win32` executable: `<repo-root>\tools\HlConfigEditorCpp\bin\Release\Win32\HlConfigEditorCpp.exe`
+- deployed live-mod executable: `<HalfLifeRoot>\hlserver_testbed\HlConfigEditorCpp.exe`
 - self-test summary: `<repo-root>\artifacts\HlConfigEditorCppSelfTest\selftest-summary.txt`
-- recommended live export folder: `<HalfLifeRoot>\hlserver_testbed\cfg_profiles\`
-- staged fallback export folder: `<repo-root>\testbed\mods\hlserver_testbed\cfg_profiles\`
+- default live export folder: `<HalfLifeRoot>\hlserver_testbed\`
+- staged fallback export folder: `<repo-root>\testbed\mods\hlserver_testbed\`
 
 The `.vcxproj` sets `OutDir` to `$(ProjectDir)bin\$(Configuration)\$(Platform)\`, so the executable paths above are the exact expected build outputs for the two available solution configurations.
 
@@ -71,15 +72,27 @@ Open and build it in Visual Studio 2022:
 1. Open `tools\HlConfigEditorCpp\HlConfigEditorCpp.sln` in Visual Studio 2022.
 2. If you prefer to open a single project instead of the solution, use `tools\HlConfigEditorCpp\HlConfigEditorCpp.vcxproj`.
 3. Select `Debug` or `Release` and `Win32` in the Visual Studio toolbar. Those are the only configurations defined by the solution.
-4. Build the solution, then run `HlConfigEditorCpp.exe` from Visual Studio or directly from `bin\Debug\Win32\` or `bin\Release\Win32\`.
+4. Build the solution. After a successful build, Visual Studio keeps the normal `bin\...\HlConfigEditorCpp.exe` output and also tries to copy the EXE into `<HalfLifeRoot>\hlserver_testbed\HlConfigEditorCpp.exe`.
+5. If the Half-Life root cannot be resolved from `HL_EXE`, `HLDS_EXE`, `.env`, or the common install paths, the build still succeeds and prints a warning instead of failing.
+
+Simplest workflow:
+
+1. Build `HlConfigEditorCpp` in Visual Studio 2022.
+2. Run the deployed EXE from `<HalfLifeRoot>\hlserver_testbed\HlConfigEditorCpp.exe`.
+3. Save the editable project as `.hlcfg.json`.
+4. On the `Export` tab, click `Quick Export to Live Mod`.
+5. The editor writes `<HalfLifeRoot>\hlserver_testbed\<project-or-config-name>.cfg`.
+6. Click `Copy exec command` and use the copied command in HLDS, for example `exec my_glock.cfg`.
 
 How to use the editor:
 
 1. Edit values on the `General`, `Glock`, `MP5`, and `Target Dummy` tabs.
 2. Use `File -> Save` or `File -> Save As` to store the editable project as `.hlcfg.json`.
-3. Open the `Export` tab, choose the export folder and cfg file name, then click `Export CFG`.
-4. Use `Copy exec` to copy the manual HLDS command such as `exec cfg_profiles/my_glock.cfg`.
-5. If the export path resolves inside the live mod, use `Copy launcher` to copy a cfg-driven live command such as `scripts\play-hlserver-testbed-direct.bat -CfgProfile "cfg_profiles\my_glock.cfg"`.
+3. Open the `Export` tab. The default filename follows the project or config name, for example `editor_glock_simple.cfg`.
+4. `Quick Export to Live Mod` is the primary action. It exports directly into `<HalfLifeRoot>\hlserver_testbed\` and prompts before overwriting an existing file.
+5. `Copy exec command` now defaults to `exec my_glock.cfg` when the cfg is exported to the live mod root.
+6. `Export to chosen folder` is still available for advanced/custom locations.
+7. `Copy launcher` still works for cfgs inside the live mod, including legacy `cfg_profiles\...` exports.
 
 JSON vs CFG:
 
@@ -88,15 +101,17 @@ JSON vs CFG:
 
 Export behavior:
 
-- When the editor can resolve the real Half-Life root from `HL_EXE` or `HLDS_EXE`, it defaults the export folder to `<HalfLifeRoot>\hlserver_testbed\cfg_profiles\`.
-- If the live root is not available, it falls back to `<repo-root>\testbed\mods\hlserver_testbed\cfg_profiles\`.
+- When the editor can resolve the real Half-Life root from `HL_EXE` or `HLDS_EXE`, it defaults the export folder to `<HalfLifeRoot>\hlserver_testbed\`.
+- If the live root is not available, it falls back to `<repo-root>\testbed\mods\hlserver_testbed\`.
+- If you choose a custom folder inside `<HalfLifeRoot>\hlserver_testbed\cfg_profiles\`, the legacy `cfg_profiles\...` launcher and `exec cfg_profiles/...` workflow remains supported.
 - The editor does not hot-apply changes to a running server. Export the `.cfg`, then load it manually in HLDS or start a cfg-driven live session with the launcher commands below.
 
 Built-in self-test:
 
 - Run `<repo-root>\tools\HlConfigEditorCpp\bin\Debug\Win32\HlConfigEditorCpp.exe --self-test`.
 - When the editor resolves the repository root, it writes the summary to `<repo-root>\artifacts\HlConfigEditorCppSelfTest\selftest-summary.txt`.
-- The self-test also writes example Glock and MP5 `.hlcfg.json` projects plus exported `.cfg` files under `<repo-root>\artifacts\HlConfigEditorCppSelfTest\hlserver_testbed\cfg_profiles\`.
+- When the live Half-Life root is available, the self-test writes example Glock and MP5 `.hlcfg.json` projects plus exported `.cfg` files such as `<HalfLifeRoot>\hlserver_testbed\editor_glock_simple.cfg` and `<HalfLifeRoot>\hlserver_testbed\editor_mp5_simple.cfg`.
+- If the live root is not available, the self-test falls back to `<repo-root>\testbed\mods\hlserver_testbed\`.
 
 For a step-by-step walkthrough with exact file paths, Glock and MP5 examples, and live launch commands, see [docs/cpp-config-editor.md](docs/cpp-config-editor.md).
 
@@ -104,7 +119,7 @@ For a step-by-step walkthrough with exact file paths, Glock and MP5 examples, an
 
 The live same-root launcher supports two config entry points:
 
-- `-CfgProfile <mod-relative-path>` for cfg files already under `<HalfLifeRoot>\hlserver_testbed\`, for example `cfg_profiles\my_glock.cfg`
+- `-CfgProfile <mod-relative-path-or-bare-filename>` for cfg files already under `<HalfLifeRoot>\hlserver_testbed\`, for example `my_glock.cfg` or `cfg_profiles\my_glock.cfg`
 - `-CfgPath <absolute-or-repo-relative-path>` for cfg files stored anywhere else
 
 Cfg-driven live sessions apply settings in this order:
@@ -116,38 +131,55 @@ Cfg-driven live sessions apply settings in this order:
 
 When `-CfgPath` or `-CfgProfile` is supplied, the exported cfg becomes the source of truth and the built-in demo presets are skipped for that session.
 
-Launch live with a Glock cfg already exported into the active live mod:
+Bare filenames now resolve in this order:
+
+1. `<HalfLifeRoot>\hlserver_testbed\<name>.cfg`
+2. `<HalfLifeRoot>\hlserver_testbed\cfg_profiles\<name>.cfg`
+
+The launcher prints the exact resolved path before launch.
+
+Launch live with a Glock cfg already exported into the active live mod root:
 
 ```bat
-scripts\play-hlserver-testbed-direct.bat -CfgProfile cfg_profiles\my_glock.cfg
+scripts\play-hlserver-testbed-direct.bat -CfgProfile my_glock.cfg
 ```
 
-Launch live with an MP5 cfg already exported into the active live mod:
+Launch live with an MP5 cfg already exported into the active live mod root:
 
 ```bat
-scripts\play-hlserver-testbed-direct.bat -CfgProfile cfg_profiles\my_mp5.cfg
+scripts\play-hlserver-testbed-direct.bat -CfgProfile my_mp5.cfg
 ```
 
 Use the shorthand cfg alias when you only want to supply a profile plus extra launcher flags:
 
 ```bat
-scripts\run-testbed.bat play-direct-cfg cfg_profiles\my_glock.cfg
+scripts\run-testbed.bat play-direct-cfg my_glock.cfg
+scripts\run-testbed.bat play-direct-cfg my_mp5.cfg
+```
+
+Legacy `cfg_profiles` paths are still accepted:
+
+```bat
+scripts\play-hlserver-testbed-direct.bat -CfgProfile cfg_profiles\my_glock.cfg
 scripts\run-testbed.bat play-direct-cfg cfg_profiles\my_mp5.cfg
 ```
 
 Launch from a cfg stored outside the live mod root:
 
 ```bat
-scripts\play-hlserver-testbed-direct.bat -CfgPath "<repo-root>\artifacts\HlConfigEditorCppSelfTest\hlserver_testbed\cfg_profiles\editor_glock_test.cfg"
+scripts\play-hlserver-testbed-direct.bat -CfgPath "D:\some-folder\editor_glock_simple.cfg"
 ```
 
 Manual HLDS console fallback:
 
 ```text
-exec cfg_profiles/my_glock.cfg
+exec my_glock.cfg
 changelevel crossfire
 
-exec cfg_profiles/my_mp5.cfg
+exec my_mp5.cfg
+changelevel crossfire
+
+exec cfg_profiles/my_legacy_glock.cfg
 changelevel crossfire
 ```
 
@@ -156,7 +188,7 @@ Cfg-driven observability:
 - the launcher prints whether the session is `demo` or `cfg-driven`
 - cfg-driven sessions print the requested cfg, the active live-mod path, and the `exec` profile
 - launch metadata under `testbed\logs\hlds-*-launch.txt` records `Cfg mode`, `Cfg profile`, `Cfg source`, and `Cfg active`
-- exported cfgs stored under `<HalfLifeRoot>\hlserver_testbed\cfg_profiles\` are preserved across same-root live-mod refreshes so `-CfgProfile` remains usable
+- root-level exported `*.cfg` files, the deployed `HlConfigEditorCpp.exe`, and legacy `cfg_profiles\...` files are preserved across same-root live-mod refreshes so the simplified workflow remains usable
 
 ## Live BAT launchers
 
@@ -204,8 +236,8 @@ Use the new aliases from the existing BAT dispatcher:
 scripts\run-testbed.bat play-glock
 scripts\run-testbed.bat play-mp5
 scripts\run-testbed.bat play-target
-scripts\run-testbed.bat play-direct -CfgProfile cfg_profiles\my_glock.cfg
-scripts\run-testbed.bat play-direct-cfg cfg_profiles\my_mp5.cfg
+scripts\run-testbed.bat play-direct -CfgProfile my_glock.cfg
+scripts\run-testbed.bat play-direct-cfg my_mp5.cfg
 scripts\run-testbed.bat play-glock-clientmatched
 scripts\run-testbed.bat play-mp5-clientmatched
 scripts\run-testbed.bat play-menu
