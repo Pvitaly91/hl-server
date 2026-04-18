@@ -61,6 +61,7 @@ What it does:
 - save and reopen editor project files as `.hlcfg.json`
 - export server-ready GoldSrc `.cfg` files containing only `sv_exp_*` commands
 - copy the exact `exec ...` command for the exported cfg
+- copy a launcher-ready cfg-driven live command when the export path maps to the live mod
 
 Open and build it in Visual Studio 2022:
 
@@ -80,6 +81,7 @@ Editor workflow:
 2. Use `File -> Save` or `File -> Save As` to store an editor project as `.hlcfg.json`.
 3. Use the `Export` tab to choose a destination folder and cfg file name, then click `Export CFG`.
 4. Use `Copy exec` to copy the load command for HLDS, for example `exec cfg_profiles/my_test.cfg`.
+5. When the export path resolves to the live mod, use `Copy launcher` to copy a launcher command such as `scripts\play-hlserver-testbed-direct.bat -CfgProfile "cfg_profiles\my_test.cfg"`.
 
 File types are intentionally different:
 
@@ -90,7 +92,68 @@ Export notes:
 
 - When the tool can resolve the real Half-Life root from `HL_EXE` or `HLDS_EXE`, it defaults the export folder to `Half-Life\hlserver_testbed\cfg_profiles\`.
 - If that root is not available, it falls back to the staged repo mod path under `testbed\mods\hlserver_testbed\cfg_profiles\`, and you can still browse to another folder manually.
-- The editor does not apply settings to a running server automatically. Export the cfg, place it in the active game dir when needed, and load it manually in HLDS with `exec ...`.
+- The editor does not apply settings to a running server automatically. Export the cfg, then either load it manually in HLDS with `exec ...` or start a cfg-driven live session with the BAT launcher commands below.
+
+## Using exported editor configs in live play
+
+The live same-root launcher now has two explicit config-file entry points:
+
+- `-CfgProfile <mod-relative-path>` for cfgs already inside `Half-Life\hlserver_testbed\`, for example `cfg_profiles\my_glock.cfg`
+- `-CfgPath <absolute-or-repo-relative-path>` for cfgs stored elsewhere
+
+Cfg-driven live sessions use this precedence order:
+
+1. base engine and server defaults
+2. minimal launcher infrastructure settings such as networking, logging, and `servercfgfile`
+3. the exported editor `.cfg`
+4. explicit command-line overrides, if any
+
+When `-CfgPath` or `-CfgProfile` is supplied, the exported cfg becomes the source of truth and the built-in demo presets are not applied afterward. When no cfg is supplied, the old demo/default flow still runs and continues to stamp values such as `sv_exp_session_tag "direct_manual_demo"`.
+
+Launch live with a Glock cfg already exported into the active mod:
+
+```bat
+scripts\play-hlserver-testbed-direct.bat -CfgProfile cfg_profiles\my_glock.cfg
+```
+
+Launch live with an MP5 cfg already exported into the active mod:
+
+```bat
+scripts\play-hlserver-testbed-direct.bat -CfgProfile cfg_profiles\my_mp5.cfg
+```
+
+Use the direct BAT path through `run-testbed.bat`:
+
+```bat
+scripts\run-testbed.bat play-direct -CfgProfile cfg_profiles\my_glock.cfg
+scripts\run-testbed.bat play-direct -CfgProfile cfg_profiles\my_mp5.cfg
+```
+
+Use the shorthand cfg alias when you only want to pass a profile plus extra launcher flags:
+
+```bat
+scripts\run-testbed.bat play-direct-cfg cfg_profiles\my_glock.cfg -NoClient -Port 27025
+```
+
+Launch from a cfg stored outside the live mod root:
+
+```bat
+scripts\play-hlserver-testbed-direct.bat -CfgPath "D:\DEV\CPP\HL-Server\artifacts\HlConfigEditorCppSelfTest\hlserver_testbed\cfg_profiles\editor_glock_test.cfg"
+```
+
+Manual HLDS console loading still works:
+
+```text
+exec cfg_profiles/my_glock.cfg
+exec cfg_profiles/my_mp5.cfg
+```
+
+Cfg-driven observability:
+
+- the launcher prints whether the session is `demo` or `cfg-driven`
+- cfg-driven sessions print the requested cfg, the active live-mod path, and the `exec` profile
+- launch metadata under `testbed\logs\hlds-*-launch.txt` records `Cfg mode`, `Cfg profile`, `Cfg source`, and `Cfg active`
+- exported cfgs stored under `Half-Life\hlserver_testbed\cfg_profiles\` are preserved across same-root live-mod refreshes so `-CfgProfile` remains usable
 
 ## Live BAT launchers
 
@@ -138,6 +201,8 @@ Use the new aliases from the existing BAT dispatcher:
 scripts\run-testbed.bat play-glock
 scripts\run-testbed.bat play-mp5
 scripts\run-testbed.bat play-target
+scripts\run-testbed.bat play-direct -CfgProfile cfg_profiles\my_glock.cfg
+scripts\run-testbed.bat play-direct-cfg cfg_profiles\my_mp5.cfg
 scripts\run-testbed.bat play-glock-clientmatched
 scripts\run-testbed.bat play-mp5-clientmatched
 scripts\run-testbed.bat play-menu
@@ -148,6 +213,7 @@ Defaults:
 - `scripts\play-glock-live.bat` launches the Glock lab with preset `cs_tight` and target profile `vest_headprotected`.
 - `scripts\play-mp5-live.bat` launches the MP5 lab with preset `cs_burst` and target profile `vest`.
 - `scripts\play-target-test-live.bat` launches the same direct `hlserver_testbed` live path in Glock mode and prints the target-control command reminder before the session hand-off.
+- `scripts\play-hlserver-testbed-direct.bat -CfgPath ...` or `-CfgProfile ...` launches cfg-driven live play and disables the built-in demo preset pass for that session.
 - You can override the defaults, for example:
 
 ```bat
@@ -927,7 +993,7 @@ Live client-attached mode creates or refreshes a managed mod folder at `Half-Lif
 - `scripts/install-testbed.ps1` prepares either the disposable runtime for no-client flows or the managed `hlserver_testbed` live mod folder for client-attached flows, then installs the built `hl.dll`.
 - `scripts/doctor-testbed.ps1` diagnoses the selected runtime source, the disposable runtime, and common Windows startup blockers such as Steam initialization or missing executable-side DLL issues, and `-Repair` can refresh the runtime plus provision a dedicated HLDS cache.
 - `scripts/run-server.ps1` launches HLDS against `testbed/runtime` on `-game valve` for no-client flows or from the stock Half-Life root on `-game hlserver_testbed` for live client-attached flows, defaults to `crossfire`, accepts `-EnableExperimentalGlock`, `-EnableExperimentalGlockDebug`, `-GlockProfile <name>`, and `-LabTargetProfile <name>` for server-only Glock tuning plus dummy-target selection, and still supports launch-time overrides through `-SetCvar @('name=value', ...)` or `-Cvars @{ name = 'value' }`.
-- `scripts/play-live-session.ps1` is the shared live BAT compatibility helper. It preserves the old `play-glock-live.bat` and `play-mp5-live.bat` parameter surface, normalizes presets and target profiles, and then delegates to the direct same-root launcher so every Explorer-friendly live BAT uses the same working `hlserver_testbed` path.
+- `scripts/play-live-session.ps1` is the shared live BAT compatibility helper. It preserves the old `play-glock-live.bat` and `play-mp5-live.bat` parameter surface, normalizes presets and target profiles, accepts `-CfgPath` or `-CfgProfile` for cfg-driven live sessions, and then delegates to the direct same-root launcher so every Explorer-friendly live BAT uses the same working `hlserver_testbed` path.
 - `scripts/run-glock-test-session.ps1` reinstalls the disposable runtime, launches the experimental-debug Glock server, waits for readiness, optionally opens a tail window for the exact weapon log, optionally launches a stock client, prints the manual checklist with the connect address and log paths, accepts `-GlockProfile <name>` and `-LabTargetProfile <name>`, and can hand off to the analyzer with `-AnalyzeLatestOnExit`.
 - `scripts/run-mp5-test-session.ps1` mirrors the same detached live-session flow for the MP5 experiment, including client launch, dummy-target support, checklist output, and optional analyzer hand-off.
 - `scripts/list-glock-profiles.ps1` lists the checked-in versioned Glock presets from `configs/glock-presets/`.
@@ -939,7 +1005,7 @@ Live client-attached mode creates or refreshes a managed mod folder at `Half-Lif
 - `scripts/show-latest-analysis.ps1` is the shared analyzer BAT helper that loads the newest disposable `weapon-debug-*.log`, prints the log and reports locations, and reruns the existing analyzer with `all`, `glock`, or `mp5` filtering.
 - `scripts/play-glock-live.bat`, `scripts/play-mp5-live.bat`, and `scripts/play-live-test.bat` are Explorer-friendly live launchers for stock-client-attached same-root `hlserver_testbed` sessions.
 - `scripts/show-latest-log-analysis.bat`, `scripts/show-latest-glock-analysis.bat`, and `scripts/show-latest-mp5-analysis.bat` are thin BAT entry points for the latest analyzer summaries.
-- `scripts/run-testbed.bat` is a thin convenience wrapper over the PowerShell scripts that defaults to a detached Debug disposable launch, maps `experimental` and `experimental-debug` to the corresponding server switches, maps `glock-session` to the one-click manual session helper, maps `glock-report` to `scripts/analyze-weapon-log.ps1`, maps `glock-profiles`, `glock-lab-targets`, and `weapon-matrices` to the listing helpers, maps `glock-profile <name>` to a detached experimental-debug launch with that preset, maps `glock-lab-target <name>` to a one-player dummy session with that target profile, maps `weapon-matrix <name>` and `weapon-compare` to the mixed comparison helpers, adds `play-glock`, `play-mp5`, and `play-menu` aliases for the new BAT launchers, and keeps argument forwarding thin.
+- `scripts/run-testbed.bat` is a thin convenience wrapper over the PowerShell scripts that defaults to a detached Debug disposable launch, maps `experimental` and `experimental-debug` to the corresponding server switches, maps `glock-session` to the one-click manual session helper, maps `glock-report` to `scripts/analyze-weapon-log.ps1`, maps `glock-profiles`, `glock-lab-targets`, and `weapon-matrices` to the listing helpers, maps `glock-profile <name>` to a detached experimental-debug launch with that preset, maps `glock-lab-target <name>` to a one-player dummy session with that target profile, maps `weapon-matrix <name>` and `weapon-compare` to the mixed comparison helpers, adds `play-glock`, `play-mp5`, `play-menu`, `play-direct`, and `play-direct-cfg` aliases for the live BAT launchers, and keeps argument forwarding thin.
 - `scripts/tail-weapon-log.ps1` finds the newest `testbed/logs/weapon-debug-*.log` file, or follows a specific log passed through `-Path`, prints a helpful message if none exists, and can either follow the log or dump it once with `-NoFollow`.
 - `scripts/run-client.ps1` optionally launches a stock Half-Life client on the requested `-game` target and connects to `127.0.0.1`.
 - `scripts/smoke-test.ps1` validates the end-to-end bootstrap non-interactively and can verify experimental cvar values from launch-time overrides.

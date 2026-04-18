@@ -13,6 +13,7 @@ if /I "%MODE%"=="play-glock" goto mode_play_glock
 if /I "%MODE%"=="play-mp5" goto mode_play_mp5
 if /I "%MODE%"=="play-target" goto mode_play_target
 if /I "%MODE%"=="play-direct" goto mode_play_direct
+if /I "%MODE%"=="play-direct-cfg" goto mode_play_direct_cfg
 if /I "%MODE%"=="play-glock-clientmatched" goto mode_play_glock_clientmatched
 if /I "%MODE%"=="play-mp5-clientmatched" goto mode_play_mp5_clientmatched
 if /I "%MODE%"=="play-menu" goto mode_play_menu
@@ -67,6 +68,16 @@ goto collect_args
 set "TARGET_BAT=%SCRIPT_DIR%play-hlserver-testbed-direct.bat"
 set "TARGET_SCRIPT="
 set "DEFAULT_ARGS="
+shift
+goto collect_args
+
+:mode_play_direct_cfg
+set "TARGET_BAT=%SCRIPT_DIR%play-hlserver-testbed-direct.bat"
+set "TARGET_SCRIPT="
+set "DEFAULT_ARGS="
+shift
+if "%~1"=="" goto launch
+set FORWARDED_ARGS=%FORWARDED_ARGS% "-CfgProfile" "%~1"
 shift
 goto collect_args
 

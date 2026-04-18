@@ -108,10 +108,12 @@ enum ControlId : int {
     IDC_EXPORT_FILE_NAME,
     IDC_EXPORT_CFG,
     IDC_COPY_EXEC_COMMAND,
+    IDC_COPY_LAUNCHER_COMMAND,
     IDC_COPY_RAW_CFG,
     IDC_OPEN_EXPORT_FOLDER,
     IDC_OPEN_LIVE_MOD_FOLDER,
     IDC_OPEN_LOGS_FOLDER,
+    IDC_LAUNCHER_PREVIEW,
     IDC_EXEC_PREVIEW,
     IDC_CFG_PREVIEW,
 };
@@ -497,6 +499,9 @@ private:
         case IDC_COPY_EXEC_COMMAND:
             CopyExecCommand();
             return 0;
+        case IDC_COPY_LAUNCHER_COMMAND:
+            CopyLauncherCommand();
+            return 0;
         case IDC_COPY_RAW_CFG:
             CopyRawCfg();
             return 0;
@@ -736,16 +741,19 @@ private:
         CreateGroupBox(page, L"Actions", 20, 160, 1040, 85);
         CreateButton(page, L"Export CFG", IDC_EXPORT_CFG, 40, 190, 130, 24);
         CreateButton(page, L"Copy exec", IDC_COPY_EXEC_COMMAND, 185, 190, 130, 24);
-        CreateButton(page, L"Copy raw cfg", IDC_COPY_RAW_CFG, 330, 190, 130, 24);
-        CreateButton(page, L"Open export folder", IDC_OPEN_EXPORT_FOLDER, 475, 190, 150, 24);
-        CreateButton(page, L"Open live mod", IDC_OPEN_LIVE_MOD_FOLDER, 640, 190, 130, 24);
-        CreateButton(page, L"Open logs", IDC_OPEN_LOGS_FOLDER, 785, 190, 110, 24);
+        CreateButton(page, L"Copy launcher", IDC_COPY_LAUNCHER_COMMAND, 330, 190, 130, 24);
+        CreateButton(page, L"Copy raw cfg", IDC_COPY_RAW_CFG, 475, 190, 130, 24);
+        CreateButton(page, L"Open export folder", IDC_OPEN_EXPORT_FOLDER, 620, 190, 150, 24);
+        CreateButton(page, L"Open live mod", IDC_OPEN_LIVE_MOD_FOLDER, 785, 190, 130, 24);
+        CreateButton(page, L"Open logs", IDC_OPEN_LOGS_FOLDER, 930, 190, 80, 24);
 
         CreateGroupBox(page, L"Preview", 20, 265, 1040, 380);
-        CreateLabel(page, L"Exec command", 40, 300, 120, 20);
-        CreateEdit(page, IDC_EXEC_PREVIEW, 160, 295, 850, 24, ES_READONLY);
-        CreateLabel(page, L"Generated cfg", 40, 335, 120, 20);
-        CreateMultiLineEdit(page, IDC_CFG_PREVIEW, 160, 330, 850, 280, true);
+        CreateLabel(page, L"Launcher command", 40, 300, 120, 20);
+        CreateEdit(page, IDC_LAUNCHER_PREVIEW, 160, 295, 850, 24, ES_READONLY);
+        CreateLabel(page, L"Exec command", 40, 335, 120, 20);
+        CreateEdit(page, IDC_EXEC_PREVIEW, 160, 330, 850, 24, ES_READONLY);
+        CreateLabel(page, L"Generated cfg", 40, 370, 120, 20);
+        CreateMultiLineEdit(page, IDC_CFG_PREVIEW, 160, 365, 850, 245, true);
     }
 
     void LayoutPages(int clientWidth, int clientHeight) {
@@ -1089,6 +1097,7 @@ private:
     void RefreshExportPreview(bool silentErrors) {
         hlcfg::ExportResult result;
         if (BuildPreview(result, silentErrors)) {
+            SetTextValue(IDC_LAUNCHER_PREVIEW, result.launcherCommand);
             SetTextValue(IDC_EXEC_PREVIEW, result.execCommand);
             SetTextValue(IDC_CFG_PREVIEW, result.cfgText);
         }
@@ -1112,6 +1121,9 @@ private:
         UpdateWindowTitle();
 
         std::wstring successMessage = L"Exported cfg to:\n" + result.exportPath + L"\n\nLoad it in HLDS with:\n" + result.execCommand;
+        if (!result.launcherCommand.empty()) {
+            successMessage += L"\n\nLaunch it directly with:\n" + result.launcherCommand;
+        }
         MessageBoxW(hwnd_, successMessage.c_str(), kWindowTitle, MB_ICONINFORMATION | MB_OK);
     }
 
@@ -1123,6 +1135,22 @@ private:
 
         if (!CopyTextToClipboard(hwnd_, result.execCommand)) {
             MessageBoxW(hwnd_, L"Unable to copy the exec command to the clipboard.", kWindowTitle, MB_ICONERROR | MB_OK);
+        }
+    }
+
+    void CopyLauncherCommand() {
+        hlcfg::ExportResult result;
+        if (!BuildPreview(result, false)) {
+            return;
+        }
+
+        if (result.launcherCommand.empty()) {
+            MessageBoxW(hwnd_, L"The current export path does not map to a launcher-friendly cfg profile path.", kWindowTitle, MB_ICONWARNING | MB_OK);
+            return;
+        }
+
+        if (!CopyTextToClipboard(hwnd_, result.launcherCommand)) {
+            MessageBoxW(hwnd_, L"Unable to copy the launcher command to the clipboard.", kWindowTitle, MB_ICONERROR | MB_OK);
         }
     }
 
@@ -1205,15 +1233,16 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
 
     hlcfg::ProjectDocument glock = hlcfg::CreateDefaultProject();
     glock.metadata.projectName = L"SelfTest Glock";
-    glock.general.sessionTag = L"selftest_glock";
+    glock.general.sessionTag = L"editor_cfg_test";
     glock.general.debugWeaponLog = true;
     glock.general.debugWeaponLogRejections = true;
     glock.exportSettings.exportFolder = (root / L"hlserver_testbed" / L"cfg_profiles").wstring();
-    glock.exportSettings.cfgFileName = L"glock_selftest.cfg";
+    glock.exportSettings.cfgFileName = L"editor_glock_test.cfg";
     hlcfg::ApplyGlockPreset(glock, L"cs_tight");
+    glock.glock.profileName = L"editor_glock_test";
     hlcfg::ApplyDummyPreset(glock, L"vest_headprotected");
 
-    const std::filesystem::path glockProjectPath = root / L"glock_selftest.hlcfg.json";
+    const std::filesystem::path glockProjectPath = root / L"editor_glock_test.hlcfg.json";
     std::wstring errorMessage;
     if (!hlcfg::SaveProjectDocumentToFile(glock, glockProjectPath.wstring(), errorMessage)) {
         return 1;
@@ -1230,22 +1259,25 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
     }
 
     if (!ValidateContains(glockExport.cfgText, L"sv_exp_weapon_under_test \"glock\"") ||
-        !ValidateContains(glockExport.cfgText, L"sv_exp_glock_profile_name \"cs_tight\"") ||
+        !ValidateContains(glockExport.cfgText, L"sv_exp_session_tag \"editor_cfg_test\"") ||
+        !ValidateContains(glockExport.cfgText, L"sv_exp_glock_profile_name \"editor_glock_test\"") ||
         !ValidateContains(glockExport.cfgText, L"sv_exp_glock_primary_headshot_lethal 1") ||
         !ValidateContains(glockExport.cfgText, L"sv_exp_glock_lab_target_profile_name \"vest_headprotected\"") ||
-        glockExport.execCommand != L"exec cfg_profiles/glock_selftest.cfg") {
+        glockExport.execCommand != L"exec cfg_profiles/editor_glock_test.cfg" ||
+        glockExport.launcherCommand != L"scripts\\play-hlserver-testbed-direct.bat -CfgProfile \"cfg_profiles\\editor_glock_test.cfg\"") {
         return 1;
     }
 
     hlcfg::ProjectDocument mp5 = hlcfg::CreateDefaultProject();
     mp5.metadata.projectName = L"SelfTest MP5";
-    mp5.general.sessionTag = L"selftest_mp5";
+    mp5.general.sessionTag = L"editor_cfg_test";
     mp5.exportSettings.exportFolder = (root / L"hlserver_testbed" / L"cfg_profiles").wstring();
-    mp5.exportSettings.cfgFileName = L"mp5_selftest.cfg";
+    mp5.exportSettings.cfgFileName = L"editor_mp5_test.cfg";
     hlcfg::ApplyMp5Preset(mp5, L"cs_burst");
+    mp5.mp5.profileName = L"editor_mp5_test";
     hlcfg::ApplyDummyPreset(mp5, L"vest");
 
-    const std::filesystem::path mp5ProjectPath = root / L"mp5_selftest.hlcfg.json";
+    const std::filesystem::path mp5ProjectPath = root / L"editor_mp5_test.hlcfg.json";
     if (!hlcfg::SaveProjectDocumentToFile(mp5, mp5ProjectPath.wstring(), errorMessage)) {
         return 1;
     }
@@ -1261,11 +1293,13 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
     }
 
     if (!ValidateContains(mp5Export.cfgText, L"sv_exp_weapon_under_test \"mp5\"") ||
+        !ValidateContains(mp5Export.cfgText, L"sv_exp_session_tag \"editor_cfg_test\"") ||
         !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_primary_enabled 1") ||
-        !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_profile_name \"cs_burst\"") ||
+        !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_profile_name \"editor_mp5_test\"") ||
         !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_lab_loadout 1") ||
         !ValidateContains(mp5Export.cfgText, L"sv_exp_glock_lab_target_profile_name \"vest\"") ||
-        mp5Export.execCommand != L"exec cfg_profiles/mp5_selftest.cfg") {
+        mp5Export.execCommand != L"exec cfg_profiles/editor_mp5_test.cfg" ||
+        mp5Export.launcherCommand != L"scripts\\play-hlserver-testbed-direct.bat -CfgProfile \"cfg_profiles\\editor_mp5_test.cfg\"") {
         return 1;
     }
 

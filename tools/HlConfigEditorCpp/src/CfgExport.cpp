@@ -381,26 +381,46 @@ bool TryMakeRelativePath(const std::filesystem::path& fullPath, const std::files
     return true;
 }
 
-std::wstring BuildExecCommand(const std::filesystem::path& exportPath, const EnvironmentPaths& environment) {
+bool TryBuildCfgProfile(const std::filesystem::path& exportPath, const EnvironmentPaths& environment, std::filesystem::path& cfgProfile) {
     std::filesystem::path relativePath;
     if (!environment.liveModRoot.empty() &&
         TryMakeRelativePath(exportPath, std::filesystem::path(environment.liveModRoot), relativePath) &&
         !relativePath.empty()) {
-        return L"exec " + relativePath.generic_wstring();
+        cfgProfile = relativePath;
+        return true;
     }
 
     if (!environment.stagedLiveModRoot.empty() &&
         TryMakeRelativePath(exportPath, std::filesystem::path(environment.stagedLiveModRoot), relativePath) &&
         !relativePath.empty()) {
-        return L"exec " + relativePath.generic_wstring();
+        cfgProfile = relativePath;
+        return true;
     }
 
     if (ToLower(exportPath.parent_path().filename().wstring()) == L"cfg_profiles") {
-        relativePath = std::filesystem::path(L"cfg_profiles") / exportPath.filename();
-        return L"exec " + relativePath.generic_wstring();
+        cfgProfile = std::filesystem::path(L"cfg_profiles") / exportPath.filename();
+        return true;
+    }
+
+    return false;
+}
+
+std::wstring BuildExecCommand(const std::filesystem::path& cfgProfile, const std::filesystem::path& exportPath) {
+    if (!cfgProfile.empty()) {
+        return L"exec " + cfgProfile.generic_wstring();
     }
 
     return L"exec " + exportPath.filename().generic_wstring();
+}
+
+std::wstring BuildLauncherCommand(const std::filesystem::path& cfgProfile, const EnvironmentPaths& environment) {
+    if (cfgProfile.empty() || environment.repoRoot.empty()) {
+        return {};
+    }
+
+    std::wstring windowsProfile = cfgProfile.wstring();
+    std::replace(windowsProfile.begin(), windowsProfile.end(), L'/', L'\\');
+    return L"scripts\\play-hlserver-testbed-direct.bat -CfgProfile \"" + windowsProfile + L"\"";
 }
 
 bool BuildCfgLines(const ProjectDocument& document, std::vector<std::wstring>& lines, std::wstring& errorMessage) {
@@ -610,9 +630,14 @@ bool BuildExportResult(const ProjectDocument& document, const EnvironmentPaths& 
     }
 
     const std::filesystem::path exportPath = std::filesystem::path(exportFolder) / EnsureCfgFileName(document.exportSettings.cfgFileName);
+    std::filesystem::path cfgProfile;
+    TryBuildCfgProfile(exportPath, environment, cfgProfile);
+
     result.cfgText = std::move(cfgText);
     result.exportPath = exportPath.wstring();
-    result.execCommand = BuildExecCommand(exportPath, environment);
+    result.cfgProfile = cfgProfile.generic_wstring();
+    result.execCommand = BuildExecCommand(cfgProfile, exportPath);
+    result.launcherCommand = BuildLauncherCommand(cfgProfile, environment);
     return true;
 }
 

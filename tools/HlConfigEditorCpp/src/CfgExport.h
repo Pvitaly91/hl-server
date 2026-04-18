@@ -17,6 +17,8 @@ struct EnvironmentPaths {
 struct ExportResult {
     std::wstring cfgText;
     std::wstring execCommand;
+    std::wstring cfgProfile;
+    std::wstring launcherCommand;
     std::wstring exportPath;
 };
 

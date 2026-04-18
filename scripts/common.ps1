@@ -1311,6 +1311,43 @@ function Reset-ManagedLiveModDirectory {
     return $fullPath
 }
 
+function Backup-TestbedLiveModCfgProfiles {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ModRoot
+    )
+
+    $sourcePath = Join-Path (Get-FullPath -Path $ModRoot) "cfg_profiles"
+    if (-not (Test-Path -LiteralPath $sourcePath)) {
+        return $null
+    }
+
+    $backupRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("hl-server-cfg-profiles-" + [System.Guid]::NewGuid().ToString("N"))
+    Ensure-Directory -Path $backupRoot
+    Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $backupRoot "cfg_profiles") -Recurse -Force
+    return $backupRoot
+}
+
+function Restore-TestbedLiveModCfgProfiles {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ModRoot,
+        [string]$BackupRoot
+    )
+
+    if ([string]::IsNullOrWhiteSpace($BackupRoot)) {
+        return
+    }
+
+    $sourcePath = Join-Path (Get-FullPath -Path $BackupRoot) "cfg_profiles"
+    if (-not (Test-Path -LiteralPath $sourcePath)) {
+        return
+    }
+
+    $destinationPath = Join-Path (Get-FullPath -Path $ModRoot) "cfg_profiles"
+    Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Recurse -Force
+}
+
 function Write-TestbedLiveModLibList {
     param(
         [Parameter(Mandatory = $true)]
@@ -2381,19 +2418,22 @@ function Install-TestbedLiveMod {
         Remove-Item -LiteralPath $legacyStageRoot -Recurse -Force
     }
 
-    Reset-ManagedLiveModDirectory -Path $modRoot -ClientRoot $clientRoot -GameDirName $gameDirName | Out-Null
-    Ensure-Directory -Path (Join-Path $modRoot "dlls")
-    Ensure-Directory -Path (Join-Path $modRoot "logs")
+    $cfgProfilesBackupRoot = Backup-TestbedLiveModCfgProfiles -ModRoot $modRoot
+    try {
+        Reset-ManagedLiveModDirectory -Path $modRoot -ClientRoot $clientRoot -GameDirName $gameDirName | Out-Null
+        Ensure-Directory -Path (Join-Path $modRoot "dlls")
+        Ensure-Directory -Path (Join-Path $modRoot "logs")
+        Restore-TestbedLiveModCfgProfiles -ModRoot $modRoot -BackupRoot $cfgProfilesBackupRoot
 
-    Copy-Item -LiteralPath $BuiltDllPath -Destination (Join-Path $modRoot "dlls\hl.dll") -Force
-    if (-not [string]::IsNullOrWhiteSpace($BuiltPdbPath) -and (Test-LeafPath -Path $BuiltPdbPath)) {
-        Copy-Item -LiteralPath $BuiltPdbPath -Destination (Join-Path $modRoot "dlls\hl.pdb") -Force
-    }
+        Copy-Item -LiteralPath $BuiltDllPath -Destination (Join-Path $modRoot "dlls\hl.dll") -Force
+        if (-not [string]::IsNullOrWhiteSpace($BuiltPdbPath) -and (Test-LeafPath -Path $BuiltPdbPath)) {
+            Copy-Item -LiteralPath $BuiltPdbPath -Destination (Join-Path $modRoot "dlls\hl.pdb") -Force
+        }
 
-    $libListPath = Write-TestbedLiveModLibList -ModRoot $modRoot -GameDirName $gameDirName
+        $libListPath = Write-TestbedLiveModLibList -ModRoot $modRoot -GameDirName $gameDirName
 
-    $markerPath = Join-Path $modRoot ".hl-server-live-mod.txt"
-    @"
+        $markerPath = Join-Path $modRoot ".hl-server-live-mod.txt"
+        @"
 Managed same-root live mod prepared by hl-server.
 Client root: $clientRoot
 Game dir: $gameDirName
@@ -2402,25 +2442,31 @@ Content strategy: fallback_dir valve
 Timestamp: $(Get-Date -Format o)
 "@ | Set-Content -LiteralPath $markerPath -Encoding ASCII
 
-    $manifestPath = Write-TestbedLiveModManifest -ModRoot $modRoot -Configuration $configuration -ClientRoot $clientRoot -GameDirName $gameDirName -ClientHlExe $clientInstall.HlExe -ClientHldsExe $clientInstall.Probe.HldsExe -InstalledDllPath (Join-Path $modRoot "dlls\hl.dll") -InstalledPdbPath $(if (Test-LeafPath -Path (Join-Path $modRoot "dlls\hl.pdb")) { Join-Path $modRoot "dlls\hl.pdb" } else { $null })
-    $liveModState = Get-TestbedLiveModState -ClientRoot $clientRoot -GameDirName $gameDirName
+        $manifestPath = Write-TestbedLiveModManifest -ModRoot $modRoot -Configuration $configuration -ClientRoot $clientRoot -GameDirName $gameDirName -ClientHlExe $clientInstall.HlExe -ClientHldsExe $clientInstall.Probe.HldsExe -InstalledDllPath (Join-Path $modRoot "dlls\hl.dll") -InstalledPdbPath $(if (Test-LeafPath -Path (Join-Path $modRoot "dlls\hl.pdb")) { Join-Path $modRoot "dlls\hl.pdb" } else { $null })
+        $liveModState = Get-TestbedLiveModState -ClientRoot $clientRoot -GameDirName $gameDirName
 
-    if (-not $liveModState.IsReady) {
-        throw "Same-root live mod is incomplete after refresh: $($liveModState.MissingRequired -join ', ')"
+        if (-not $liveModState.IsReady) {
+            throw "Same-root live mod is incomplete after refresh: $($liveModState.MissingRequired -join ', ')"
+        }
+
+        return [PSCustomObject]@{
+            ClientInstall = $clientInstall
+            GameDirName = $gameDirName
+            StageRoot = $null
+            LinkPath = $modRoot
+            ModRoot = $modRoot
+            ManifestPath = $manifestPath
+            MarkerPath = $markerPath
+            LibListPath = $libListPath
+            InstalledDllPath = (Join-Path $modRoot "dlls\hl.dll")
+            InstalledPdbPath = if (Test-LeafPath -Path (Join-Path $modRoot "dlls\hl.pdb")) { Join-Path $modRoot "dlls\hl.pdb" } else { $null }
+            LiveModState = $liveModState
+        }
     }
-
-    return [PSCustomObject]@{
-        ClientInstall = $clientInstall
-        GameDirName = $gameDirName
-        StageRoot = $null
-        LinkPath = $modRoot
-        ModRoot = $modRoot
-        ManifestPath = $manifestPath
-        MarkerPath = $markerPath
-        LibListPath = $libListPath
-        InstalledDllPath = (Join-Path $modRoot "dlls\hl.dll")
-        InstalledPdbPath = if (Test-LeafPath -Path (Join-Path $modRoot "dlls\hl.pdb")) { Join-Path $modRoot "dlls\hl.pdb" } else { $null }
-        LiveModState = $liveModState
+    finally {
+        if (-not [string]::IsNullOrWhiteSpace($cfgProfilesBackupRoot) -and (Test-Path -LiteralPath $cfgProfilesBackupRoot)) {
+            Remove-Item -LiteralPath $cfgProfilesBackupRoot -Recurse -Force
+        }
     }
 }
 
@@ -3397,16 +3443,190 @@ function Get-HldsLaunchCvars {
     return $resolved
 }
 
+function ConvertTo-GoldSrcCfgProfilePath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RelativePath
+    )
+
+    return ($RelativePath.Trim().TrimStart('\', '/') -replace '\\', '/')
+}
+
+function Get-PathRelativeToRoot {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Root,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Description
+    )
+
+    $fullPath = Get-FullPath -Path $Path
+    $fullRoot = Get-FullPath -Path $Root
+
+    Assert-PathWithinRoot -Path $fullPath -Root $fullRoot -Description $Description
+
+    if (-not $fullRoot.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
+        $fullRoot = $fullRoot + [System.IO.Path]::DirectorySeparatorChar
+    }
+
+    return $fullPath.Substring($fullRoot.Length)
+}
+
+function Escape-HldsLaunchConfigString {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Value
+    )
+
+    return $Value.Replace('"', '\"')
+}
+
+function Resolve-HldsCfgLaunchSelection {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RuntimeRoot,
+
+        [string]$GameDirName = "valve",
+        [string]$CfgPath,
+        [string]$CfgProfile
+    )
+
+    $hasCfgPath = -not [string]::IsNullOrWhiteSpace($CfgPath)
+    $hasCfgProfile = -not [string]::IsNullOrWhiteSpace($CfgProfile)
+
+    if ($hasCfgPath -and $hasCfgProfile) {
+        throw "Pass either -CfgPath or -CfgProfile, not both."
+    }
+
+    if (-not $hasCfgPath -and -not $hasCfgProfile) {
+        return $null
+    }
+
+    $modRoot = Join-Path (Get-FullPath -Path $RuntimeRoot) $GameDirName
+    Ensure-Directory -Path $modRoot
+
+    $stageRoot = if ($GameDirName -eq (Get-TestbedLiveModName)) {
+        Get-TestbedLiveModStageRoot -GameDirName $GameDirName
+    }
+    else {
+        $null
+    }
+
+    $selection = [ordered]@{
+        RequestedKind = if ($hasCfgPath) { "CfgPath" } else { "CfgProfile" }
+        RequestedValue = if ($hasCfgPath) { $CfgPath } else { $CfgProfile }
+        SourcePath = $null
+        ActivePath = $null
+        ExecProfile = $null
+        CopiedIntoLiveMod = $false
+    }
+
+    if ($hasCfgProfile) {
+        $relativeProfile = $CfgProfile.Trim().Trim('"').Trim()
+        if ([System.IO.Path]::IsPathRooted($relativeProfile)) {
+            throw "-CfgProfile must be a mod-relative path such as cfg_profiles\my_test.cfg."
+        }
+
+        $relativeProfile = $relativeProfile.TrimStart('\', '/')
+        if ([string]::IsNullOrWhiteSpace($relativeProfile)) {
+            throw "-CfgProfile cannot be empty."
+        }
+
+        if (-not $relativeProfile.ToLowerInvariant().EndsWith(".cfg")) {
+            throw "-CfgProfile must point to a .cfg file."
+        }
+
+        $activePath = Join-Path $modRoot $relativeProfile
+        Assert-PathWithinRoot -Path $activePath -Root $modRoot -Description "Cfg profile path"
+
+        $candidatePaths = New-Object System.Collections.Generic.List[string]
+        $candidatePaths.Add($activePath)
+        if (-not [string]::IsNullOrWhiteSpace($stageRoot)) {
+            $stagedPath = Join-Path $stageRoot $relativeProfile
+            if ($stagedPath -ne $activePath) {
+                $candidatePaths.Add($stagedPath)
+            }
+        }
+
+        $resolvedSource = $candidatePaths | Where-Object { Test-LeafPath -Path $_ } | Select-Object -First 1
+        if (-not $resolvedSource) {
+            $candidateSummary = $candidatePaths -join ", "
+            throw "Cfg profile '$relativeProfile' was not found. Checked: $candidateSummary"
+        }
+
+        if ((Get-FullPath -Path $resolvedSource) -ne (Get-FullPath -Path $activePath)) {
+            Ensure-Directory -Path (Split-Path -Parent $activePath)
+            Copy-Item -LiteralPath $resolvedSource -Destination $activePath -Force
+            $selection.CopiedIntoLiveMod = $true
+        }
+
+        $selection.SourcePath = Get-FullPath -Path $resolvedSource
+        $selection.ActivePath = Get-FullPath -Path $activePath
+        $selection.ExecProfile = ConvertTo-GoldSrcCfgProfilePath -RelativePath $relativeProfile
+        return [PSCustomObject]$selection
+    }
+
+    $requestedPath = $CfgPath.Trim().Trim('"').Trim()
+    $resolvedPath = if ([System.IO.Path]::IsPathRooted($requestedPath)) {
+        Get-FullPath -Path $requestedPath
+    }
+    else {
+        Get-FullPath -Path (Join-RepoPath $requestedPath)
+    }
+
+    if (-not (Test-LeafPath -Path $resolvedPath)) {
+        throw "Cfg path was not found: $resolvedPath"
+    }
+
+    if (-not $resolvedPath.ToLowerInvariant().EndsWith(".cfg")) {
+        throw "-CfgPath must point to a .cfg file."
+    }
+
+    $relativeProfile = $null
+    if ((Get-FullPath -Path $resolvedPath).StartsWith((Get-FullPath -Path $modRoot), [System.StringComparison]::OrdinalIgnoreCase)) {
+        $relativeProfile = Get-PathRelativeToRoot -Path $resolvedPath -Root $modRoot -Description "Cfg path"
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($stageRoot) -and
+            (Get-FullPath -Path $resolvedPath).StartsWith((Get-FullPath -Path $stageRoot), [System.StringComparison]::OrdinalIgnoreCase)) {
+        $relativeProfile = Get-PathRelativeToRoot -Path $resolvedPath -Root $stageRoot -Description "Cfg path"
+    }
+    else {
+        $relativeProfile = Join-Path "cfg_profiles" ([System.IO.Path]::GetFileName($resolvedPath))
+    }
+
+    $activePath = Join-Path $modRoot $relativeProfile
+    Assert-PathWithinRoot -Path $activePath -Root $modRoot -Description "Cfg path target"
+
+    if ((Get-FullPath -Path $resolvedPath) -ne (Get-FullPath -Path $activePath)) {
+        Ensure-Directory -Path (Split-Path -Parent $activePath)
+        Copy-Item -LiteralPath $resolvedPath -Destination $activePath -Force
+        $selection.CopiedIntoLiveMod = $true
+    }
+
+    $selection.SourcePath = Get-FullPath -Path $resolvedPath
+    $selection.ActivePath = Get-FullPath -Path $activePath
+    $selection.ExecProfile = ConvertTo-GoldSrcCfgProfilePath -RelativePath $relativeProfile
+    return [PSCustomObject]$selection
+}
+
 function Write-HldsLaunchCvarConfig {
     param(
         [Parameter(Mandatory = $true)]
         [string]$RuntimeRoot,
 
         [System.Collections.IDictionary]$Cvars,
-        [string]$GameDirName = "valve"
+        [string]$GameDirName = "valve",
+        [string]$ExecCfgProfile,
+        [string]$CfgSourcePath,
+        [string]$CfgActivePath
     )
 
-    if (-not $Cvars -or $Cvars.Count -eq 0) {
+    $hasExecCfgProfile = -not [string]::IsNullOrWhiteSpace($ExecCfgProfile)
+    if ((-not $Cvars -or $Cvars.Count -eq 0) -and -not $hasExecCfgProfile) {
         return $null
     }
 
@@ -3420,6 +3640,22 @@ function Write-HldsLaunchCvarConfig {
     foreach ($name in $Cvars.Keys) {
         $value = [string]$Cvars[$name]
         $lines.Add(('{0} "{1}"' -f $name, $value.Replace('"', '\"')))
+    }
+
+    if ($hasExecCfgProfile) {
+        if ($lines.Count -gt 0) {
+            $lines.Add("")
+        }
+
+        $normalizedProfile = ConvertTo-GoldSrcCfgProfilePath -RelativePath $ExecCfgProfile
+        $cfgSourceForLog = if ([string]::IsNullOrWhiteSpace($CfgSourcePath)) { "<unknown>" } else { (Get-FullPath -Path $CfgSourcePath).Replace('\', '/') }
+        $cfgActiveForLog = if ([string]::IsNullOrWhiteSpace($CfgActivePath)) { "<unknown>" } else { (Get-FullPath -Path $CfgActivePath).Replace('\', '/') }
+
+        $lines.Add(('echo [hlcfg] cfg_mode=1 cfg_profile="{0}" cfg_source="{1}" cfg_active="{2}"' -f `
+                (Escape-HldsLaunchConfigString -Value $normalizedProfile), `
+                (Escape-HldsLaunchConfigString -Value $cfgSourceForLog), `
+                (Escape-HldsLaunchConfigString -Value $cfgActiveForLog)))
+        $lines.Add(('exec {0}' -f $normalizedProfile))
     }
 
     Set-Content -LiteralPath $configPath -Value $lines -Encoding ASCII
@@ -3539,7 +3775,11 @@ function Write-HldsLaunchMetadata {
         [Parameter(Mandatory = $true)]
         [string]$Timestamp,
         [string]$ServerCfgName,
-        [string]$SteamAppId
+        [string]$SteamAppId,
+        [switch]$CfgMode,
+        [string]$CfgProfile,
+        [string]$CfgSourcePath,
+        [string]$CfgActivePath
     )
 
     $logsRoot = Get-TestbedLogsRoot
@@ -3555,6 +3795,18 @@ function Write-HldsLaunchMetadata {
     $lines.Add(("SteamAppId: {0}" -f $(if ([string]::IsNullOrWhiteSpace($SteamAppId)) { "<unset>" } else { $SteamAppId })))
     if (-not [string]::IsNullOrWhiteSpace($ServerCfgName)) {
         $lines.Add(("Server cfg: {0}" -f $ServerCfgName))
+    }
+    if ($CfgMode) {
+        $lines.Add("Cfg mode: 1")
+        if (-not [string]::IsNullOrWhiteSpace($CfgProfile)) {
+            $lines.Add(("Cfg profile: {0}" -f $CfgProfile))
+        }
+        if (-not [string]::IsNullOrWhiteSpace($CfgSourcePath)) {
+            $lines.Add(("Cfg source: {0}" -f $CfgSourcePath))
+        }
+        if (-not [string]::IsNullOrWhiteSpace($CfgActivePath)) {
+            $lines.Add(("Cfg active: {0}" -f $CfgActivePath))
+        }
     }
 
     $lines.Add(("Arguments: {0}" -f ($ArgumentList -join " ")))

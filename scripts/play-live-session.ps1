@@ -10,6 +10,8 @@ param(
     [int]$Port = 27015,
     [string]$Preset,
     [string]$TargetProfile,
+    [string]$CfgPath,
+    [string]$CfgProfile,
     [string]$TemplateRoot,
     [string]$HldsExe,
     [string]$HlExe,
@@ -61,8 +63,21 @@ if ($ExtraSessionArgs -and $ExtraSessionArgs.Count -gt 0) {
 Write-Host ""
 Write-Host "Live launcher compatibility wrapper"
 Write-Host "  requested weapon : $Weapon"
-Write-Host "  effective preset : $effectivePreset"
-Write-Host "  target profile   : $effectiveTargetProfile"
+if (-not [string]::IsNullOrWhiteSpace($CfgPath) -or -not [string]::IsNullOrWhiteSpace($CfgProfile)) {
+    Write-Host "  launch mode      : cfg-driven"
+    if (-not [string]::IsNullOrWhiteSpace($CfgPath)) {
+        Write-Host "  cfg path         : $CfgPath"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($CfgProfile)) {
+        Write-Host "  cfg profile      : $CfgProfile"
+    }
+    Write-Host "  demo presets     : disabled because a cfg was supplied"
+}
+else {
+    Write-Host "  launch mode      : demo"
+    Write-Host "  effective preset : $effectivePreset"
+    Write-Host "  target profile   : $effectiveTargetProfile"
+}
 Write-Host "  launch path      : direct same-root launcher"
 if ($ignoredOptions.Count -gt 0) {
     Write-Host "  ignored options  : $($ignoredOptions -join ', ')"
@@ -73,7 +88,6 @@ $directParameters = @{
     Configuration = $configuration
     Map = $Map
     Port = $Port
-    TargetProfile = $effectiveTargetProfile
 }
 
 if (-not [string]::IsNullOrWhiteSpace($HlExe)) {
@@ -84,12 +98,24 @@ if ($NoClient) {
     $directParameters.NoClient = $true
 }
 
-switch ($Weapon) {
-    "glock" {
-        $directParameters.GlockProfile = $effectivePreset
-    }
-    "mp5" {
-        $directParameters.Mp5Profile = $effectivePreset
+if (-not [string]::IsNullOrWhiteSpace($CfgPath)) {
+    $directParameters.CfgPath = $CfgPath
+}
+
+if (-not [string]::IsNullOrWhiteSpace($CfgProfile)) {
+    $directParameters.CfgProfile = $CfgProfile
+}
+
+if ([string]::IsNullOrWhiteSpace($CfgPath) -and [string]::IsNullOrWhiteSpace($CfgProfile)) {
+    $directParameters.TargetProfile = $effectiveTargetProfile
+
+    switch ($Weapon) {
+        "glock" {
+            $directParameters.GlockProfile = $effectivePreset
+        }
+        "mp5" {
+            $directParameters.Mp5Profile = $effectivePreset
+        }
     }
 }
 
