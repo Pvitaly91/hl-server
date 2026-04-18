@@ -5,6 +5,8 @@
 /testbed/cache/
 /testbed/logs/
 /testbed/runtime/
+/tools/HlConfigEditorCpp/bin/
+/tools/HlConfigEditorCpp/obj/
 /tmp/
 /__upstream_halflife/
 

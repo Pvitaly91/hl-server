@@ -49,6 +49,49 @@ To smoke-test the whole flow non-interactively:
 .\scripts\smoke-test.ps1 -Configuration Debug -AllowSteamCmdDownload
 ```
 
+## C++ Weapon Config Editor
+
+The repository now includes a separate native Win32 editor project under `tools\HlConfigEditorCpp\`. It is a standalone C++ desktop tool for Visual Studio 2022 and stays separate from the server DLL build.
+
+What it does:
+
+- edit Glock experimental cvars
+- edit MP5 experimental cvars
+- edit dummy/target cvars
+- save and reopen editor project files as `.hlcfg.json`
+- export server-ready GoldSrc `.cfg` files containing only `sv_exp_*` commands
+- copy the exact `exec ...` command for the exported cfg
+
+Open and build it in Visual Studio 2022:
+
+```text
+tools\HlConfigEditorCpp\HlConfigEditorCpp.sln
+```
+
+Build the `Debug|Win32` or `Release|Win32` configuration, then run:
+
+```text
+tools\HlConfigEditorCpp\bin\Debug\Win32\HlConfigEditorCpp.exe
+```
+
+Editor workflow:
+
+1. Use the `General`, `Glock`, `MP5`, and `Target Dummy` tabs to edit the current server cvar surface.
+2. Use `File -> Save` or `File -> Save As` to store an editor project as `.hlcfg.json`.
+3. Use the `Export` tab to choose a destination folder and cfg file name, then click `Export CFG`.
+4. Use `Copy exec` to copy the load command for HLDS, for example `exec cfg_profiles/my_test.cfg`.
+
+File types are intentionally different:
+
+- `.hlcfg.json` files are editor project files used only by the C++ editor.
+- exported `.cfg` files are the files the game/server actually uses.
+
+Export notes:
+
+- When the tool can resolve the real Half-Life root from `HL_EXE` or `HLDS_EXE`, it defaults the export folder to `Half-Life\hlserver_testbed\cfg_profiles\`.
+- If that root is not available, it falls back to the staged repo mod path under `testbed\mods\hlserver_testbed\cfg_profiles\`, and you can still browse to another folder manually.
+- The editor does not apply settings to a running server automatically. Export the cfg, place it in the active game dir when needed, and load it manually in HLDS with `exec ...`.
+
 ## Live BAT launchers
 
 These BAT files are the ready-to-run entry points for live server testing from Explorer or `cmd.exe`. They run the doctor with repair before launching, create or refresh the managed `hlserver_testbed` mod directory directly under the stock Half-Life root, copy the built `hl.dll` there, and then launch both `hlds.exe` and `hl.exe` from the same `D:\Steam\steamapps\common\Half-Life` root on `-game hlserver_testbed`.
