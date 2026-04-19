@@ -23,6 +23,7 @@
 namespace {
 
 constexpr wchar_t kWindowClassName[] = L"HlConfigEditorCppWindow";
+constexpr wchar_t kPageWindowClassName[] = L"HlConfigEditorCppPage";
 constexpr wchar_t kWindowTitle[] = L"HL Weapon Config Editor (C++)";
 constexpr int kWindowWidth = 1160;
 constexpr int kWindowHeight = 860;
@@ -119,6 +120,10 @@ enum ControlId : int {
     IDC_LAUNCHER_PREVIEW,
     IDC_EXEC_PREVIEW,
     IDC_CFG_PREVIEW,
+    IDC_HALF_LIFE_ROOT_PREVIEW,
+    IDC_QUICK_EXPORT_TARGET_PREVIEW,
+    IDC_EDITOR_EXE_PATH_PREVIEW,
+    IDC_EXPORT_STATUS,
 };
 
 constexpr int kPageCount = 5;
@@ -415,6 +420,15 @@ public:
         windowClass.style = CS_HREDRAW | CS_VREDRAW;
         RegisterClassExW(&windowClass);
 
+        WNDCLASSEXW pageClass{};
+        pageClass.cbSize = sizeof(pageClass);
+        pageClass.lpfnWndProc = &EditorWindow::PageWindowProc;
+        pageClass.hInstance = instance_;
+        pageClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        pageClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
+        pageClass.lpszClassName = kPageWindowClassName;
+        RegisterClassExW(&pageClass);
+
         hwnd_ = CreateWindowExW(
             0,
             kWindowClassName,
@@ -462,6 +476,22 @@ private:
         }
 
         return self->HandleMessage(message, wParam, lParam);
+    }
+
+    static LRESULT CALLBACK PageWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+        switch (message) {
+        case WM_COMMAND:
+        case WM_NOTIFY: {
+            if (HWND root = GetAncestor(hwnd, GA_ROOT)) {
+                return SendMessageW(root, message, wParam, lParam);
+            }
+            break;
+        }
+        default:
+            break;
+        }
+
+        return DefWindowProcW(hwnd, message, wParam, lParam);
     }
 
     LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
@@ -583,10 +613,10 @@ private:
             OpenExportFolder();
             return 0;
         case IDC_OPEN_LIVE_MOD_FOLDER:
-            OpenResolvedFolder(GetLiveModFolder(), L"The live mod folder could not be resolved.");
+            OpenResolvedFolder(GetLiveModFolder(), L"The live mod folder could not be resolved.", L"Opened live mod folder");
             return 0;
         case IDC_OPEN_LOGS_FOLDER:
-            OpenResolvedFolder(environment_.logsRoot, L"The repo logs folder could not be resolved.");
+            OpenResolvedFolder(environment_.logsRoot, L"The repo logs folder could not be resolved.", L"Opened logs folder");
             return 0;
         default:
             break;
@@ -598,7 +628,9 @@ private:
 
         if (notifyCode == EN_CHANGE || notifyCode == BN_CLICKED || notifyCode == CBN_SELCHANGE) {
             if (controlId != IDC_LIVE_MOD_FOLDER_PREVIEW && controlId != IDC_LAUNCHER_PREVIEW &&
-                controlId != IDC_EXEC_PREVIEW && controlId != IDC_CFG_PREVIEW) {
+                controlId != IDC_EXEC_PREVIEW && controlId != IDC_CFG_PREVIEW &&
+                controlId != IDC_HALF_LIFE_ROOT_PREVIEW && controlId != IDC_QUICK_EXPORT_TARGET_PREVIEW &&
+                controlId != IDC_EDITOR_EXE_PATH_PREVIEW && controlId != IDC_EXPORT_STATUS) {
                 MaybeRefreshSuggestedCfgFileName(controlId);
                 dirty_ = true;
                 UpdateWindowTitle();
@@ -644,7 +676,7 @@ private:
             item.pszText = const_cast<LPWSTR>(pageTitles[index]);
             TabCtrl_InsertItem(tab_, index, &item);
 
-            pages_[index] = CreateWindowExW(WS_EX_CONTROLPARENT, L"STATIC", L"", WS_CHILD | WS_VISIBLE, 0, 0, 100, 100, tab_, nullptr, instance_, nullptr);
+            pages_[index] = CreateWindowExW(WS_EX_CONTROLPARENT, kPageWindowClassName, L"", WS_CHILD | WS_VISIBLE, 0, 0, 100, 100, tab_, nullptr, instance_, nullptr);
             SetControlFont(pages_[index]);
         }
 
@@ -807,33 +839,42 @@ private:
 
     void CreateExportPage() {
         HWND page = pages_[4];
-        CreateGroupBox(page, L"Simple Default", 20, 20, 1040, 155);
-        CreateLabel(page, L"Live mod root", 40, 55, 120, 20);
-        CreateEdit(page, IDC_LIVE_MOD_FOLDER_PREVIEW, 160, 50, 850, 24, ES_READONLY);
-        CreateLabel(page, L"Custom folder", 40, 90, 120, 20);
-        CreateEdit(page, IDC_EXPORT_FOLDER, 160, 85, 720, 24);
-        CreateButton(page, L"Browse...", IDC_BROWSE_EXPORT_FOLDER, 900, 85, 110, 24);
-        CreateLabel(page, L"CFG file name", 40, 125, 120, 20);
-        CreateEdit(page, IDC_EXPORT_FILE_NAME, 160, 120, 250, 24);
-        CreateLabel(page, L"Quick Export writes <live mod root>\\<name>.cfg so HLDS can run exec <name>.cfg.", 430, 123, 560, 24);
+        CreateGroupBox(page, L"Resolved Paths And Targets", 20, 20, 1040, 255);
+        CreateLabel(page, L"Half-Life root", 40, 55, 120, 20);
+        CreateEdit(page, IDC_HALF_LIFE_ROOT_PREVIEW, 160, 50, 850, 24, ES_READONLY);
+        CreateLabel(page, L"Live mod root", 40, 90, 120, 20);
+        CreateEdit(page, IDC_LIVE_MOD_FOLDER_PREVIEW, 160, 85, 850, 24, ES_READONLY);
+        CreateLabel(page, L"Quick export target", 40, 125, 120, 20);
+        CreateEdit(page, IDC_QUICK_EXPORT_TARGET_PREVIEW, 160, 120, 850, 24, ES_READONLY);
+        CreateLabel(page, L"Running editor EXE", 40, 160, 120, 20);
+        CreateEdit(page, IDC_EDITOR_EXE_PATH_PREVIEW, 160, 155, 850, 24, ES_READONLY);
+        CreateLabel(page, L"Custom folder", 40, 195, 120, 20);
+        CreateEdit(page, IDC_EXPORT_FOLDER, 160, 190, 720, 24);
+        CreateButton(page, L"Browse...", IDC_BROWSE_EXPORT_FOLDER, 900, 190, 110, 24);
+        CreateLabel(page, L"CFG file name", 40, 230, 120, 20);
+        CreateEdit(page, IDC_EXPORT_FILE_NAME, 160, 225, 250, 24);
+        CreateLabel(page, L"Quick Export writes <live mod root>\\<name>.cfg so HLDS can run exec <name>.cfg.", 430, 228, 560, 24);
 
-        CreateGroupBox(page, L"Actions", 20, 195, 1040, 120);
-        CreateButton(page, L"Quick Export to Live Mod", IDC_QUICK_EXPORT_LIVE_MOD, 40, 225, 210, 24);
-        CreateButton(page, L"Copy exec command", IDC_COPY_EXEC_COMMAND, 265, 225, 160, 24);
-        CreateButton(page, L"Export to chosen folder", IDC_EXPORT_CFG, 440, 225, 185, 24);
-        CreateButton(page, L"Copy launcher", IDC_COPY_LAUNCHER_COMMAND, 640, 225, 135, 24);
-        CreateButton(page, L"Open live mod", IDC_OPEN_LIVE_MOD_FOLDER, 790, 225, 120, 24);
-        CreateButton(page, L"Open export folder", IDC_OPEN_EXPORT_FOLDER, 40, 260, 160, 24);
-        CreateButton(page, L"Copy raw cfg", IDC_COPY_RAW_CFG, 215, 260, 135, 24);
-        CreateButton(page, L"Open logs", IDC_OPEN_LOGS_FOLDER, 365, 260, 110, 24);
+        CreateGroupBox(page, L"Actions", 20, 290, 1040, 95);
+        CreateButton(page, L"Quick Export to Live Mod", IDC_QUICK_EXPORT_LIVE_MOD, 40, 320, 210, 24);
+        CreateButton(page, L"Copy exec command", IDC_COPY_EXEC_COMMAND, 265, 320, 160, 24);
+        CreateButton(page, L"Export to chosen folder", IDC_EXPORT_CFG, 440, 320, 185, 24);
+        CreateButton(page, L"Copy launcher", IDC_COPY_LAUNCHER_COMMAND, 640, 320, 135, 24);
+        CreateButton(page, L"Open live mod", IDC_OPEN_LIVE_MOD_FOLDER, 790, 320, 120, 24);
+        CreateButton(page, L"Open export folder", IDC_OPEN_EXPORT_FOLDER, 40, 350, 160, 24);
+        CreateButton(page, L"Copy raw cfg", IDC_COPY_RAW_CFG, 215, 350, 135, 24);
+        CreateButton(page, L"Open logs", IDC_OPEN_LOGS_FOLDER, 365, 350, 110, 24);
 
-        CreateGroupBox(page, L"Preview", 20, 330, 1040, 315);
-        CreateLabel(page, L"Launcher command", 40, 365, 120, 20);
-        CreateEdit(page, IDC_LAUNCHER_PREVIEW, 160, 360, 850, 24, ES_READONLY);
-        CreateLabel(page, L"Exec command", 40, 400, 120, 20);
-        CreateEdit(page, IDC_EXEC_PREVIEW, 160, 395, 850, 24, ES_READONLY);
-        CreateLabel(page, L"Generated cfg", 40, 435, 120, 20);
-        CreateMultiLineEdit(page, IDC_CFG_PREVIEW, 160, 430, 850, 185, true);
+        CreateGroupBox(page, L"Last Action", 20, 400, 1040, 80);
+        CreateMultiLineEdit(page, IDC_EXPORT_STATUS, 40, 425, 970, 30, true);
+
+        CreateGroupBox(page, L"Preview", 20, 495, 1040, 175);
+        CreateLabel(page, L"Launcher command", 40, 530, 120, 20);
+        CreateEdit(page, IDC_LAUNCHER_PREVIEW, 160, 525, 850, 24, ES_READONLY);
+        CreateLabel(page, L"Exec command", 40, 565, 120, 20);
+        CreateEdit(page, IDC_EXEC_PREVIEW, 160, 560, 850, 24, ES_READONLY);
+        CreateLabel(page, L"Generated cfg", 40, 600, 120, 20);
+        CreateMultiLineEdit(page, IDC_CFG_PREVIEW, 160, 595, 850, 55, true);
     }
 
     void LayoutPages(int clientWidth, int clientHeight) {
@@ -928,27 +969,70 @@ private:
         return MessageBoxW(hwnd_, message.c_str(), kWindowTitle, MB_ICONWARNING | MB_YESNO) == IDYES;
     }
 
+    void ShowActionError(
+        const wchar_t* actionLabel,
+        const std::wstring& primaryMessage,
+        const std::wstring& attemptedPath,
+        const std::wstring& fixHint) {
+        std::wstring message = std::wstring(actionLabel) + L" failed.\n\n" + primaryMessage;
+        if (!attemptedPath.empty()) {
+            message += L"\n\nTarget path:\n" + attemptedPath;
+        }
+        if (!fixHint.empty()) {
+            message += L"\n\nHow to fix it:\n" + fixHint;
+        }
+
+        SetActionStatus(message);
+        MessageBoxW(hwnd_, message.c_str(), kWindowTitle, MB_ICONERROR | MB_OK);
+    }
+
+    void ShowActionInfo(const std::wstring& statusText, const std::wstring& dialogText) {
+        SetActionStatus(statusText);
+        MessageBoxW(hwnd_, dialogText.c_str(), kWindowTitle, MB_ICONINFORMATION | MB_OK);
+    }
+
     void RunExportWorkflow(const std::wstring* forcedExportFolder, bool quickExport) {
         hlcfg::ProjectDocument exportDocument;
         PrepareDocumentForExport(exportDocument, forcedExportFolder);
 
+        const wchar_t* actionLabel = quickExport ? L"Quick Export to Live Mod" : L"Export to chosen folder";
         hlcfg::ExportResult preview;
         std::wstring errorMessage;
         if (!hlcfg::BuildExportResult(exportDocument, environment_, preview, errorMessage)) {
             RefreshExportPreview(true);
-            MessageBoxW(hwnd_, errorMessage.c_str(), kWindowTitle, MB_ICONERROR | MB_OK);
+            ShowActionError(
+                actionLabel,
+                errorMessage,
+                quickExport ? BuildQuickExportTargetPathPreview() : std::wstring(),
+                quickExport ? L"Verify the Half-Life root, the live mod path, and the cfg file name."
+                            : L"Choose a writable folder and confirm the cfg file name.");
             return;
         }
 
-        const wchar_t* actionLabel = quickExport ? L"Quick Export to Live Mod" : L"Export to chosen folder";
         if (!ConfirmOverwrite(preview.exportPath, actionLabel)) {
+            SetActionStatus(std::wstring(actionLabel) + L" was cancelled.\n\nTarget path:\n" + preview.exportPath);
             return;
         }
 
         hlcfg::ExportResult result;
         if (!hlcfg::ExportCfgToFile(exportDocument, environment_, result, errorMessage)) {
             RefreshExportPreview(true);
-            MessageBoxW(hwnd_, errorMessage.c_str(), kWindowTitle, MB_ICONERROR | MB_OK);
+            ShowActionError(
+                actionLabel,
+                errorMessage,
+                preview.exportPath,
+                L"Check that the target folder exists and is writable, then try again.");
+            return;
+        }
+
+        std::error_code verifyError;
+        if (!std::filesystem::exists(result.exportPath, verifyError) || verifyError) {
+            RefreshExportPreview(true);
+            ShowActionError(
+                actionLabel,
+                L"The cfg export completed, but the written file could not be confirmed on disk.",
+                result.exportPath,
+                L"Check file permissions, confirm the target folder, and try again.");
             return;
         }
 
@@ -964,7 +1048,14 @@ private:
         if (!result.launcherCommand.empty()) {
             successMessage += L"\n\nLaunch it directly with:\n" + result.launcherCommand;
         }
-        MessageBoxW(hwnd_, successMessage.c_str(), kWindowTitle, MB_ICONINFORMATION | MB_OK);
+
+        std::wstring statusText = std::wstring(actionLabel) + L" succeeded.\n\nWritten cfg:\n" + result.exportPath +
+                                  L"\n\nExec command:\n" + result.execCommand;
+        if (!result.launcherCommand.empty()) {
+            statusText += L"\n\nLauncher command:\n" + result.launcherCommand;
+        }
+
+        ShowActionInfo(statusText, successMessage);
     }
 
     HWND FindControl(int controlId) const {
@@ -1001,6 +1092,59 @@ private:
     std::wstring GetTextValue(int controlId) const {
         HWND control = FindControl(controlId);
         return control == nullptr ? std::wstring() : GetTextFromWindow(control);
+    }
+
+    void SetActionStatus(const std::wstring& value) {
+        lastActionStatus_ = value;
+        const bool wasLoadingControls = loadingControls_;
+        loadingControls_ = true;
+        SetTextValue(IDC_EXPORT_STATUS, value);
+        loadingControls_ = wasLoadingControls;
+    }
+
+    std::wstring GetHalfLifeRootFolder() const {
+        if (!environment_.liveModRoot.empty()) {
+            return std::filesystem::path(environment_.liveModRoot).parent_path().wstring();
+        }
+
+        return {};
+    }
+
+    std::wstring GetEffectiveCfgFileNameForQuickExport() const {
+        std::wstring fileName = hlcfg::EnsureCfgFileName(GetTextValue(IDC_EXPORT_FILE_NAME));
+        if (!hlcfg::Trimmed(fileName).empty()) {
+            return fileName;
+        }
+
+        if (!lastSuggestedCfgFileName_.empty()) {
+            return lastSuggestedCfgFileName_;
+        }
+
+        return BuildSuggestedCfgFileName(document_);
+    }
+
+    std::wstring BuildQuickExportTargetPathPreview() const {
+        const std::wstring liveModFolder = GetLiveModFolder();
+        if (liveModFolder.empty()) {
+            return L"(live mod root unresolved; set HL_EXE or HLDS_EXE, or use Export to chosen folder)";
+        }
+
+        return (std::filesystem::path(liveModFolder) / GetEffectiveCfgFileNameForQuickExport()).wstring();
+    }
+
+    void RefreshResolvedExportInfo() {
+        const bool wasLoadingControls = loadingControls_;
+        loadingControls_ = true;
+
+        const std::wstring halfLifeRoot = GetHalfLifeRootFolder();
+        SetTextValue(IDC_HALF_LIFE_ROOT_PREVIEW, halfLifeRoot.empty() ? L"(not resolved; using staged fallback when needed)" : halfLifeRoot);
+
+        const std::wstring liveModFolder = GetLiveModFolder();
+        SetTextValue(IDC_LIVE_MOD_FOLDER_PREVIEW, liveModFolder.empty() ? L"(not resolved)" : liveModFolder);
+        SetTextValue(IDC_QUICK_EXPORT_TARGET_PREVIEW, BuildQuickExportTargetPathPreview());
+        SetTextValue(IDC_EDITOR_EXE_PATH_PREVIEW, moduleFilePath_.empty() ? L"(unknown)" : moduleFilePath_);
+
+        loadingControls_ = wasLoadingControls;
     }
 
     void SetWeaponSelection(const std::wstring& weapon) {
@@ -1099,9 +1243,14 @@ private:
         Button_SetCheck(FindControl(IDC_DUMMY_FACE_PLAYER), document_.targetDummy.facePlayer ? BST_CHECKED : BST_UNCHECKED);
         SetTextValue(IDC_DUMMY_MODEL, document_.targetDummy.model);
 
-        SetTextValue(IDC_LIVE_MOD_FOLDER_PREVIEW, GetLiveModFolder());
         SetTextValue(IDC_EXPORT_FOLDER, document_.exportSettings.exportFolder);
         SetTextValue(IDC_EXPORT_FILE_NAME, document_.exportSettings.cfgFileName);
+        RefreshResolvedExportInfo();
+
+        if (lastActionStatus_.empty()) {
+            lastActionStatus_ = L"Ready.\n\nQuick export target:\n" + BuildQuickExportTargetPathPreview();
+        }
+        SetTextValue(IDC_EXPORT_STATUS, lastActionStatus_);
 
         loadingControls_ = false;
         RefreshExportPreview(true);
@@ -1268,15 +1417,21 @@ private:
         SyncDocumentFromControls();
         std::wstring errorMessage;
         if (!hlcfg::BuildExportResult(document_, environment_, result, errorMessage)) {
+            RefreshResolvedExportInfo();
             SetTextValue(IDC_LAUNCHER_PREVIEW, L"");
             SetTextValue(IDC_EXEC_PREVIEW, L"");
             SetTextValue(IDC_CFG_PREVIEW, errorMessage);
             if (!silentErrors) {
-                MessageBoxW(hwnd_, errorMessage.c_str(), kWindowTitle, MB_ICONERROR | MB_OK);
+                ShowActionError(
+                    L"Export preview",
+                    errorMessage,
+                    BuildQuickExportTargetPathPreview(),
+                    L"Verify the cfg file name and the export target path.");
             }
             return false;
         }
 
+        RefreshResolvedExportInfo();
         return true;
     }
 
@@ -1292,11 +1447,11 @@ private:
     void QuickExportToLiveMod() {
         const std::wstring liveModFolder = GetLiveModFolder();
         if (liveModFolder.empty()) {
-            MessageBoxW(
-                hwnd_,
-                L"The live mod folder could not be resolved. Set HL_EXE or HLDS_EXE, or use Export to chosen folder for advanced mode.",
-                kWindowTitle,
-                MB_ICONWARNING | MB_OK);
+            ShowActionError(
+                L"Quick Export to Live Mod",
+                L"The live mod folder could not be resolved.",
+                BuildQuickExportTargetPathPreview(),
+                L"Set HL_EXE or HLDS_EXE, or use Export to chosen folder for advanced mode.");
             return;
         }
 
@@ -1314,8 +1469,15 @@ private:
         }
 
         if (!CopyTextToClipboard(hwnd_, result.execCommand)) {
-            MessageBoxW(hwnd_, L"Unable to copy the exec command to the clipboard.", kWindowTitle, MB_ICONERROR | MB_OK);
+            ShowActionError(
+                L"Copy exec command",
+                L"Unable to copy the exec command to the clipboard.",
+                result.exportPath,
+                L"Try again after closing any application that is holding the clipboard open.");
+            return;
         }
+
+        ShowActionInfo(L"Copied exec command:\n" + result.execCommand, L"Copied:\n" + result.execCommand);
     }
 
     void CopyLauncherCommand() {
@@ -1325,13 +1487,24 @@ private:
         }
 
         if (result.launcherCommand.empty()) {
-            MessageBoxW(hwnd_, L"The current export path does not map to a launcher-friendly cfg profile path.", kWindowTitle, MB_ICONWARNING | MB_OK);
+            ShowActionError(
+                L"Copy launcher command",
+                L"The current export path does not map to a launcher-friendly cfg profile path.",
+                result.exportPath,
+                L"Export into the live mod root or cfg_profiles to enable a launcher command.");
             return;
         }
 
         if (!CopyTextToClipboard(hwnd_, result.launcherCommand)) {
-            MessageBoxW(hwnd_, L"Unable to copy the launcher command to the clipboard.", kWindowTitle, MB_ICONERROR | MB_OK);
+            ShowActionError(
+                L"Copy launcher command",
+                L"Unable to copy the launcher command to the clipboard.",
+                result.exportPath,
+                L"Try again after closing any application that is holding the clipboard open.");
+            return;
         }
+
+        ShowActionInfo(L"Copied launcher command:\n" + result.launcherCommand, L"Copied:\n" + result.launcherCommand);
     }
 
     void CopyRawCfg() {
@@ -1341,14 +1514,21 @@ private:
         }
 
         if (!CopyTextToClipboard(hwnd_, result.cfgText)) {
-            MessageBoxW(hwnd_, L"Unable to copy the cfg contents to the clipboard.", kWindowTitle, MB_ICONERROR | MB_OK);
+            ShowActionError(
+                L"Copy raw cfg",
+                L"Unable to copy the cfg contents to the clipboard.",
+                result.exportPath,
+                L"Try again after closing any application that is holding the clipboard open.");
+            return;
         }
+
+        ShowActionInfo(L"Copied generated cfg text.\n\nPreview source:\n" + result.exportPath, L"Copied the generated cfg text to the clipboard.");
     }
 
     void OpenExportFolder() {
         SyncDocumentFromControls();
         std::wstring folder = document_.exportSettings.exportFolder.empty() ? environment_.defaultExportFolder : document_.exportSettings.exportFolder;
-        OpenResolvedFolder(folder, L"The export folder is not set.");
+        OpenResolvedFolder(folder, L"The export folder is not set.", L"Opened export folder");
     }
 
     std::wstring GetLiveModFolder() const {
@@ -1359,15 +1539,25 @@ private:
         return environment_.stagedLiveModRoot;
     }
 
-    void OpenResolvedFolder(const std::wstring& folder, const wchar_t* emptyMessage) {
+    void OpenResolvedFolder(const std::wstring& folder, const wchar_t* emptyMessage, const wchar_t* actionLabel) {
         if (folder.empty()) {
-            MessageBoxW(hwnd_, emptyMessage, kWindowTitle, MB_ICONWARNING | MB_OK);
+            ShowActionError(actionLabel, emptyMessage, std::wstring(), L"Choose or resolve a folder first.");
             return;
         }
 
         std::error_code error;
         std::filesystem::create_directories(folder, error);
-        ShellExecuteW(hwnd_, L"open", folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        const HINSTANCE openResult = ShellExecuteW(hwnd_, L"open", folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        if (reinterpret_cast<INT_PTR>(openResult) <= 32) {
+            ShowActionError(
+                actionLabel,
+                L"Windows could not open the folder.",
+                folder,
+                L"Check that the folder exists and that Explorer can access it.");
+            return;
+        }
+
+        SetActionStatus(std::wstring(actionLabel) + L":\n" + folder);
     }
 
     HINSTANCE instance_ = nullptr;
@@ -1379,6 +1569,7 @@ private:
     hlcfg::ProjectDocument document_;
     std::wstring currentProjectPath_;
     std::wstring lastSuggestedCfgFileName_;
+    std::wstring lastActionStatus_;
     bool dirty_ = false;
     bool loadingControls_ = false;
 };

@@ -36,12 +36,14 @@ This is now the default path:
 3. Edit values on the `General`, `Glock`, `MP5`, and `Target Dummy` tabs.
 4. Save the editable project as `.hlcfg.json`.
 5. Open the `Export` tab.
-6. Leave the default live-mod target in place.
-7. Use the suggested cfg filename, or change it to something like `my_glock.cfg`.
-8. Click `Quick Export to Live Mod`.
-9. If the target file already exists, confirm the overwrite.
-10. Click `Copy exec command`.
-11. In HLDS, run `exec my_glock.cfg`.
+6. Confirm the resolved-path fields show the expected Half-Life root, live mod root, and quick-export target.
+7. Leave the default live-mod target in place.
+8. Use the suggested cfg filename, or change it to something like `my_glock.cfg`.
+9. Click `Quick Export to Live Mod`.
+10. If the target file already exists, confirm the overwrite.
+11. On success, the editor verifies the file exists, updates the `Last Action` status, and shows the exact written cfg path plus the `exec` command.
+12. Click `Copy exec command`.
+13. In HLDS, run `exec my_glock.cfg`.
 
 In the simple path, the editor writes directly into:
 
@@ -60,8 +62,10 @@ exec my_glock.cfg
 The `Export` tab now emphasizes the simple live-mod workflow first:
 
 - `Quick Export to Live Mod` exports directly into `<HalfLifeRoot>\hlserver_testbed\`.
+- The tab shows the resolved Half-Life root, live mod root, quick-export target, and running editor EXE before export.
 - `Copy exec command` copies `exec <filename>.cfg` for root-level live-mod exports.
 - `Export to chosen folder` is still available for advanced/custom destinations.
+- `Copy launcher`, `Copy raw cfg`, `Open export folder`, and `Open live mod` all provide visible success or error feedback instead of failing silently.
 - `Copy launcher` still works when the exported cfg resolves to a live-mod-relative path.
 
 The default cfg filename is derived from the current project/config name so the common path does not start from a generic placeholder. Example defaults include `editor_glock_simple.cfg` and `editor_mp5_simple.cfg`.
@@ -144,3 +148,12 @@ The managed `hlserver_testbed` refresh path now preserves the files that matter 
 - the legacy `cfg_profiles\...` tree
 
 That means a live-mod refresh no longer erases the default root-level cfg export path.
+
+The editor deployment step also writes a live-mod marker when the folder contains only known editor/live-mod content, so `play-hlserver-testbed-direct.bat -CfgProfile <name>.cfg` can later refresh the same folder instead of refusing it as unmanaged.
+
+## Troubleshooting
+
+- If `Quick Export to Live Mod` looks idle, the current editor should now always respond with either a success dialog or a clear error dialog and an updated `Last Action` status field.
+- The default quick-export file should appear directly in `<HalfLifeRoot>\hlserver_testbed\`, for example `D:\Steam\steamapps\common\Half-Life\hlserver_testbed\editor_gui_simple.cfg`.
+- To verify you are running the deployed build, launch `D:\Steam\steamapps\common\Half-Life\hlserver_testbed\HlConfigEditorCpp.exe` and compare its timestamp with `<repo-root>\tools\HlConfigEditorCpp\bin\Debug\Win32\HlConfigEditorCpp.exe`.
+- If Visual Studio reports that deployment failed because the destination EXE is in use, close the running deployed editor from the mod root and rebuild.

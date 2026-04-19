@@ -16,6 +16,83 @@ function Write-DeployWarning {
     Write-Warning "[HlConfigEditorCpp deploy] $Message"
 }
 
+function Test-CanMarkManagedLiveModFolder {
+    param([string]$LiveModRoot)
+
+    if ([string]::IsNullOrWhiteSpace($LiveModRoot) -or -not (Test-Path -LiteralPath $LiveModRoot)) {
+        return $false
+    }
+
+    $allowedFileNames = @(
+        "HlConfigEditorCpp.exe",
+        "HlConfigEditorCpp.pdb",
+        "hlserver_launch.cfg",
+        "liblist.gam",
+        ".hl-server-live-mod.txt",
+        ".hl-server-live-mod.json"
+    )
+
+    $allowedDirectories = @(
+        "cfg_profiles",
+        "logs"
+    )
+
+    $items = Get-ChildItem -LiteralPath $LiveModRoot -Force -ErrorAction SilentlyContinue
+    foreach ($item in $items) {
+        if ($item.PSIsContainer) {
+            if ($allowedDirectories -contains $item.Name) {
+                continue
+            }
+
+            return $false
+        }
+
+        if ($allowedFileNames -contains $item.Name) {
+            continue
+        }
+
+        if ($item.Name.EndsWith(".hlcfg.json", [System.StringComparison]::OrdinalIgnoreCase) -or
+            $item.Extension.Equals(".cfg", [System.StringComparison]::OrdinalIgnoreCase)) {
+            continue
+        }
+
+        return $false
+    }
+
+    return $true
+}
+
+function Ensure-ManagedLiveModMarker {
+    param(
+        [string]$LiveModRoot,
+        [string]$HalfLifeRoot
+    )
+
+    if ([string]::IsNullOrWhiteSpace($LiveModRoot) -or -not (Test-Path -LiteralPath $LiveModRoot)) {
+        return
+    }
+
+    $markerPath = Join-Path $LiveModRoot ".hl-server-live-mod.txt"
+    if (Test-Path -LiteralPath $markerPath) {
+        return
+    }
+
+    if (-not (Test-CanMarkManagedLiveModFolder -LiveModRoot $LiveModRoot)) {
+        Write-DeployWarning "Skipped writing the managed live-mod marker because $LiveModRoot contains files that were not recognized as safe editor-deployment content."
+        return
+    }
+
+    @"
+Managed same-root live mod placeholder prepared by hl-server editor deployment.
+Client root: $HalfLifeRoot
+Game dir: hlserver_testbed
+Purpose: preserve root-level cfg exports and allow the live launcher to refresh this folder later.
+Timestamp: $(Get-Date -Format o)
+"@ | Set-Content -LiteralPath $markerPath -Encoding ASCII
+
+    Write-DeployInfo "Wrote managed live-mod marker: $markerPath"
+}
+
 function Get-RepoRoot {
     param([string]$ProjectDirectory)
 
@@ -126,8 +203,15 @@ try {
     Copy-Item -LiteralPath $resolvedBuiltExe -Destination $destinationPath -Force
 }
 catch {
-    Write-DeployWarning "Failed to copy the editor into $destinationPath. Built executable remains at $resolvedBuiltExe."
+    Write-DeployWarning "Failed to copy the editor into $destinationPath. Built executable remains at $resolvedBuiltExe. $($_.Exception.Message)"
     exit 0
+}
+
+try {
+    Ensure-ManagedLiveModMarker -LiveModRoot $liveModRoot -HalfLifeRoot $halfLifeRoot
+}
+catch {
+    Write-DeployWarning "The editor was copied, but the managed live-mod marker could not be updated in $liveModRoot. $($_.Exception.Message)"
 }
 
 Write-DeployInfo "Built executable  : $resolvedBuiltExe"

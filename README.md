@@ -80,9 +80,10 @@ Simplest workflow:
 1. Build `HlConfigEditorCpp` in Visual Studio 2022.
 2. Run the deployed EXE from `<HalfLifeRoot>\hlserver_testbed\HlConfigEditorCpp.exe`.
 3. Save the editable project as `.hlcfg.json`.
-4. On the `Export` tab, click `Quick Export to Live Mod`.
-5. The editor writes `<HalfLifeRoot>\hlserver_testbed\<project-or-config-name>.cfg`.
-6. Click `Copy exec command` and use the copied command in HLDS, for example `exec my_glock.cfg`.
+4. On the `Export` tab, confirm the resolved path fields show the expected Half-Life root, live mod root, and quick-export target.
+5. Click `Quick Export to Live Mod`.
+6. The editor writes `<HalfLifeRoot>\hlserver_testbed\<project-or-config-name>.cfg`, verifies the file exists, and shows a visible success or error dialog instead of failing silently.
+7. Click `Copy exec command` and use the copied command in HLDS, for example `exec my_glock.cfg`.
 
 How to use the editor:
 
@@ -90,9 +91,11 @@ How to use the editor:
 2. Use `File -> Save` or `File -> Save As` to store the editable project as `.hlcfg.json`.
 3. Open the `Export` tab. The default filename follows the project or config name, for example `editor_glock_simple.cfg`.
 4. `Quick Export to Live Mod` is the primary action. It exports directly into `<HalfLifeRoot>\hlserver_testbed\` and prompts before overwriting an existing file.
-5. `Copy exec command` now defaults to `exec my_glock.cfg` when the cfg is exported to the live mod root.
-6. `Export to chosen folder` is still available for advanced/custom locations.
-7. `Copy launcher` still works for cfgs inside the live mod, including legacy `cfg_profiles\...` exports.
+5. The `Export` tab now shows the resolved Half-Life root, live mod root, quick-export target, and running editor EXE so the destination is visible before you click anything.
+6. `Copy exec command`, `Copy launcher`, `Copy raw cfg`, and the folder-opening buttons all show visible success or error feedback.
+7. `Copy exec command` now defaults to `exec my_glock.cfg` when the cfg is exported to the live mod root.
+8. `Export to chosen folder` is still available for advanced/custom locations.
+9. `Copy launcher` still works for cfgs inside the live mod, including legacy `cfg_profiles\...` exports.
 
 JSON vs CFG:
 
@@ -105,6 +108,13 @@ Export behavior:
 - If the live root is not available, it falls back to `<repo-root>\testbed\mods\hlserver_testbed\`.
 - If you choose a custom folder inside `<HalfLifeRoot>\hlserver_testbed\cfg_profiles\`, the legacy `cfg_profiles\...` launcher and `exec cfg_profiles/...` workflow remains supported.
 - The editor does not hot-apply changes to a running server. Export the `.cfg`, then load it manually in HLDS or start a cfg-driven live session with the launcher commands below.
+
+Troubleshooting:
+
+- If `Quick Export to Live Mod` appears to do nothing, the current editor should now always show either a success dialog or a clear error dialog plus an updated `Last Action` status field on the `Export` tab.
+- The default quick-export file should appear directly in `<HalfLifeRoot>\hlserver_testbed\`, for example `D:\Steam\steamapps\common\Half-Life\hlserver_testbed\editor_gui_simple.cfg`.
+- To confirm you are testing the deployed build, start `D:\Steam\steamapps\common\Half-Life\hlserver_testbed\HlConfigEditorCpp.exe` and compare its timestamp with the normal build output under `tools\HlConfigEditorCpp\bin\Debug\Win32\`.
+- If Visual Studio warns that deployment failed because the destination EXE is in use, close the running `HlConfigEditorCpp.exe` from the mod root and rebuild.
 
 Built-in self-test:
 
@@ -189,6 +199,7 @@ Cfg-driven observability:
 - cfg-driven sessions print the requested cfg, the active live-mod path, and the `exec` profile
 - launch metadata under `testbed\logs\hlds-*-launch.txt` records `Cfg mode`, `Cfg profile`, `Cfg source`, and `Cfg active`
 - root-level exported `*.cfg` files, the deployed `HlConfigEditorCpp.exe`, and legacy `cfg_profiles\...` files are preserved across same-root live-mod refreshes so the simplified workflow remains usable
+- the editor deployment now writes a live-mod marker when the folder only contains known editor/live-mod content so later cfg-driven launcher refreshes can safely take ownership of the folder
 
 ## Live BAT launchers
 
