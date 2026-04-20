@@ -796,7 +796,7 @@ void EnsureWeaponDebugLogOpen()
         sessionLine,
         sizeof(sessionLine),
         _TRUNCATE,
-        "[weaponlog] type=session ts=%s map=%s event=weapon_debug_session status=ready game=valve file=\"%s\" profile=\"%s\" glock_profile=\"%s\" mp5_profile=\"%s\" tapfire=%d move_scale=%.4f firstshot_enabled=%d recovery=%.3f base=%.4f ground_move_penalty=%.4f air_move_penalty=%.4f duck_penalty_scale=%.4f firstshot_speed=%.1f max_spread=%.4f sv_exp_glock_primary_damage=%.4f sv_exp_glock_primary_headshot_scale=%.4f sv_exp_glock_primary_headshot_lethal=%d sv_exp_mp5_primary_enabled=%d sv_exp_mp5_primary_base_spread=%.4f sv_exp_mp5_primary_ground_move_penalty=%.4f sv_exp_mp5_primary_air_move_penalty=%.4f sv_exp_mp5_primary_duck_penalty_scale=%.4f sv_exp_mp5_primary_burst_growth=%.4f sv_exp_mp5_primary_burst_max_additional_spread=%.4f sv_exp_mp5_primary_spread_recovery=%.4f sv_exp_mp5_primary_damage=%.4f sv_exp_mp5_primary_headshot_scale=%.4f sv_exp_mp5_primary_headshot_lethal=%d sv_exp_mp5_primary_first_shot_accuracy=%d sv_exp_mp5_primary_first_shot_speed_threshold=%.1f sv_exp_mp5_primary_max_spread=%.4f sv_exp_mp5_lab_loadout=%d sv_exp_mp5_lab_ammo=%.1f sv_exp_mp5_lab_autoswitch=%d sv_exp_glock_lab_dummy=%d sv_exp_glock_lab_target_profile_name=\"%s\" sv_exp_glock_lab_dummy_armor=%.1f sv_exp_glock_lab_dummy_head_protected=%d sv_exp_glock_lab_dummy_armor_health_fraction=%.3f sv_exp_glock_lab_dummy_armor_drain_scale=%.3f",
+        "[weaponlog] type=session ts=%s map=%s event=weapon_debug_session status=ready game=valve file=\"%s\" profile=\"%s\" glock_profile=\"%s\" mp5_profile=\"%s\" tapfire=%d move_scale=%.4f firstshot_enabled=%d recovery=%.3f base=%.4f ground_move_penalty=%.4f air_move_penalty=%.4f duck_penalty_scale=%.4f firstshot_speed=%.1f max_spread=%.4f sv_exp_glock_primary_damage=%.4f sv_exp_glock_primary_headshot_scale=%.4f sv_exp_glock_primary_headshot_lethal=%d sv_exp_mp5_primary_enabled=%d sv_exp_mp5_primary_base_spread=%.4f sv_exp_mp5_primary_ground_move_penalty=%.4f sv_exp_mp5_primary_air_move_penalty=%.4f sv_exp_mp5_primary_duck_penalty_scale=%.4f sv_exp_mp5_primary_burst_growth=%.4f sv_exp_mp5_primary_burst_max_additional_spread=%.4f sv_exp_mp5_primary_spread_recovery=%.4f sv_exp_mp5_primary_damage=%.4f sv_exp_mp5_primary_headshot_scale=%.4f sv_exp_mp5_primary_headshot_lethal=%d sv_exp_mp5_primary_first_shot_accuracy=%d sv_exp_mp5_primary_first_shot_speed_threshold=%.1f sv_exp_mp5_primary_max_spread=%.4f sv_exp_mp5_lab_loadout=%d sv_exp_mp5_lab_ammo=%.1f sv_exp_mp5_lab_autoswitch=%d sv_exp_glock_lab_dummy=%d sv_exp_glock_lab_target_profile_name=\"%s\" sv_exp_glock_lab_dummy_armor=%.1f sv_exp_glock_lab_dummy_head_protected=%d sv_exp_glock_lab_dummy_armor_health_fraction=%.3f sv_exp_glock_lab_dummy_armor_drain_scale=%.3f cfg_mode=%d",
         timestamp,
         SanitizeLogValue(GetSafeMapName()).c_str(),
         g_weaponDebugLogPath.c_str(),
@@ -838,12 +838,17 @@ void EnsureWeaponDebugLogOpen()
         ExpGlockLabDummyArmor(),
         ExpGlockLabDummyHeadProtected() ? 1 : 0,
         ExpGlockLabDummyArmorHealthFraction(),
-        ExpGlockLabDummyArmorDrainScale());
+        ExpGlockLabDummyArmorDrainScale(),
+        ExpCfgDrivenModeActive() ? 1 : 0);
     std::string sessionTelemetryLine = sessionLine;
     AppendOptionalQuotedTelemetryField(&sessionTelemetryLine, "weapon_under_test", ExpWeaponUnderTest());
     AppendOptionalQuotedTelemetryField(&sessionTelemetryLine, "session_tag", ExpSessionTag());
     AppendOptionalQuotedTelemetryField(&sessionTelemetryLine, "matrix_name", ExpMatrixName());
     AppendOptionalQuotedTelemetryField(&sessionTelemetryLine, "matrix_step", ExpMatrixStep());
+    AppendOptionalQuotedTelemetryField(&sessionTelemetryLine, "cfg_active_profile", ExpActiveCfgProfile());
+    AppendOptionalQuotedTelemetryField(&sessionTelemetryLine, "cfg_last_successful_profile", ExpLastSuccessfulCfgProfile());
+    AppendOptionalQuotedTelemetryField(&sessionTelemetryLine, "cfg_last_action", ExpLastCfgAction());
+    AppendOptionalQuotedTelemetryField(&sessionTelemetryLine, "cfg_last_applied_at", ExpLastCfgAppliedAt());
     WriteTelemetryLine(sessionTelemetryLine.c_str());
 }
 }
@@ -856,6 +861,90 @@ void EnsureWeaponDebugLogReady()
     }
 
     EnsureWeaponDebugLogOpen();
+}
+
+void LogLiveCfgCommand(const char *action, const char *requestedPath, const char *execPath, const char *resolvedPath, bool success, const char *details)
+{
+    if (!ExpDebugWeaponLogEnabled())
+    {
+        return;
+    }
+
+    EnsureWeaponDebugLogOpen();
+
+    char timestamp[64];
+    char line[2048];
+    FormatTimestamp(timestamp, sizeof(timestamp));
+
+    _snprintf_s(
+        line,
+        sizeof(line),
+        _TRUNCATE,
+        "[weaponlog] type=cfg ts=%s map=%s action=%s status=%s cfg_mode=%d request=\"%s\" exec_path=\"%s\" resolved_path=\"%s\" target_profile=\"%s\"",
+        timestamp,
+        SanitizeLogValue(GetSafeMapName()).c_str(),
+        SanitizeLogValue(action).c_str(),
+        success ? "success" : "failure",
+        ExpCfgDrivenModeActive() ? 1 : 0,
+        SanitizeLogValue(requestedPath).c_str(),
+        SanitizeLogValue(execPath).c_str(),
+        SanitizeLogValue(resolvedPath).c_str(),
+        SanitizeLogValue(ExpGlockLabTargetProfileName()).c_str());
+
+    std::string telemetryLine = line;
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "details", details);
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "weapon_under_test", ExpWeaponUnderTest());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "session_tag", ExpSessionTag());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "glock_profile", ExpGlockProfileName());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "mp5_profile", ExpMP5ProfileName());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "cfg_active_profile", ExpActiveCfgProfile());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "cfg_last_successful_profile", ExpLastSuccessfulCfgProfile());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "cfg_last_action", ExpLastCfgAction());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "cfg_last_applied_at", ExpLastCfgAppliedAt());
+    WriteTelemetryLine(telemetryLine.c_str());
+}
+
+void LogLiveLabConsoleMessage(const char *line)
+{
+    if (!ExpDebugWeaponLogEnabled() || line == NULL || line[0] == '\0')
+    {
+        return;
+    }
+
+    EnsureWeaponDebugLogOpen();
+    if (g_weaponDebugLogFile == NULL)
+    {
+        return;
+    }
+
+    char timestamp[64];
+    char entry[1024];
+    FormatTimestamp(timestamp, sizeof(timestamp));
+
+    _snprintf_s(
+        entry,
+        sizeof(entry),
+        _TRUNCATE,
+        "[weaponlog] type=lab_console ts=%s map=%s cfg_mode=%d target_profile=\"%s\"",
+        timestamp,
+        SanitizeLogValue(GetSafeMapName()).c_str(),
+        ExpCfgDrivenModeActive() ? 1 : 0,
+        SanitizeLogValue(ExpGlockLabTargetProfileName()).c_str());
+
+    std::string telemetryLine = entry;
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "message", line);
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "weapon_under_test", ExpWeaponUnderTest());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "session_tag", ExpSessionTag());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "glock_profile", ExpGlockProfileName());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "mp5_profile", ExpMP5ProfileName());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "cfg_active_profile", ExpActiveCfgProfile());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "cfg_last_successful_profile", ExpLastSuccessfulCfgProfile());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "cfg_last_action", ExpLastCfgAction());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "cfg_last_applied_at", ExpLastCfgAppliedAt());
+
+    fputs(telemetryLine.c_str(), g_weaponDebugLogFile);
+    fputc('\n', g_weaponDebugLogFile);
+    fflush(g_weaponDebugLogFile);
 }
 
 void LogGlockLabDummySpawn(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, bool respawn, const Vector &origin, const Vector &angles)

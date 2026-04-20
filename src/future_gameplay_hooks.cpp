@@ -8,9 +8,13 @@
 #include "future_gameplay_hooks.h"
 #include "weapon_debug_logger.h"
 
+#include <io.h>
 #include <math.h>
+#include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
+#include <string>
+#include <windows.h>
 
 namespace
 {
@@ -23,11 +27,40 @@ const float kGlockLabDummyPlacementSearchStep = 32.0f;
 const float kGlockLabDummyPlacementMinDistance = 64.0f;
 const char *kDefaultGlockLabDummyModel = "models/barney.mdl";
 const char *kGlockLabDummyDisplayName = "Damage Dummy";
+const size_t kMaxLiveCfgRequestLength = 512;
+const size_t kMaxLiveCfgExecPathLength = 512;
+const size_t kMaxLiveCfgPathLength = 1024;
+const size_t kMaxLiveCfgFailureLength = 512;
 const char *kAllowedGlockLabDummyModels[] = {
     "models/barney.mdl",
     "models/scientist.mdl"};
 const char *kGlockLabDummyClassname = "glock_lab_dummy";
 const char *kGlockLabDummyTargetname = "exp_glock_lab_dummy";
+
+struct LiveCfgState
+{
+    bool cfgDrivenModeActive;
+    bool hasActiveCfg;
+    bool hasLastSuccessfulCfg;
+    bool lastCommandSucceeded;
+    char activeRequestedPath[kMaxLiveCfgRequestLength];
+    char activeExecPath[kMaxLiveCfgExecPathLength];
+    char activeResolvedPath[kMaxLiveCfgPathLength];
+    char lastSuccessfulExecPath[kMaxLiveCfgExecPathLength];
+    char lastSuccessfulResolvedPath[kMaxLiveCfgPathLength];
+    char lastAction[32];
+    char lastAppliedAt[64];
+    float lastApplyServerTime;
+    char lastFailureAction[32];
+    char lastFailure[kMaxLiveCfgFailureLength];
+};
+
+struct ResolvedLiveCfgSelection
+{
+    char requestedPath[kMaxLiveCfgRequestLength];
+    char execPath[kMaxLiveCfgExecPathLength];
+    char resolvedPath[kMaxLiveCfgPathLength];
+};
 
 struct LabDummyProfileDefinition
 {
@@ -108,6 +141,9 @@ bool g_glockLabDummyRespawnPending = false;
 float g_glockLabDummyRespawnTime = 0.0f;
 float g_glockLabDummyRetryTime = 0.0f;
 char g_futureHooksMapName[64] = "";
+LiveCfgState g_liveCfgState = {};
+
+void PrintLabDummyStatus();
 
 float GetNonNegativeCvarValue(const cvar_t &cvar)
 {
@@ -214,6 +250,529 @@ void PrintLabDummyConsoleLine(const char *format, ...)
     va_end(args);
 
     ALERT(at_console, "[hl-server] %s\n", line);
+    LogLiveLabConsoleMessage(line);
+}
+
+void FormatFutureGameplayTimestamp(char *buffer, size_t bufferSize)
+{
+    SYSTEMTIME localTime;
+    GetLocalTime(&localTime);
+
+    _snprintf_s(
+        buffer,
+        bufferSize,
+        _TRUNCATE,
+        "%04u-%02u-%02uT%02u:%02u:%02u.%03u",
+        localTime.wYear,
+        localTime.wMonth,
+        localTime.wDay,
+        localTime.wHour,
+        localTime.wMinute,
+        localTime.wSecond,
+        localTime.wMilliseconds);
+}
+
+const char *GetValueOrFallback(const char *value, const char *fallback)
+{
+    if (value == NULL || value[0] == '\0')
+    {
+        return fallback;
+    }
+
+    return value;
+}
+
+void BuildCommandArgumentString(int firstArgIndex, char *buffer, size_t bufferSize)
+{
+    if (buffer == NULL || bufferSize == 0)
+    {
+        return;
+    }
+
+    buffer[0] = '\0';
+    const int argc = CMD_ARGC();
+    for (int argIndex = firstArgIndex; argIndex < argc; ++argIndex)
+    {
+        if (argIndex > firstArgIndex)
+        {
+            strncat_s(buffer, bufferSize, " ", _TRUNCATE);
+        }
+
+        strncat_s(buffer, bufferSize, CMD_ARGV(argIndex), _TRUNCATE);
+    }
+}
+
+void TrimCfgRequestString(const char *input, char *buffer, size_t bufferSize)
+{
+    if (buffer == NULL || bufferSize == 0)
+    {
+        return;
+    }
+
+    buffer[0] = '\0';
+    if (input == NULL)
+    {
+        return;
+    }
+
+    const char *start = input;
+    while (*start == ' ' || *start == '\t' || *start == '\r' || *start == '\n' || *start == '"')
+    {
+        ++start;
+    }
+
+    const char *end = input + strlen(input);
+    while (end > start &&
+           (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r' || end[-1] == '\n' || end[-1] == '"'))
+    {
+        --end;
+    }
+
+    const size_t length = (size_t)(end - start);
+    strncpy_s(buffer, bufferSize, start, length);
+}
+
+void NormalizeSlashes(char *path, char separator)
+{
+    if (path == NULL)
+    {
+        return;
+    }
+
+    for (char *cursor = path; *cursor != '\0'; ++cursor)
+    {
+        if (*cursor == '\\' || *cursor == '/')
+        {
+            *cursor = separator;
+        }
+    }
+}
+
+bool HasAnyPathSeparator(const char *path)
+{
+    return path != NULL && (strchr(path, '\\') != NULL || strchr(path, '/') != NULL);
+}
+
+bool IsAbsoluteCfgPath(const char *path)
+{
+    if (path == NULL || path[0] == '\0')
+    {
+        return false;
+    }
+
+    return (strlen(path) >= 2 && path[1] == ':') ||
+        (path[0] == '\\' && path[1] == '\\');
+}
+
+bool EndsWithCfgExtension(const char *path)
+{
+    if (path == NULL)
+    {
+        return false;
+    }
+
+    const size_t pathLength = strlen(path);
+    return pathLength >= 4 && _stricmp(path + pathLength - 4, ".cfg") == 0;
+}
+
+bool FileExists(const char *path)
+{
+    return path != NULL && path[0] != '\0' && _access(path, 0) == 0;
+}
+
+bool TryGetFullPathString(const char *path, char *buffer, size_t bufferSize)
+{
+    if (path == NULL || path[0] == '\0' || buffer == NULL || bufferSize == 0)
+    {
+        return false;
+    }
+
+    DWORD length = GetFullPathNameA(path, (DWORD)bufferSize, buffer, NULL);
+    return length > 0 && length < bufferSize;
+}
+
+bool IsPathWithinRoot(const char *path, const char *root)
+{
+    if (path == NULL || root == NULL || path[0] == '\0' || root[0] == '\0')
+    {
+        return false;
+    }
+
+    char normalizedPath[kMaxLiveCfgPathLength];
+    char normalizedRoot[kMaxLiveCfgPathLength];
+    strncpy_s(normalizedPath, sizeof(normalizedPath), path, _TRUNCATE);
+    strncpy_s(normalizedRoot, sizeof(normalizedRoot), root, _TRUNCATE);
+    NormalizeSlashes(normalizedPath, '\\');
+    NormalizeSlashes(normalizedRoot, '\\');
+
+    size_t rootLength = strlen(normalizedRoot);
+    if (rootLength == 0)
+    {
+        return false;
+    }
+
+    if (normalizedRoot[rootLength - 1] != '\\')
+    {
+        strncat_s(normalizedRoot, sizeof(normalizedRoot), "\\", _TRUNCATE);
+        rootLength = strlen(normalizedRoot);
+    }
+
+    return _strnicmp(normalizedPath, normalizedRoot, rootLength) == 0;
+}
+
+bool TryBuildRelativePathFromRoot(const char *path, const char *root, char *buffer, size_t bufferSize)
+{
+    if (!IsPathWithinRoot(path, root) || buffer == NULL || bufferSize == 0)
+    {
+        return false;
+    }
+
+    char normalizedPath[kMaxLiveCfgPathLength];
+    char normalizedRoot[kMaxLiveCfgPathLength];
+    strncpy_s(normalizedPath, sizeof(normalizedPath), path, _TRUNCATE);
+    strncpy_s(normalizedRoot, sizeof(normalizedRoot), root, _TRUNCATE);
+    NormalizeSlashes(normalizedPath, '\\');
+    NormalizeSlashes(normalizedRoot, '\\');
+
+    size_t rootLength = strlen(normalizedRoot);
+    if (normalizedRoot[rootLength - 1] != '\\')
+    {
+        strncat_s(normalizedRoot, sizeof(normalizedRoot), "\\", _TRUNCATE);
+        rootLength = strlen(normalizedRoot);
+    }
+
+    const char *relativePath = normalizedPath + rootLength;
+    while (*relativePath == '\\')
+    {
+        ++relativePath;
+    }
+
+    strncpy_s(buffer, bufferSize, relativePath, _TRUNCATE);
+    return buffer[0] != '\0';
+}
+
+bool TryGetLiveModRootPath(char *buffer, size_t bufferSize)
+{
+    if (buffer == NULL || bufferSize == 0)
+    {
+        return false;
+    }
+
+    HMODULE moduleHandle = NULL;
+    if (!GetModuleHandleExA(
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            (LPCSTR)&RegisterFutureGameplayCvars,
+            &moduleHandle))
+    {
+        return false;
+    }
+
+    char modulePath[kMaxLiveCfgPathLength];
+    DWORD length = GetModuleFileNameA(moduleHandle, modulePath, ARRAYSIZE(modulePath));
+    if (length == 0 || length >= ARRAYSIZE(modulePath))
+    {
+        return false;
+    }
+
+    char *fileName = strrchr(modulePath, '\\');
+    if (fileName == NULL)
+    {
+        return false;
+    }
+
+    *fileName = '\0';
+    char *dllsDirectory = strrchr(modulePath, '\\');
+    if (dllsDirectory == NULL || _stricmp(dllsDirectory + 1, "dlls") != 0)
+    {
+        return false;
+    }
+
+    *dllsDirectory = '\0';
+    strncpy_s(buffer, bufferSize, modulePath, _TRUNCATE);
+    return true;
+}
+
+bool TryResolveLiveCfgSelection(const char *requestedPath, ResolvedLiveCfgSelection *pSelection, char *failureReason, size_t failureReasonSize)
+{
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    if (pSelection == NULL)
+    {
+        return false;
+    }
+
+    memset(pSelection, 0, sizeof(*pSelection));
+
+    char trimmedRequest[kMaxLiveCfgRequestLength];
+    TrimCfgRequestString(requestedPath, trimmedRequest, sizeof(trimmedRequest));
+    if (trimmedRequest[0] == '\0')
+    {
+        strcpy_s(failureReason, failureReasonSize, "cfg path cannot be empty");
+        return false;
+    }
+
+    if (!EndsWithCfgExtension(trimmedRequest))
+    {
+        _snprintf_s(
+            failureReason,
+            failureReasonSize,
+            _TRUNCATE,
+            "cfg request \"%s\" must point to a .cfg file",
+            trimmedRequest);
+        return false;
+    }
+
+    char modRoot[kMaxLiveCfgPathLength];
+    if (!TryGetLiveModRootPath(modRoot, sizeof(modRoot)))
+    {
+        strcpy_s(failureReason, failureReasonSize, "could not resolve the active hlserver_testbed mod root from hl.dll");
+        return false;
+    }
+
+    if (IsAbsoluteCfgPath(trimmedRequest))
+    {
+        char fullPath[kMaxLiveCfgPathLength];
+        if (!TryGetFullPathString(trimmedRequest, fullPath, sizeof(fullPath)))
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "could not resolve cfg path \"%s\"",
+                trimmedRequest);
+            return false;
+        }
+
+        if (!IsPathWithinRoot(fullPath, modRoot))
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "cfg path \"%s\" is outside the active mod root %s",
+                fullPath,
+                modRoot);
+            return false;
+        }
+
+        if (!FileExists(fullPath))
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "cfg file was not found at %s",
+                fullPath);
+            return false;
+        }
+
+        char relativePath[kMaxLiveCfgExecPathLength];
+        if (!TryBuildRelativePathFromRoot(fullPath, modRoot, relativePath, sizeof(relativePath)))
+        {
+            strcpy_s(failureReason, failureReasonSize, "could not convert the cfg path into a mod-relative exec path");
+            return false;
+        }
+
+        NormalizeSlashes(relativePath, '/');
+        strncpy_s(pSelection->requestedPath, sizeof(pSelection->requestedPath), trimmedRequest, _TRUNCATE);
+        strncpy_s(pSelection->execPath, sizeof(pSelection->execPath), relativePath, _TRUNCATE);
+        strncpy_s(pSelection->resolvedPath, sizeof(pSelection->resolvedPath), fullPath, _TRUNCATE);
+        return true;
+    }
+
+    char normalizedRequest[kMaxLiveCfgExecPathLength];
+    strncpy_s(normalizedRequest, sizeof(normalizedRequest), trimmedRequest, _TRUNCATE);
+    NormalizeSlashes(normalizedRequest, '\\');
+    while (normalizedRequest[0] == '\\')
+    {
+        memmove(normalizedRequest, normalizedRequest + 1, strlen(normalizedRequest));
+    }
+
+    while (normalizedRequest[0] == '.' && normalizedRequest[1] == '\\')
+    {
+        memmove(normalizedRequest, normalizedRequest + 2, strlen(normalizedRequest) - 1);
+    }
+
+    if (normalizedRequest[0] == '\0')
+    {
+        strcpy_s(failureReason, failureReasonSize, "cfg path cannot resolve to the mod root itself");
+        return false;
+    }
+
+    char candidateRelativePaths[2][kMaxLiveCfgExecPathLength] = {};
+    char candidateAbsolutePaths[2][kMaxLiveCfgPathLength] = {};
+    int candidateCount = 0;
+
+    strncpy_s(candidateRelativePaths[candidateCount++], sizeof(candidateRelativePaths[0]), normalizedRequest, _TRUNCATE);
+    if (!HasAnyPathSeparator(normalizedRequest))
+    {
+        _snprintf_s(candidateRelativePaths[candidateCount++], sizeof(candidateRelativePaths[1]), _TRUNCATE, "cfg_profiles\\%s", normalizedRequest);
+    }
+
+    for (int candidateIndex = 0; candidateIndex < candidateCount; ++candidateIndex)
+    {
+        char combinedPath[kMaxLiveCfgPathLength];
+        _snprintf_s(
+            combinedPath,
+            sizeof(combinedPath),
+            _TRUNCATE,
+            "%s\\%s",
+            modRoot,
+            candidateRelativePaths[candidateIndex]);
+
+        if (!TryGetFullPathString(combinedPath, candidateAbsolutePaths[candidateIndex], sizeof(candidateAbsolutePaths[candidateIndex])))
+        {
+            continue;
+        }
+
+        if (!IsPathWithinRoot(candidateAbsolutePaths[candidateIndex], modRoot))
+        {
+            continue;
+        }
+
+        if (!FileExists(candidateAbsolutePaths[candidateIndex]))
+        {
+            continue;
+        }
+
+        char execPath[kMaxLiveCfgExecPathLength];
+        strncpy_s(execPath, sizeof(execPath), candidateRelativePaths[candidateIndex], _TRUNCATE);
+        NormalizeSlashes(execPath, '/');
+
+        strncpy_s(pSelection->requestedPath, sizeof(pSelection->requestedPath), trimmedRequest, _TRUNCATE);
+        strncpy_s(pSelection->execPath, sizeof(pSelection->execPath), execPath, _TRUNCATE);
+        strncpy_s(pSelection->resolvedPath, sizeof(pSelection->resolvedPath), candidateAbsolutePaths[candidateIndex], _TRUNCATE);
+        return true;
+    }
+
+    if (candidateCount == 1)
+    {
+        _snprintf_s(
+            failureReason,
+            failureReasonSize,
+            _TRUNCATE,
+            "cfg file \"%s\" was not found at %s",
+            trimmedRequest,
+            candidateAbsolutePaths[0][0] != '\0' ? candidateAbsolutePaths[0] : candidateRelativePaths[0]);
+    }
+    else
+    {
+        _snprintf_s(
+            failureReason,
+            failureReasonSize,
+            _TRUNCATE,
+            "cfg file \"%s\" was not found. Searched %s and %s",
+            trimmedRequest,
+            candidateAbsolutePaths[0][0] != '\0' ? candidateAbsolutePaths[0] : candidateRelativePaths[0],
+            candidateAbsolutePaths[1][0] != '\0' ? candidateAbsolutePaths[1] : candidateRelativePaths[1]);
+    }
+
+    return false;
+}
+
+void ClearLiveCfgFailureState()
+{
+    g_liveCfgState.lastFailureAction[0] = '\0';
+    g_liveCfgState.lastFailure[0] = '\0';
+}
+
+void RecordLiveCfgFailure(const char *action, const char *reason)
+{
+    g_liveCfgState.lastCommandSucceeded = false;
+    strncpy_s(g_liveCfgState.lastFailureAction, sizeof(g_liveCfgState.lastFailureAction), GetValueOrFallback(action, "apply"), _TRUNCATE);
+    strncpy_s(g_liveCfgState.lastFailure, sizeof(g_liveCfgState.lastFailure), GetValueOrFallback(reason, "unknown cfg failure"), _TRUNCATE);
+}
+
+void RecordLiveCfgSuccess(const char *action, const ResolvedLiveCfgSelection &selection)
+{
+    g_liveCfgState.cfgDrivenModeActive = true;
+    g_liveCfgState.hasActiveCfg = true;
+    g_liveCfgState.hasLastSuccessfulCfg = true;
+    g_liveCfgState.lastCommandSucceeded = true;
+    strncpy_s(g_liveCfgState.activeRequestedPath, sizeof(g_liveCfgState.activeRequestedPath), selection.requestedPath, _TRUNCATE);
+    strncpy_s(g_liveCfgState.activeExecPath, sizeof(g_liveCfgState.activeExecPath), selection.execPath, _TRUNCATE);
+    strncpy_s(g_liveCfgState.activeResolvedPath, sizeof(g_liveCfgState.activeResolvedPath), selection.resolvedPath, _TRUNCATE);
+    strncpy_s(g_liveCfgState.lastSuccessfulExecPath, sizeof(g_liveCfgState.lastSuccessfulExecPath), selection.execPath, _TRUNCATE);
+    strncpy_s(g_liveCfgState.lastSuccessfulResolvedPath, sizeof(g_liveCfgState.lastSuccessfulResolvedPath), selection.resolvedPath, _TRUNCATE);
+    strncpy_s(g_liveCfgState.lastAction, sizeof(g_liveCfgState.lastAction), GetValueOrFallback(action, "apply"), _TRUNCATE);
+    FormatFutureGameplayTimestamp(g_liveCfgState.lastAppliedAt, sizeof(g_liveCfgState.lastAppliedAt));
+    g_liveCfgState.lastApplyServerTime = gpGlobals != NULL ? gpGlobals->time : 0.0f;
+    ClearLiveCfgFailureState();
+}
+
+void PrintCurrentCfgMetadata()
+{
+    PrintLabDummyConsoleLine(
+        "current cfg metadata: weapon=%s session_tag=%s glock_profile=%s mp5_profile=%s target_profile=%s",
+        GetValueOrFallback(ExpWeaponUnderTest(), "none"),
+        GetValueOrFallback(ExpSessionTag(), "none"),
+        GetValueOrFallback(ExpGlockProfileName(), "default"),
+        GetValueOrFallback(ExpMP5ProfileName(), "default"),
+        GetValueOrFallback(ExpGlockLabTargetProfileName(), "default"));
+}
+
+void PrintLiveCfgStatus()
+{
+    const char *lastResult = "none";
+    if (g_liveCfgState.lastAction[0] != '\0')
+    {
+        lastResult = g_liveCfgState.lastCommandSucceeded ? "success" : "failure";
+    }
+    else if (g_liveCfgState.lastFailureAction[0] != '\0')
+    {
+        lastResult = "failure";
+    }
+
+    PrintLabDummyConsoleLine(
+        "cfg mode: cfg_driven=%d active_cfg_known=%d last_result=%s",
+        g_liveCfgState.cfgDrivenModeActive ? 1 : 0,
+        g_liveCfgState.hasActiveCfg ? 1 : 0,
+        lastResult);
+
+    if (g_liveCfgState.hasActiveCfg)
+    {
+        PrintLabDummyConsoleLine(
+            "active cfg: request=%s exec=%s source=%s file_present=%d",
+            GetValueOrFallback(g_liveCfgState.activeRequestedPath, "unknown"),
+            GetValueOrFallback(g_liveCfgState.activeExecPath, "unknown"),
+            GetValueOrFallback(g_liveCfgState.activeResolvedPath, "unknown"),
+            FileExists(g_liveCfgState.activeResolvedPath) ? 1 : 0);
+    }
+    else
+    {
+        PrintLabDummyConsoleLine("active cfg: none");
+    }
+
+    if (g_liveCfgState.hasLastSuccessfulCfg)
+    {
+        PrintLabDummyConsoleLine(
+            "last successful cfg: exec=%s source=%s",
+            GetValueOrFallback(g_liveCfgState.lastSuccessfulExecPath, "unknown"),
+            GetValueOrFallback(g_liveCfgState.lastSuccessfulResolvedPath, "unknown"));
+        PrintLabDummyConsoleLine(
+            "last successful apply: action=%s at=%s map_time=%.2f",
+            GetValueOrFallback(g_liveCfgState.lastAction, "unknown"),
+            GetValueOrFallback(g_liveCfgState.lastAppliedAt, "unknown"),
+            g_liveCfgState.lastApplyServerTime);
+    }
+    else
+    {
+        PrintLabDummyConsoleLine("last successful cfg: none");
+    }
+
+    if (g_liveCfgState.lastFailureAction[0] != '\0' && g_liveCfgState.lastFailure[0] != '\0')
+    {
+        PrintLabDummyConsoleLine(
+            "last cfg failure: action=%s reason=%s",
+            g_liveCfgState.lastFailureAction,
+            g_liveCfgState.lastFailure);
+    }
+
+    PrintCurrentCfgMetadata();
+    PrintLabDummyConsoleLine("cfg commands: exp_cfg_apply <cfg_name_or_path> | exp_cfg_reload | exp_cfg_status | exp_lab_apply <cfg_name_or_path>");
 }
 
 const char *GetLabDummyProfileNames()
@@ -786,12 +1345,103 @@ void SetLabDummyEnabled(bool enabled)
     CVAR_SET_FLOAT("sv_exp_glock_lab_dummy", enabled ? 1.0f : 0.0f);
 }
 
+bool ApplyResolvedLiveCfgSelection(const char *action, const ResolvedLiveCfgSelection &selection)
+{
+    if (g_engfuncs.pfnServerCommand == NULL || g_engfuncs.pfnServerExecute == NULL)
+    {
+        const char *reason = "engine server command execution is unavailable";
+        RecordLiveCfgFailure(action, reason);
+        LogLiveCfgCommand(action, selection.requestedPath, selection.execPath, selection.resolvedPath, false, reason);
+        PrintLabDummyConsoleLine("cfg %s failed: %s", GetValueOrFallback(action, "apply"), reason);
+        return false;
+    }
+
+    char execCommand[kMaxLiveCfgExecPathLength + 16];
+    _snprintf_s(execCommand, sizeof(execCommand), _TRUNCATE, "exec %s\n", selection.execPath);
+    SERVER_COMMAND(execCommand);
+    SERVER_EXECUTE();
+
+    RecordLiveCfgSuccess(action, selection);
+    EnsureWeaponDebugLogReady();
+    LogLiveCfgCommand(action, selection.requestedPath, selection.execPath, selection.resolvedPath, true, NULL);
+
+    PrintLabDummyConsoleLine(
+        "%s cfg: exec=%s source=%s",
+        StringEqualsIgnoreCase(action, "reload") ? "reloaded" : "applied",
+        selection.execPath,
+        selection.resolvedPath);
+    PrintCurrentCfgMetadata();
+    return true;
+}
+
+bool TryRespawnLabDummyInternal(const char *removeReason, char *summary, size_t summarySize, bool printStatusOnFailure)
+{
+    if (summary == NULL || summarySize == 0)
+    {
+        return false;
+    }
+
+    summary[0] = '\0';
+    RefreshFutureHooksMapState();
+    SetLabDummyEnabled(true);
+
+    CBaseEntity *pDummy = GetTrackedLabDummyEntity();
+    CBasePlayer *pAnchorPlayer = FindCurrentLiveLabDummyAnchorPlayer();
+
+    if (pAnchorPlayer != NULL)
+    {
+        char failureReason[192];
+        if (!TryRememberLabDummySpawnTransformFromPlayer(pAnchorPlayer, failureReason, sizeof(failureReason)))
+        {
+            _snprintf_s(summary, summarySize, _TRUNCATE, "target respawn failed: %s", failureReason);
+            if (printStatusOnFailure)
+            {
+                PrintLabDummyStatus();
+            }
+            return false;
+        }
+    }
+    else if (!g_glockLabDummyHasSpawnTransform)
+    {
+        strcpy_s(summary, summarySize, "target respawn failed: no current live player anchor or saved target position is available yet.");
+        if (printStatusOnFailure)
+        {
+            PrintLabDummyStatus();
+        }
+        return false;
+    }
+
+    if (pDummy != NULL)
+    {
+        RemoveLabDummyEntities(removeReason);
+        g_glockLabDummy = NULL;
+    }
+
+    g_glockLabDummyRespawnPending = false;
+    g_glockLabDummyRespawnTime = 0.0f;
+    g_glockLabDummyRetryTime = 0.0f;
+
+    if (SpawnGlockLabDummy(pAnchorPlayer, true, true) == NULL)
+    {
+        strcpy_s(summary, summarySize, "target respawn failed: the dummy could not be recreated.");
+        if (printStatusOnFailure)
+        {
+            PrintLabDummyStatus();
+        }
+        return false;
+    }
+
+    _snprintf_s(summary, summarySize, _TRUNCATE, "respawned \"%s\" using profile %s.", kGlockLabDummyDisplayName, ExpGlockLabTargetProfileName());
+    return true;
+}
+
 void PrintLabDummyStatus()
 {
     RefreshFutureHooksMapState();
 
     CBaseEntity *pDummy = GetTrackedLabDummyEntity();
     CBasePlayer *pAnchorPlayer = FindCurrentLiveLabDummyAnchorPlayer();
+    const LabDummyProfileDefinition *pCurrentProfile = FindBuiltInLabDummyProfile(ExpGlockLabTargetProfileName());
     char savedOrigin[64];
     char currentOrigin[64];
     strcpy_s(savedOrigin, sizeof(savedOrigin), "n/a");
@@ -807,6 +1457,9 @@ void PrintLabDummyStatus()
         ExpGlockLabDummyHeadProtected() ? 1 : 0,
         ExpGlockLabDummyAutoRespawnEnabled() ? 1 : 0,
         ExpGlockLabDummyRespawnDelaySeconds());
+    PrintLabDummyConsoleLine(
+        "target profile detail: %s",
+        pCurrentProfile != NULL ? pCurrentProfile->description : "custom dummy coefficients");
     PrintLabDummyConsoleLine(
         "target placement: distance=%.1f right=%.1f up=%.1f face_player=%d",
         ExpGlockLabDummySpawnDistance(),
@@ -863,6 +1516,95 @@ void PrintLabDummyStatus()
 
     PrintLabDummyConsoleLine("built-in target profiles: %s", GetLabDummyProfileNames());
     PrintLabDummyConsoleLine("commands: exp_target_spawn | exp_target_clear | exp_target_respawn | exp_target_status | exp_target_tp_front | exp_target_profile <name>");
+}
+
+void ExpCfgApplyCommand()
+{
+    char requestedPath[kMaxLiveCfgRequestLength];
+    BuildCommandArgumentString(1, requestedPath, sizeof(requestedPath));
+    if (requestedPath[0] == '\0')
+    {
+        PrintLabDummyConsoleLine("usage: exp_cfg_apply <cfg_name_or_path>");
+        PrintLiveCfgStatus();
+        return;
+    }
+
+    ResolvedLiveCfgSelection selection = {};
+    char failureReason[kMaxLiveCfgFailureLength];
+    if (!TryResolveLiveCfgSelection(requestedPath, &selection, failureReason, sizeof(failureReason)))
+    {
+        RecordLiveCfgFailure("apply", failureReason);
+        LogLiveCfgCommand("apply", requestedPath, "", "", false, failureReason);
+        PrintLabDummyConsoleLine("cfg apply failed: %s", failureReason);
+        return;
+    }
+
+    ApplyResolvedLiveCfgSelection("apply", selection);
+}
+
+void ExpCfgReloadCommand()
+{
+    if (!g_liveCfgState.hasActiveCfg || g_liveCfgState.activeExecPath[0] == '\0')
+    {
+        const char *reason = "no active cfg is tracked yet. Use exp_cfg_apply <cfg_name_or_path> first.";
+        RecordLiveCfgFailure("reload", reason);
+        LogLiveCfgCommand("reload", "", "", "", false, reason);
+        PrintLabDummyConsoleLine("cfg reload failed: %s", reason);
+        return;
+    }
+
+    const char *reloadRequest = g_liveCfgState.activeExecPath;
+    ResolvedLiveCfgSelection selection = {};
+    char failureReason[kMaxLiveCfgFailureLength];
+    if (!TryResolveLiveCfgSelection(reloadRequest, &selection, failureReason, sizeof(failureReason)))
+    {
+        RecordLiveCfgFailure("reload", failureReason);
+        LogLiveCfgCommand("reload", reloadRequest, g_liveCfgState.activeExecPath, g_liveCfgState.activeResolvedPath, false, failureReason);
+        PrintLabDummyConsoleLine("cfg reload failed: %s", failureReason);
+        return;
+    }
+
+    ApplyResolvedLiveCfgSelection("reload", selection);
+}
+
+void ExpCfgStatusCommand()
+{
+    PrintLiveCfgStatus();
+}
+
+void ExpLabApplyCommand()
+{
+    char requestedPath[kMaxLiveCfgRequestLength];
+    BuildCommandArgumentString(1, requestedPath, sizeof(requestedPath));
+    if (requestedPath[0] == '\0')
+    {
+        PrintLabDummyConsoleLine("usage: exp_lab_apply <cfg_name_or_path>");
+        return;
+    }
+
+    ResolvedLiveCfgSelection selection = {};
+    char failureReason[kMaxLiveCfgFailureLength];
+    if (!TryResolveLiveCfgSelection(requestedPath, &selection, failureReason, sizeof(failureReason)))
+    {
+        RecordLiveCfgFailure("apply", failureReason);
+        LogLiveCfgCommand("apply", requestedPath, "", "", false, failureReason);
+        PrintLabDummyConsoleLine("lab apply failed: %s", failureReason);
+        return;
+    }
+
+    if (!ApplyResolvedLiveCfgSelection("apply", selection))
+    {
+        return;
+    }
+
+    char targetSummary[192];
+    const bool targetRespawned = TryRespawnLabDummyInternal("lab_apply", targetSummary, sizeof(targetSummary), true);
+    PrintLabDummyConsoleLine("%s", targetSummary);
+    PrintLabDummyConsoleLine(
+        "lab apply summary: cfg=%s target_refresh=%s target_profile=%s",
+        selection.execPath,
+        targetRespawned ? "ok" : "failed",
+        ExpGlockLabTargetProfileName());
 }
 
 void ExpTargetSpawnCommand()
@@ -932,44 +1674,13 @@ void ExpTargetClearCommand()
 
 void ExpTargetRespawnCommand()
 {
-    RefreshFutureHooksMapState();
-    SetLabDummyEnabled(true);
-
-    CBaseEntity *pDummy = GetTrackedLabDummyEntity();
-    CBasePlayer *pAnchorPlayer = FindCurrentLiveLabDummyAnchorPlayer();
-
-    if (pAnchorPlayer != NULL)
+    char summary[192];
+    const bool success = TryRespawnLabDummyInternal("command_respawn", summary, sizeof(summary), true);
+    PrintLabDummyConsoleLine("%s", summary);
+    if (!success)
     {
-        char failureReason[192];
-        if (!TryRememberLabDummySpawnTransformFromPlayer(pAnchorPlayer, failureReason, sizeof(failureReason)))
-        {
-            PrintLabDummyConsoleLine("target respawn failed: %s", failureReason);
-            return;
-        }
-    }
-    else if (!g_glockLabDummyHasSpawnTransform)
-    {
-        PrintLabDummyConsoleLine("target respawn failed: no current live player anchor or saved target position is available yet.");
         return;
     }
-
-    if (pDummy != NULL)
-    {
-        RemoveLabDummyEntities("command_respawn");
-        g_glockLabDummy = NULL;
-    }
-
-    g_glockLabDummyRespawnPending = false;
-    g_glockLabDummyRespawnTime = 0.0f;
-    g_glockLabDummyRetryTime = 0.0f;
-
-    if (SpawnGlockLabDummy(pAnchorPlayer, true, true) == NULL)
-    {
-        PrintLabDummyStatus();
-        return;
-    }
-
-    PrintLabDummyConsoleLine("respawned \"%s\" using profile %s.", kGlockLabDummyDisplayName, ExpGlockLabTargetProfileName());
 }
 
 void ExpTargetStatusCommand()
@@ -1097,10 +1808,14 @@ void RegisterFutureGameplayCommands()
     g_futureGameplayCommandsRegistered = true;
     if (g_engfuncs.pfnAddServerCommand == NULL)
     {
-        ALERT(at_console, "[hl-server] target dummy commands could not be registered because pfnAddServerCommand is unavailable\n");
+        ALERT(at_console, "[hl-server] live lab commands could not be registered because pfnAddServerCommand is unavailable\n");
         return;
     }
 
+    g_engfuncs.pfnAddServerCommand((char *)"exp_cfg_apply", ExpCfgApplyCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_cfg_reload", ExpCfgReloadCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_cfg_status", ExpCfgStatusCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_lab_apply", ExpLabApplyCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_target_spawn", ExpTargetSpawnCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_target_clear", ExpTargetClearCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_target_respawn", ExpTargetRespawnCommand);
@@ -1420,6 +2135,31 @@ float ExpMP5LabAmmo()
 bool ExpMP5LabAutoswitch()
 {
     return sv_exp_mp5_lab_autoswitch.value != 0.0f;
+}
+
+bool ExpCfgDrivenModeActive()
+{
+    return g_liveCfgState.cfgDrivenModeActive;
+}
+
+const char *ExpActiveCfgProfile()
+{
+    return g_liveCfgState.hasActiveCfg ? g_liveCfgState.activeExecPath : "";
+}
+
+const char *ExpLastSuccessfulCfgProfile()
+{
+    return g_liveCfgState.hasLastSuccessfulCfg ? g_liveCfgState.lastSuccessfulExecPath : "";
+}
+
+const char *ExpLastCfgAction()
+{
+    return g_liveCfgState.lastAction;
+}
+
+const char *ExpLastCfgAppliedAt()
+{
+    return g_liveCfgState.lastAppliedAt;
 }
 
 bool ExpGlockLabDummyEnabled()

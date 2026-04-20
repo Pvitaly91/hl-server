@@ -48,9 +48,11 @@ struct Mp5AcceptedShotTelemetry
 };
 
 void EnsureWeaponDebugLogReady();
+void LogLiveCfgCommand(const char *action, const char *requestedPath, const char *execPath, const char *resolvedPath, bool success, const char *details);
 void LogAcceptedGlockPrimaryShot(CBasePlayer *pPlayer, const GlockAcceptedShotTelemetry &telemetry);
 void LogAcceptedMp5PrimaryShot(CBasePlayer *pPlayer, const Mp5AcceptedShotTelemetry &telemetry);
 void LogRejectedGlockPrimaryHold(CBasePlayer *pPlayer, const GlockRejectedShotTelemetry &telemetry);
+void LogLiveLabConsoleMessage(const char *line);
 void LogGlockLabDummySpawn(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, bool respawn, const Vector &origin, const Vector &angles);
 void LogGlockLabDummyReposition(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, const Vector &origin, const Vector &angles, const char *reason);
 void LogGlockLabDummyClear(CBaseEntity *pDummy, const char *reason);

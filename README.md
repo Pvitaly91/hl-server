@@ -83,7 +83,8 @@ Simplest workflow:
 4. On the `Export` tab, confirm the resolved path fields show the expected Half-Life root, live mod root, and quick-export target.
 5. Click `Quick Export to Live Mod`.
 6. The editor writes `<HalfLifeRoot>\hlserver_testbed\<project-or-config-name>.cfg`, verifies the file exists, and shows a visible success or error dialog instead of failing silently.
-7. Click `Copy exec command` and use the copied command in HLDS, for example `exec my_glock.cfg`.
+7. In the running HLDS console, use `exp_cfg_apply my_glock.cfg` for a pure cfg refresh or `exp_lab_apply my_glock.cfg` to refresh the cfg and rebuild the dummy in one step.
+8. `exec my_glock.cfg` remains available as a legacy fallback, but the `exp_cfg_*` and `exp_lab_apply` commands are the intended live-tuning loop now.
 
 How to use the editor:
 
@@ -148,6 +149,31 @@ Bare filenames now resolve in this order:
 
 The launcher prints the exact resolved path before launch.
 
+## Live lab workflow
+
+The fastest day-to-day tuning loop is now:
+
+1. Edit values in `HlConfigEditorCpp`.
+2. `Quick Export to Live Mod` so the cfg lands directly in `<HalfLifeRoot>\hlserver_testbed\`.
+3. In the running HLDS console, apply it with `exp_cfg_apply editor_glock_simple.cfg`.
+4. Rebuild the current dummy with `exp_target_respawn`, or use `exp_lab_apply editor_glock_simple.cfg` to do both in one command.
+5. Change dummy presets on the fly with `exp_target_profile unarmored`, `exp_target_profile vest`, or `exp_target_profile vest_headprotected`.
+6. Inspect state any time with `exp_cfg_status` and `exp_target_status`.
+7. Test in-game, then review the normal weapon log and analyzer output.
+
+Live lab console commands:
+
+- `exp_cfg_apply <cfg_name_or_path>` applies a cfg from the live mod root or `cfg_profiles\` fallback.
+- `exp_cfg_reload` re-executes the currently tracked cfg without restarting the session.
+- `exp_cfg_status` prints whether cfg-driven mode is active, which cfg is tracked, and when it was last applied.
+- `exp_lab_apply <cfg_name_or_path>` applies the cfg and then respawns the current target with a single summary.
+- `exp_target_spawn` enables and spawns the standing dummy.
+- `exp_target_clear` removes the standing dummy and disables automatic respawn.
+- `exp_target_respawn` rebuilds the dummy using the current target profile and saved placement.
+- `exp_target_status` prints the current dummy profile, placement, anchor player, and entity state.
+- `exp_target_tp_front` moves or respawns the dummy in front of the current live player anchor.
+- `exp_target_profile <name>` switches between `unarmored`, `vest`, and `vest_headprotected`, then refreshes the target when possible.
+
 Launch live with a Glock cfg already exported into the active live mod root:
 
 ```bat
@@ -183,14 +209,13 @@ scripts\play-hlserver-testbed-direct.bat -CfgPath "D:\some-folder\editor_glock_s
 Manual HLDS console fallback:
 
 ```text
-exec my_glock.cfg
-changelevel crossfire
+exp_cfg_apply my_glock.cfg
+exp_target_respawn
 
-exec my_mp5.cfg
-changelevel crossfire
+exp_cfg_apply my_mp5.cfg
+exp_target_profile vest
 
-exec cfg_profiles/my_legacy_glock.cfg
-changelevel crossfire
+exp_lab_apply cfg_profiles/my_legacy_glock.cfg
 ```
 
 Cfg-driven observability:
@@ -198,6 +223,8 @@ Cfg-driven observability:
 - the launcher prints whether the session is `demo` or `cfg-driven`
 - cfg-driven sessions print the requested cfg, the active live-mod path, and the `exec` profile
 - launch metadata under `testbed\logs\hlds-*-launch.txt` records `Cfg mode`, `Cfg profile`, `Cfg source`, and `Cfg active`
+- `exp_cfg_status` prints the tracked active cfg path, last successful apply, last failure, and current cfg metadata from the running server
+- weapon debug logs now include cfg-mode session fields plus compact `type=cfg` events when cfg apply or reload commands run successfully or fail
 - root-level exported `*.cfg` files, the deployed `HlConfigEditorCpp.exe`, and legacy `cfg_profiles\...` files are preserved across same-root live-mod refreshes so the simplified workflow remains usable
 - the editor deployment now writes a live-mod marker when the folder only contains known editor/live-mod content so later cfg-driven launcher refreshes can safely take ownership of the folder
 

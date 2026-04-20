@@ -43,7 +43,8 @@ This is now the default path:
 10. If the target file already exists, confirm the overwrite.
 11. On success, the editor verifies the file exists, updates the `Last Action` status, and shows the exact written cfg path plus the `exec` command.
 12. Click `Copy exec command`.
-13. In HLDS, run `exec my_glock.cfg`.
+13. In the running HLDS console, run `exp_cfg_apply my_glock.cfg` to refresh the cfg or `exp_lab_apply my_glock.cfg` to refresh the cfg and rebuild the dummy in one command.
+14. `exec my_glock.cfg` remains available as a legacy fallback.
 
 In the simple path, the editor writes directly into:
 
@@ -55,6 +56,19 @@ The copied command is:
 
 ```text
 exec my_glock.cfg
+```
+
+The faster live-lab command path in the running server is:
+
+```text
+exp_cfg_apply my_glock.cfg
+exp_target_respawn
+```
+
+or the one-step variant:
+
+```text
+exp_lab_apply my_glock.cfg
 ```
 
 ## Export actions
@@ -112,6 +126,31 @@ External cfg files still work through `-CfgPath`:
 ```bat
 scripts\play-hlserver-testbed-direct.bat -CfgPath "D:\some-folder\editor_glock_simple.cfg"
 ```
+
+## Live lab workflow
+
+Use this loop when the server is already running and you want to iterate quickly:
+
+1. Edit the values in `HlConfigEditorCpp`.
+2. Quick-export the cfg directly into `<HalfLifeRoot>\hlserver_testbed\`.
+3. In HLDS, run `exp_cfg_apply editor_glock_simple.cfg`.
+4. Rebuild the dummy with `exp_target_respawn`, or use `exp_lab_apply editor_glock_simple.cfg` to do both at once.
+5. Switch target presets with `exp_target_profile unarmored`, `exp_target_profile vest`, or `exp_target_profile vest_headprotected`.
+6. Inspect the current live state with `exp_cfg_status` and `exp_target_status`.
+7. Test in-game and then review the weapon log or analyzer output.
+
+Live lab console commands:
+
+- `exp_cfg_apply <cfg_name_or_path>` applies a cfg from the live mod root or `cfg_profiles\` fallback.
+- `exp_cfg_reload` re-executes the currently tracked cfg.
+- `exp_cfg_status` prints the tracked cfg path, mode, last apply time, and current cfg metadata.
+- `exp_lab_apply <cfg_name_or_path>` applies the cfg and respawns the current dummy with one summary.
+- `exp_target_spawn` enables and spawns the standing dummy.
+- `exp_target_clear` removes the standing dummy and disables automatic respawn.
+- `exp_target_respawn` rebuilds the dummy using the current profile and saved placement.
+- `exp_target_status` prints the current dummy profile, placement, anchor, and entity state.
+- `exp_target_tp_front` moves or respawns the dummy in front of the current live player anchor.
+- `exp_target_profile <name>` switches between `unarmored`, `vest`, and `vest_headprotected`, then refreshes the dummy when possible.
 
 ## JSON vs CFG
 
