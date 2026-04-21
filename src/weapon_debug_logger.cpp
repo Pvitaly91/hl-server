@@ -85,6 +85,38 @@ struct Mp5PrimaryShotContext
 
 Mp5PrimaryShotContext g_mp5PrimaryShotContext = {};
 
+struct Weapon357PrimaryShotContext
+{
+    bool active;
+    entvars_t *attacker;
+    CBasePlayer *attackerPlayer;
+    bool experimentalModeActive;
+    float baseDamage;
+    float headshotScale;
+    bool headshotLethal;
+    char profileName[64];
+    bool pendingHit;
+    CBaseEntity *victim;
+    int hitgroup;
+    bool headshot;
+    float hitgroupScale;
+    float traceDamage;
+    bool headshotLethalApplied;
+    float victimHealthBefore;
+    bool victimArmorKnown;
+    float victimArmorBefore;
+    bool victimIsDummy;
+    char targetProfileName[64];
+    bool dummyArmorApplied;
+    bool dummyHeadProtected;
+    float damageRaw;
+    float damageToHealth;
+    float damageAbsorbed;
+    float armorDrain;
+};
+
+Weapon357PrimaryShotContext g_357PrimaryShotContext = {};
+
 void PrintWeaponDebugWarningOnce(const char *message)
 {
     if (g_weaponDebugLogWarningPrinted)
@@ -158,6 +190,38 @@ void ClearPendingMp5PrimaryHit()
 bool HasMatchingActiveMp5PrimaryShot(entvars_t *pevAttacker)
 {
     return g_mp5PrimaryShotContext.active && g_mp5PrimaryShotContext.attacker == pevAttacker;
+}
+
+void Reset357PrimaryShotContext()
+{
+    memset(&g_357PrimaryShotContext, 0, sizeof(g_357PrimaryShotContext));
+}
+
+void ClearPending357PrimaryHit()
+{
+    g_357PrimaryShotContext.pendingHit = false;
+    g_357PrimaryShotContext.victim = NULL;
+    g_357PrimaryShotContext.hitgroup = HITGROUP_GENERIC;
+    g_357PrimaryShotContext.headshot = false;
+    g_357PrimaryShotContext.hitgroupScale = 0.0f;
+    g_357PrimaryShotContext.traceDamage = 0.0f;
+    g_357PrimaryShotContext.headshotLethalApplied = false;
+    g_357PrimaryShotContext.victimHealthBefore = 0.0f;
+    g_357PrimaryShotContext.victimArmorKnown = false;
+    g_357PrimaryShotContext.victimArmorBefore = 0.0f;
+    g_357PrimaryShotContext.victimIsDummy = false;
+    g_357PrimaryShotContext.targetProfileName[0] = '\0';
+    g_357PrimaryShotContext.dummyArmorApplied = false;
+    g_357PrimaryShotContext.dummyHeadProtected = false;
+    g_357PrimaryShotContext.damageRaw = 0.0f;
+    g_357PrimaryShotContext.damageToHealth = 0.0f;
+    g_357PrimaryShotContext.damageAbsorbed = 0.0f;
+    g_357PrimaryShotContext.armorDrain = 0.0f;
+}
+
+bool HasMatchingActive357PrimaryShot(entvars_t *pevAttacker)
+{
+    return g_357PrimaryShotContext.active && g_357PrimaryShotContext.attacker == pevAttacker;
 }
 
 void FormatTimestamp(char *buffer, size_t bufferSize)
@@ -429,6 +493,11 @@ const char *GetSafeMapName()
 const char *GetSessionProfileName()
 {
     const char *weaponUnderTest = ExpWeaponUnderTest();
+    if (weaponUnderTest != NULL && weaponUnderTest[0] != '\0' && _stricmp(weaponUnderTest, "357") == 0)
+    {
+        return Exp357ProfileName();
+    }
+
     if (weaponUnderTest != NULL && weaponUnderTest[0] != '\0' && _stricmp(weaponUnderTest, "mp5") == 0)
     {
         return ExpMP5ProfileName();
@@ -648,13 +717,14 @@ void EnsureWeaponDebugLogOpen()
         sessionLine,
         sizeof(sessionLine),
         _TRUNCATE,
-        "[weaponlog] type=session ts=%s map=%s event=weapon_debug_session status=ready game=valve file=\"%s\" profile=\"%s\" glock_profile=\"%s\" mp5_profile=\"%s\" tapfire=%d move_scale=%.4f firstshot_enabled=%d recovery=%.3f base=%.4f ground_move_penalty=%.4f air_move_penalty=%.4f duck_penalty_scale=%.4f firstshot_speed=%.1f max_spread=%.4f sv_exp_glock_primary_damage=%.4f sv_exp_glock_primary_headshot_scale=%.4f sv_exp_glock_primary_headshot_lethal=%d sv_exp_mp5_primary_enabled=%d sv_exp_mp5_primary_base_spread=%.4f sv_exp_mp5_primary_ground_move_penalty=%.4f sv_exp_mp5_primary_air_move_penalty=%.4f sv_exp_mp5_primary_duck_penalty_scale=%.4f sv_exp_mp5_primary_burst_growth=%.4f sv_exp_mp5_primary_burst_max_additional_spread=%.4f sv_exp_mp5_primary_spread_recovery=%.4f sv_exp_mp5_primary_damage=%.4f sv_exp_mp5_primary_headshot_scale=%.4f sv_exp_mp5_primary_headshot_lethal=%d sv_exp_mp5_primary_first_shot_accuracy=%d sv_exp_mp5_primary_first_shot_speed_threshold=%.1f sv_exp_mp5_primary_max_spread=%.4f sv_exp_mp5_lab_loadout=%d sv_exp_mp5_lab_ammo=%.1f sv_exp_mp5_lab_autoswitch=%d sv_exp_glock_lab_dummy=%d sv_exp_glock_lab_target_profile_name=\"%s\" sv_exp_glock_lab_dummy_armor=%.1f sv_exp_glock_lab_dummy_head_protected=%d sv_exp_glock_lab_dummy_armor_health_fraction=%.3f sv_exp_glock_lab_dummy_armor_drain_scale=%.3f cfg_mode=%d",
+        "[weaponlog] type=session ts=%s map=%s event=weapon_debug_session status=ready game=valve file=\"%s\" profile=\"%s\" glock_profile=\"%s\" mp5_profile=\"%s\" 357_profile=\"%s\" tapfire=%d move_scale=%.4f firstshot_enabled=%d recovery=%.3f base=%.4f ground_move_penalty=%.4f air_move_penalty=%.4f duck_penalty_scale=%.4f firstshot_speed=%.1f max_spread=%.4f sv_exp_glock_primary_damage=%.4f sv_exp_glock_primary_headshot_scale=%.4f sv_exp_glock_primary_headshot_lethal=%d sv_exp_mp5_primary_enabled=%d sv_exp_mp5_primary_base_spread=%.4f sv_exp_mp5_primary_ground_move_penalty=%.4f sv_exp_mp5_primary_air_move_penalty=%.4f sv_exp_mp5_primary_duck_penalty_scale=%.4f sv_exp_mp5_primary_burst_growth=%.4f sv_exp_mp5_primary_burst_max_additional_spread=%.4f sv_exp_mp5_primary_spread_recovery=%.4f sv_exp_mp5_primary_damage=%.4f sv_exp_mp5_primary_headshot_scale=%.4f sv_exp_mp5_primary_headshot_lethal=%d sv_exp_mp5_primary_first_shot_accuracy=%d sv_exp_mp5_primary_first_shot_speed_threshold=%.1f sv_exp_mp5_primary_max_spread=%.4f sv_exp_mp5_lab_loadout=%d sv_exp_mp5_lab_ammo=%.1f sv_exp_mp5_lab_autoswitch=%d sv_exp_357_primary_enabled=%d sv_exp_357_primary_base_spread=%.4f sv_exp_357_primary_ground_move_penalty=%.4f sv_exp_357_primary_air_move_penalty=%.4f sv_exp_357_primary_duck_penalty_scale=%.4f sv_exp_357_primary_first_shot_accuracy=%d sv_exp_357_primary_first_shot_speed_threshold=%.1f sv_exp_357_primary_spread_recovery=%.4f sv_exp_357_primary_max_spread=%.4f sv_exp_357_primary_damage=%.4f sv_exp_357_primary_headshot_scale=%.4f sv_exp_357_primary_headshot_lethal=%d sv_exp_357_lab_loadout=%d sv_exp_357_lab_ammo=%.1f sv_exp_357_lab_autoswitch=%d sv_exp_glock_lab_dummy=%d sv_exp_glock_lab_target_profile_name=\"%s\" sv_exp_glock_lab_dummy_armor=%.1f sv_exp_glock_lab_dummy_head_protected=%d sv_exp_glock_lab_dummy_armor_health_fraction=%.3f sv_exp_glock_lab_dummy_armor_drain_scale=%.3f cfg_mode=%d",
         timestamp,
         SanitizeLogValue(GetSafeMapName()).c_str(),
         g_weaponDebugLogPath.c_str(),
         SanitizeLogValue(GetSessionProfileName()).c_str(),
         SanitizeLogValue(ExpGlockProfileName()).c_str(),
         SanitizeLogValue(ExpMP5ProfileName()).c_str(),
+        SanitizeLogValue(Exp357ProfileName()).c_str(),
         ExpPistolTapFireEnabled() ? 1 : 0,
         ExpMoveSpreadScale(),
         ExpFirstShotAccuracyEnabled() ? 1 : 0,
@@ -685,6 +755,21 @@ void EnsureWeaponDebugLogOpen()
         ExpMP5LabLoadoutEnabled() ? 1 : 0,
         ExpMP5LabAmmo(),
         ExpMP5LabAutoswitch() ? 1 : 0,
+        Exp357PrimaryEnabled() ? 1 : 0,
+        Exp357PrimaryBaseSpread(),
+        Exp357PrimaryGroundMovePenalty(),
+        Exp357PrimaryAirMovePenalty(),
+        Exp357PrimaryDuckPenaltyScale(),
+        Exp357PrimaryFirstShotAccuracyEnabled() ? 1 : 0,
+        Exp357PrimaryFirstShotSpeedThreshold(),
+        Exp357PrimarySpreadRecoverySeconds(),
+        Exp357PrimaryMaxSpread(),
+        Exp357PrimaryDamage(),
+        Exp357PrimaryHeadshotScale(),
+        Exp357PrimaryHeadshotLethal() ? 1 : 0,
+        Exp357LabLoadoutEnabled() ? 1 : 0,
+        Exp357LabAmmo(),
+        Exp357LabAutoswitch() ? 1 : 0,
         ExpGlockLabDummyEnabled() ? 1 : 0,
         SanitizeLogValue(ExpGlockLabTargetProfileName()).c_str(),
         ExpGlockLabDummyArmor(),
@@ -1119,6 +1204,55 @@ void LogAcceptedMp5PrimaryShot(CBasePlayer *pPlayer, const Mp5AcceptedShotTeleme
     WriteTelemetryLine(line);
 }
 
+void LogAccepted357PrimaryShot(CBasePlayer *pPlayer, const Weapon357AcceptedShotTelemetry &telemetry)
+{
+    if (!ExpDebugWeaponLogEnabled())
+    {
+        return;
+    }
+
+    EnsureWeaponDebugLogOpen();
+
+    char timestamp[64];
+    char deltaPreviousShot[32];
+    char line[1024];
+    FormatTimestamp(timestamp, sizeof(timestamp));
+
+    if (telemetry.hasPreviousAcceptedShot)
+    {
+        _snprintf_s(deltaPreviousShot, sizeof(deltaPreviousShot), _TRUNCATE, "%.3f", telemetry.timeSincePreviousAcceptedShot);
+    }
+    else
+    {
+        strcpy_s(deltaPreviousShot, sizeof(deltaPreviousShot), "na");
+    }
+
+    _snprintf_s(
+        line,
+        sizeof(line),
+        _TRUNCATE,
+        "[weaponlog] type=accepted ts=%s map=%s player=\"%s\" entindex=%d userid=%d weapon=357 fire=primary experimental=%d profile=\"%s\" firstshot=%d spread=%.4f base=%.4f move_penalty=%.4f speed2d=%.1f maxspeed=%.1f grounded=%d ducking=%d delta_prev=%s clip=%d",
+        timestamp,
+        SanitizeLogValue(GetSafeMapName()).c_str(),
+        GetSafePlayerName(pPlayer).c_str(),
+        GetPlayerEntityIndex(pPlayer),
+        GetPlayerUserId(pPlayer),
+        telemetry.experimentalModeActive ? 1 : 0,
+        SanitizeLogValue(Exp357ProfileName()).c_str(),
+        telemetry.firstShotAccuracyApplied ? 1 : 0,
+        telemetry.spread,
+        telemetry.baseSpread,
+        telemetry.movementPenalty,
+        telemetry.horizontalSpeed,
+        telemetry.maxSpeedForNormalization,
+        telemetry.grounded ? 1 : 0,
+        telemetry.ducking ? 1 : 0,
+        deltaPreviousShot,
+        telemetry.clipAfterShot);
+
+    WriteTelemetryLine(line);
+}
+
 void LogRejectedGlockPrimaryHold(CBasePlayer *pPlayer, const GlockRejectedShotTelemetry &telemetry)
 {
     if (!ExpDebugWeaponLogEnabled() || !ExpDebugWeaponLogRejectionsEnabled())
@@ -1245,6 +1379,9 @@ void FinalizeActiveGlockPrimaryHitTelemetry()
     const float flArmorDamage = fArmorKnown ? (g_glockPrimaryShotContext.victimArmorBefore - flArmorAfter) : 0.0f;
     const bool fDummyTelemetry = g_glockPrimaryShotContext.victimIsDummy;
 
+    const bool killedByShot = (g_glockPrimaryShotContext.victimHealthBefore > 0.0f) &&
+        (flHealthAfter <= 0.0f || !pVictim->IsAlive());
+
     if (ExpDebugWeaponLogEnabled())
     {
         EnsureWeaponDebugLogOpen();
@@ -1315,7 +1452,7 @@ void FinalizeActiveGlockPrimaryHitTelemetry()
             g_glockPrimaryShotContext.headshotLethalApplied ? 1 : 0);
         WriteTelemetryLine(line);
 
-        if (!pVictim->IsAlive())
+        if (killedByShot)
         {
             char killLine[3072];
             _snprintf_s(
@@ -1458,6 +1595,9 @@ void FinalizeActiveMp5PrimaryHitTelemetry()
     const float armorDamage = armorKnown ? (g_mp5PrimaryShotContext.victimArmorBefore - armorAfter) : 0.0f;
     const bool dummyTelemetry = g_mp5PrimaryShotContext.victimIsDummy;
 
+    const bool killedByShot = (g_mp5PrimaryShotContext.victimHealthBefore > 0.0f) &&
+        (healthAfter <= 0.0f || !pVictim->IsAlive());
+
     if (ExpDebugWeaponLogEnabled())
     {
         EnsureWeaponDebugLogOpen();
@@ -1528,7 +1668,7 @@ void FinalizeActiveMp5PrimaryHitTelemetry()
             g_mp5PrimaryShotContext.headshotLethalApplied ? 1 : 0);
         WriteTelemetryLine(line);
 
-        if (!pVictim->IsAlive())
+        if (killedByShot)
         {
             char killLine[3072];
             _snprintf_s(
@@ -1573,4 +1713,220 @@ void FinalizeActiveMp5PrimaryHitTelemetry()
     }
 
     ClearPendingMp5PrimaryHit();
+}
+
+void Begin357PrimaryShotContext(CBasePlayer *pPlayer)
+{
+    Reset357PrimaryShotContext();
+    if (pPlayer == NULL || pPlayer->pev == NULL)
+    {
+        return;
+    }
+
+    const SharedWeaponDamageProfile damageProfile = Build357PrimaryDamageProfile();
+    g_357PrimaryShotContext.active = true;
+    g_357PrimaryShotContext.attacker = pPlayer->pev;
+    g_357PrimaryShotContext.attackerPlayer = pPlayer;
+    g_357PrimaryShotContext.experimentalModeActive = Exp357ExperimentalModeEnabled();
+    g_357PrimaryShotContext.baseDamage = damageProfile.baseDamage;
+    g_357PrimaryShotContext.headshotScale = damageProfile.headshotScale;
+    g_357PrimaryShotContext.headshotLethal = damageProfile.headshotLethal;
+    strncpy_s(g_357PrimaryShotContext.profileName, sizeof(g_357PrimaryShotContext.profileName), Exp357ProfileName(), _TRUNCATE);
+    strncpy_s(g_357PrimaryShotContext.targetProfileName, sizeof(g_357PrimaryShotContext.targetProfileName), ExpGlockLabTargetProfileName(), _TRUNCATE);
+}
+
+void End357PrimaryShotContext()
+{
+    Reset357PrimaryShotContext();
+}
+
+float GetActive357PrimaryBaseDamage(entvars_t *pevAttacker, float fallbackDamage)
+{
+    if (!HasMatchingActive357PrimaryShot(pevAttacker))
+    {
+        return fallbackDamage;
+    }
+
+    return g_357PrimaryShotContext.baseDamage;
+}
+
+bool ApplyActive357PrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAttacker, int hitgroup, float *pDamage)
+{
+    if (pDamage == NULL || pVictim == NULL || pVictim->pev == NULL || !HasMatchingActive357PrimaryShot(pevAttacker))
+    {
+        return false;
+    }
+
+    SharedWeaponDamageProfile damageProfile = {};
+    damageProfile.baseDamage = g_357PrimaryShotContext.baseDamage;
+    damageProfile.headshotScale = g_357PrimaryShotContext.headshotScale;
+    damageProfile.headshotLethal = g_357PrimaryShotContext.headshotLethal;
+    SharedWeaponTraceDamageResult traceResult = {};
+    if (!ApplySharedWeaponTraceDamage(
+            pVictim,
+            hitgroup,
+            damageProfile,
+            *pDamage,
+            &traceResult))
+    {
+        return false;
+    }
+
+    *pDamage = traceResult.damageToHealth;
+
+    g_357PrimaryShotContext.pendingHit = true;
+    g_357PrimaryShotContext.victim = pVictim;
+    g_357PrimaryShotContext.hitgroup = hitgroup;
+    g_357PrimaryShotContext.headshot = traceResult.headshot;
+    g_357PrimaryShotContext.hitgroupScale = traceResult.hitgroupScale;
+    g_357PrimaryShotContext.traceDamage = traceResult.traceDamage;
+    g_357PrimaryShotContext.headshotLethalApplied = traceResult.headshotLethalApplied;
+    g_357PrimaryShotContext.victimHealthBefore = pVictim->pev->health;
+    g_357PrimaryShotContext.victimArmorKnown = traceResult.victimArmorKnown;
+    g_357PrimaryShotContext.victimArmorBefore = traceResult.victimArmorBefore;
+    g_357PrimaryShotContext.victimIsDummy = traceResult.dummyVictim;
+    g_357PrimaryShotContext.dummyArmorApplied = traceResult.dummyArmorApplied;
+    g_357PrimaryShotContext.dummyHeadProtected = traceResult.dummyHeadProtected;
+    g_357PrimaryShotContext.damageRaw = traceResult.traceDamage;
+    g_357PrimaryShotContext.damageToHealth = traceResult.damageToHealth;
+    g_357PrimaryShotContext.damageAbsorbed = traceResult.damageAbsorbed;
+    g_357PrimaryShotContext.armorDrain = traceResult.armorDrain;
+
+    return true;
+}
+
+void FinalizeActive357PrimaryHitTelemetry()
+{
+    if (!g_357PrimaryShotContext.active || !g_357PrimaryShotContext.pendingHit || g_357PrimaryShotContext.victim == NULL || g_357PrimaryShotContext.victim->pev == NULL)
+    {
+        ClearPending357PrimaryHit();
+        return;
+    }
+
+    CBaseEntity *pVictim = g_357PrimaryShotContext.victim;
+    const float healthAfter = pVictim->pev->health;
+    const float appliedDamage = g_357PrimaryShotContext.victimHealthBefore - healthAfter;
+    const bool armorKnown = g_357PrimaryShotContext.victimArmorKnown;
+    const float armorAfter = armorKnown ? pVictim->pev->armorvalue : 0.0f;
+    const float armorDamage = armorKnown ? (g_357PrimaryShotContext.victimArmorBefore - armorAfter) : 0.0f;
+    const bool dummyTelemetry = g_357PrimaryShotContext.victimIsDummy;
+
+    const bool killedByShot = (g_357PrimaryShotContext.victimHealthBefore > 0.0f) &&
+        (healthAfter <= 0.0f || !pVictim->IsAlive());
+
+    if (ExpDebugWeaponLogEnabled())
+    {
+        EnsureWeaponDebugLogOpen();
+
+        char timestamp[64];
+        char armorBefore[32];
+        char armorAfterText[32];
+        char armorDamageText[32];
+        char dummyArmorBefore[32];
+        char dummyArmorAfter[32];
+        char damageRaw[32];
+        char damageToHealth[32];
+        char damageAbsorbed[32];
+        char armorDrain[32];
+        char line[3072];
+
+        FormatTimestamp(timestamp, sizeof(timestamp));
+        FormatOptionalFloat(armorBefore, sizeof(armorBefore), armorKnown, g_357PrimaryShotContext.victimArmorBefore, 1);
+        FormatOptionalFloat(armorAfterText, sizeof(armorAfterText), armorKnown, armorAfter, 1);
+        FormatOptionalFloat(armorDamageText, sizeof(armorDamageText), armorKnown, armorDamage, 1);
+        FormatOptionalFloat(dummyArmorBefore, sizeof(dummyArmorBefore), dummyTelemetry, g_357PrimaryShotContext.victimArmorBefore, 1);
+        FormatOptionalFloat(dummyArmorAfter, sizeof(dummyArmorAfter), dummyTelemetry, armorAfter, 1);
+        FormatOptionalFloat(damageRaw, sizeof(damageRaw), dummyTelemetry, g_357PrimaryShotContext.damageRaw, 4);
+        FormatOptionalFloat(damageToHealth, sizeof(damageToHealth), dummyTelemetry, g_357PrimaryShotContext.damageToHealth, 4);
+        FormatOptionalFloat(damageAbsorbed, sizeof(damageAbsorbed), dummyTelemetry, g_357PrimaryShotContext.damageAbsorbed, 4);
+        FormatOptionalFloat(armorDrain, sizeof(armorDrain), dummyTelemetry, g_357PrimaryShotContext.armorDrain, 4);
+
+        _snprintf_s(
+            line,
+            sizeof(line),
+            _TRUNCATE,
+            "[weaponlog] type=hit ts=%s map=%s attacker=\"%s\" attacker_entindex=%d attacker_userid=%d victim=\"%s\" victim_entindex=%d victim_userid=%d victim_kind=%s victim_class=%s victim_model=\"%s\" weapon=357 fire=primary hitgroup=%s hitgroup_id=%d headshot=%d experimental=%d profile=\"%s\" target_profile=\"%s\" base_damage=%.4f hitgroup_scale=%.4f trace_damage=%.4f applied_damage=%.4f health_before=%.1f health_after=%.1f armor_before=%s armor_after=%s armor_damage=%s damage_raw=%s damage_to_health=%s damage_absorbed=%s armor_drain=%s dummy_armor_before=%s dummy_armor_after=%s armor_applied=%d head_protected=%d headshot_lethal_active=%d headshot_lethal_applied=%d",
+            timestamp,
+            SanitizeLogValue(GetSafeMapName()).c_str(),
+            GetSafePlayerName(g_357PrimaryShotContext.attackerPlayer).c_str(),
+            GetPlayerEntityIndex(g_357PrimaryShotContext.attackerPlayer),
+            GetPlayerUserId(g_357PrimaryShotContext.attackerPlayer),
+            GetSafeEntityName(pVictim).c_str(),
+            GetEntityIndex(pVictim),
+            GetEntityUserId(pVictim),
+            GetEntityKind(pVictim),
+            GetSafeEntityClassname(pVictim).c_str(),
+            GetSafeEntityModel(pVictim).c_str(),
+            GetHitgroupName(g_357PrimaryShotContext.hitgroup),
+            g_357PrimaryShotContext.hitgroup,
+            g_357PrimaryShotContext.headshot ? 1 : 0,
+            g_357PrimaryShotContext.experimentalModeActive ? 1 : 0,
+            SanitizeLogValue(g_357PrimaryShotContext.profileName).c_str(),
+            dummyTelemetry ? SanitizeLogValue(g_357PrimaryShotContext.targetProfileName).c_str() : "na",
+            g_357PrimaryShotContext.baseDamage,
+            g_357PrimaryShotContext.hitgroupScale,
+            g_357PrimaryShotContext.traceDamage,
+            appliedDamage,
+            g_357PrimaryShotContext.victimHealthBefore,
+            healthAfter,
+            armorBefore,
+            armorAfterText,
+            armorDamageText,
+            damageRaw,
+            damageToHealth,
+            damageAbsorbed,
+            armorDrain,
+            dummyArmorBefore,
+            dummyArmorAfter,
+            g_357PrimaryShotContext.dummyArmorApplied ? 1 : 0,
+            g_357PrimaryShotContext.dummyHeadProtected ? 1 : 0,
+            g_357PrimaryShotContext.headshotLethal ? 1 : 0,
+            g_357PrimaryShotContext.headshotLethalApplied ? 1 : 0);
+        WriteTelemetryLine(line);
+
+        if (killedByShot)
+        {
+            char killLine[3072];
+            _snprintf_s(
+                killLine,
+                sizeof(killLine),
+                _TRUNCATE,
+                "[weaponlog] type=kill ts=%s map=%s attacker=\"%s\" attacker_entindex=%d attacker_userid=%d victim=\"%s\" victim_entindex=%d victim_userid=%d victim_kind=%s victim_class=%s victim_model=\"%s\" weapon=357 fire=primary hitgroup=%s hitgroup_id=%d headshot=%d experimental=%d profile=\"%s\" target_profile=\"%s\" trace_damage=%.4f applied_damage=%.4f health_before=%.1f health_after=%.1f armor_before=%s armor_after=%s damage_raw=%s damage_to_health=%s damage_absorbed=%s armor_drain=%s dummy_armor_after=%s armor_applied=%d head_protected=%d headshot_lethal_active=%d headshot_lethal_applied=%d",
+                timestamp,
+                SanitizeLogValue(GetSafeMapName()).c_str(),
+                GetSafePlayerName(g_357PrimaryShotContext.attackerPlayer).c_str(),
+                GetPlayerEntityIndex(g_357PrimaryShotContext.attackerPlayer),
+                GetPlayerUserId(g_357PrimaryShotContext.attackerPlayer),
+                GetSafeEntityName(pVictim).c_str(),
+                GetEntityIndex(pVictim),
+                GetEntityUserId(pVictim),
+                GetEntityKind(pVictim),
+                GetSafeEntityClassname(pVictim).c_str(),
+                GetSafeEntityModel(pVictim).c_str(),
+                GetHitgroupName(g_357PrimaryShotContext.hitgroup),
+                g_357PrimaryShotContext.hitgroup,
+                g_357PrimaryShotContext.headshot ? 1 : 0,
+                g_357PrimaryShotContext.experimentalModeActive ? 1 : 0,
+                SanitizeLogValue(g_357PrimaryShotContext.profileName).c_str(),
+                dummyTelemetry ? SanitizeLogValue(g_357PrimaryShotContext.targetProfileName).c_str() : "na",
+                g_357PrimaryShotContext.traceDamage,
+                appliedDamage,
+                g_357PrimaryShotContext.victimHealthBefore,
+                healthAfter,
+                armorBefore,
+                armorAfterText,
+                damageRaw,
+                damageToHealth,
+                damageAbsorbed,
+                armorDrain,
+                dummyArmorAfter,
+                g_357PrimaryShotContext.dummyArmorApplied ? 1 : 0,
+                g_357PrimaryShotContext.dummyHeadProtected ? 1 : 0,
+                g_357PrimaryShotContext.headshotLethal ? 1 : 0,
+                g_357PrimaryShotContext.headshotLethalApplied ? 1 : 0);
+            WriteTelemetryLine(killLine);
+        }
+    }
+
+    ClearPending357PrimaryHit();
 }

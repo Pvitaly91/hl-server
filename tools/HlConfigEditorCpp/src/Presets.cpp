@@ -44,6 +44,26 @@ void ApplyMp5Defaults(ProjectDocument& document) {
     document.mp5.labAutoswitch = true;
 }
 
+void Apply357Defaults(ProjectDocument& document) {
+    document.general.weaponUnderTest = L"357";
+    document.weapon357.primaryEnabled = true;
+    document.weapon357.profileName = L"default";
+    document.weapon357.primaryBaseSpread = L"0.0087";
+    document.weapon357.primaryGroundMovePenalty = L"0.0200";
+    document.weapon357.primaryAirMovePenalty = L"0.0800";
+    document.weapon357.primaryDuckPenaltyScale = L"0.7000";
+    document.weapon357.primaryFirstShotAccuracy = false;
+    document.weapon357.primaryFirstShotSpeedThreshold = L"25.0";
+    document.weapon357.primarySpreadRecovery = L"0.7500";
+    document.weapon357.primaryMaxSpread = L"0.1200";
+    document.weapon357.primaryDamage = L"40.0";
+    document.weapon357.primaryHeadshotScale = L"2.5";
+    document.weapon357.primaryHeadshotLethal = false;
+    document.weapon357.labLoadout = true;
+    document.weapon357.labAmmo = L"36";
+    document.weapon357.labAutoswitch = true;
+}
+
 void ApplyDummyDefaults(ProjectDocument& document) {
     document.targetDummy.enabled = true;
     document.targetDummy.targetProfileName = L"unarmored";
@@ -182,6 +202,47 @@ void ApplyMp5Preset(ProjectDocument& document, const std::wstring& presetName) {
         document.mp5.primaryMaxSpread = L"0.1500";
         document.mp5.primaryDamage = L"11.0";
         document.mp5.primaryHeadshotScale = L"3.0";
+    }
+}
+
+void Apply357Preset(ProjectDocument& document, const std::wstring& presetName) {
+    Apply357Defaults(document);
+
+    if (presetName == L"default") {
+        return;
+    }
+
+    if (presetName == L"precision_test") {
+        document.weapon357.profileName = L"precision_test";
+        document.weapon357.primaryBaseSpread = L"0.0045";
+        document.weapon357.primaryGroundMovePenalty = L"0.0150";
+        document.weapon357.primaryAirMovePenalty = L"0.0600";
+        document.weapon357.primaryDuckPenaltyScale = L"0.6000";
+        document.weapon357.primaryFirstShotAccuracy = true;
+        document.weapon357.primaryFirstShotSpeedThreshold = L"18.0";
+        document.weapon357.primarySpreadRecovery = L"0.6500";
+        document.weapon357.primaryMaxSpread = L"0.0800";
+        document.weapon357.primaryDamage = L"42.0";
+        document.weapon357.primaryHeadshotScale = L"2.8";
+        document.weapon357.primaryHeadshotLethal = false;
+        document.weapon357.labAmmo = L"48";
+        return;
+    }
+
+    if (presetName == L"headshot_test") {
+        document.weapon357.profileName = L"headshot_test";
+        document.weapon357.primaryBaseSpread = L"0.0060";
+        document.weapon357.primaryGroundMovePenalty = L"0.0180";
+        document.weapon357.primaryAirMovePenalty = L"0.0700";
+        document.weapon357.primaryDuckPenaltyScale = L"0.6500";
+        document.weapon357.primaryFirstShotAccuracy = true;
+        document.weapon357.primaryFirstShotSpeedThreshold = L"22.0";
+        document.weapon357.primarySpreadRecovery = L"0.7000";
+        document.weapon357.primaryMaxSpread = L"0.0900";
+        document.weapon357.primaryDamage = L"55.0";
+        document.weapon357.primaryHeadshotScale = L"4.0";
+        document.weapon357.primaryHeadshotLethal = true;
+        document.weapon357.labAmmo = L"48";
     }
 }
 

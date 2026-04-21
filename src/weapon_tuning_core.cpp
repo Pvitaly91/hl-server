@@ -196,6 +196,21 @@ SharedWeaponSpreadProfile BuildMp5PrimarySpreadProfile()
     return profile;
 }
 
+SharedWeaponSpreadProfile Build357PrimarySpreadProfile()
+{
+    SharedWeaponSpreadProfile profile = {};
+    profile.baseSpread = Exp357PrimaryBaseSpread();
+    profile.groundMovePenalty = Exp357PrimaryGroundMovePenalty();
+    profile.airMovePenalty = Exp357PrimaryAirMovePenalty();
+    profile.duckPenaltyScale = Exp357PrimaryDuckPenaltyScale();
+    profile.movementPenaltyScale = 1.0f;
+    profile.firstShotAccuracyEnabled = Exp357PrimaryFirstShotAccuracyEnabled();
+    profile.firstShotSpeedThreshold = Exp357PrimaryFirstShotSpeedThreshold();
+    profile.firstShotRecoverySeconds = Exp357PrimarySpreadRecoverySeconds();
+    profile.maxSpread = Exp357PrimaryMaxSpread();
+    return profile;
+}
+
 SharedWeaponDamageProfile BuildGlockPrimaryDamageProfile()
 {
     SharedWeaponDamageProfile profile = {};
@@ -211,6 +226,15 @@ SharedWeaponDamageProfile BuildMp5PrimaryDamageProfile()
     profile.baseDamage = ExpMP5PrimaryDamage();
     profile.headshotScale = ExpMP5PrimaryHeadshotScale();
     profile.headshotLethal = ExpMP5PrimaryHeadshotLethal();
+    return profile;
+}
+
+SharedWeaponDamageProfile Build357PrimaryDamageProfile()
+{
+    SharedWeaponDamageProfile profile = {};
+    profile.baseDamage = Exp357PrimaryDamage();
+    profile.headshotScale = Exp357PrimaryHeadshotScale();
+    profile.headshotLethal = Exp357PrimaryHeadshotLethal();
     return profile;
 }
 

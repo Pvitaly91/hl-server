@@ -15,8 +15,8 @@ The repository vendors a pinned snapshot of Valve's official Half-Life source ba
 - A reproducible VS2022 Win32 build for the vanilla Half-Life server GameDLL.
 - A disposable HLDS test stand for no-client and dedicated flows under `testbed/runtime/`.
 - A managed same-root live mod at `Half-Life\hlserver_testbed` for client-attached sessions.
-- Server-only experimental Glock and MP5 paths for manual stock-client-compatible gameplay iteration without changing the stock client DLL.
-- A shared server-side tuning core for Glock and MP5 so future weapons can reuse the same spread and damage primitives instead of copying ad-hoc math per weapon.
+- Server-only experimental Glock, MP5, and 357 paths for manual stock-client-compatible gameplay iteration without changing the stock client DLL.
+- A shared server-side tuning core for Glock, MP5, and 357 so future weapons can reuse the same spread and damage primitives instead of copying ad-hoc math per weapon.
 
 It is not yet a gameplay conversion and it does not ship any proprietary game assets, Steam files, or HLDS binaries.
 
@@ -89,7 +89,7 @@ Simplest workflow:
 
 How to use the editor:
 
-1. Edit values on the `General`, `Glock`, `MP5`, and `Target Dummy` tabs.
+1. Edit values on the `General`, `Glock`, `MP5`, `357`, and `Target Dummy` tabs.
 2. Use `File -> Save` or `File -> Save As` to store the editable project as `.hlcfg.json`.
 3. Open the `Export` tab. The default filename follows the project or config name, for example `editor_glock_simple.cfg`.
 4. `Quick Export to Live Mod` is the primary action. It exports directly into `<HalfLifeRoot>\hlserver_testbed\` and prompts before overwriting an existing file.
@@ -114,7 +114,7 @@ Export behavior:
 Troubleshooting:
 
 - If `Quick Export to Live Mod` appears to do nothing, the current editor should now always show either a success dialog or a clear error dialog plus an updated `Last Action` status field on the `Export` tab.
-- The default quick-export file should appear directly in `<HalfLifeRoot>\hlserver_testbed\`, for example `D:\Steam\steamapps\common\Half-Life\hlserver_testbed\editor_gui_simple.cfg`.
+- The default quick-export file should appear directly in `<HalfLifeRoot>\hlserver_testbed\`, for example `D:\Steam\steamapps\common\Half-Life\hlserver_testbed\editor_gui_simple.cfg` or `editor_357_test.cfg`.
 - To confirm you are testing the deployed build, start `D:\Steam\steamapps\common\Half-Life\hlserver_testbed\HlConfigEditorCpp.exe` and compare its timestamp with the normal build output under `tools\HlConfigEditorCpp\bin\Debug\Win32\`.
 - If Visual Studio warns that deployment failed because the destination EXE is in use, close the running `HlConfigEditorCpp.exe` from the mod root and rebuild.
 
@@ -122,7 +122,7 @@ Built-in self-test:
 
 - Run `<repo-root>\tools\HlConfigEditorCpp\bin\Debug\Win32\HlConfigEditorCpp.exe --self-test`.
 - When the editor resolves the repository root, it writes the summary to `<repo-root>\artifacts\HlConfigEditorCppSelfTest\selftest-summary.txt`.
-- When the live Half-Life root is available, the self-test writes example Glock and MP5 `.hlcfg.json` projects plus exported `.cfg` files such as `<HalfLifeRoot>\hlserver_testbed\editor_glock_simple.cfg` and `<HalfLifeRoot>\hlserver_testbed\editor_mp5_simple.cfg`.
+- When the live Half-Life root is available, the self-test writes example Glock, MP5, and 357 `.hlcfg.json` projects plus exported `.cfg` files such as `<HalfLifeRoot>\hlserver_testbed\editor_glock_simple.cfg`, `<HalfLifeRoot>\hlserver_testbed\editor_mp5_simple.cfg`, and `<HalfLifeRoot>\hlserver_testbed\editor_357_test.cfg`.
 - If the live root is not available, the self-test falls back to `<repo-root>\testbed\mods\hlserver_testbed\`.
 
 For a step-by-step walkthrough with exact file paths, Glock and MP5 examples, and live launch commands, see [docs/cpp-config-editor.md](docs/cpp-config-editor.md).
@@ -189,7 +189,7 @@ Persistent named target spots are stored under `<HalfLifeRoot>\hlserver_testbed\
 
 ## Shared Weapon Tuning Core
 
-Glock and MP5 now share a lightweight server-side tuning core for the common tuning dimensions that were already present in the repo:
+Glock, MP5, and 357 now share a lightweight server-side tuning core for the common tuning dimensions that were already present in the repo:
 
 - base spread
 - ground movement penalty
@@ -206,9 +206,10 @@ Weapon-specific behavior stays in the weapon wrappers:
 
 - Glock still owns its tap-fire press/hold semantics.
 - MP5 still owns burst-growth and burst-specific spread accumulation.
+- 357 stays a simple single-shot wrapper on top of the shared spread and damage helpers plus its own lab loadout wiring.
 - Lab loadout and target workflow stay unchanged.
 
-The editor and cfg surface is intentionally unchanged. Existing `sv_exp_glock_*`, `sv_exp_mp5_*`, and exported cfg files still load through the same live-lab workflow. See [docs/shared-weapon-tuning.md](/D:/DEV/CPP/HL-Server/docs/shared-weapon-tuning.md) for the implementation note and verification summary.
+The editor and cfg surface is intentionally unchanged. Existing `sv_exp_glock_*`, `sv_exp_mp5_*`, `sv_exp_357_*`, and exported cfg files still load through the same live-lab workflow. See [docs/shared-weapon-tuning.md](/D:/DEV/CPP/HL-Server/docs/shared-weapon-tuning.md) for the implementation note and verification summary.
 
 Launch live with a Glock cfg already exported into the active live mod root:
 
@@ -222,11 +223,18 @@ Launch live with an MP5 cfg already exported into the active live mod root:
 scripts\play-hlserver-testbed-direct.bat -CfgProfile my_mp5.cfg
 ```
 
+Launch live with a 357 cfg already exported into the active live mod root:
+
+```bat
+scripts\play-hlserver-testbed-direct.bat -CfgProfile editor_357_test.cfg
+```
+
 Use the shorthand cfg alias when you only want to supply a profile plus extra launcher flags:
 
 ```bat
 scripts\run-testbed.bat play-direct-cfg my_glock.cfg
 scripts\run-testbed.bat play-direct-cfg my_mp5.cfg
+scripts\run-testbed.bat play-direct-cfg editor_357_test.cfg
 ```
 
 Legacy `cfg_profiles` paths are still accepted:
@@ -251,6 +259,10 @@ exp_target_respawn
 exp_cfg_apply my_mp5.cfg
 exp_target_profile vest
 
+exp_cfg_apply editor_357_test.cfg
+exp_target_profile unarmored
+exp_target_respawn
+
 exp_lab_apply cfg_profiles/my_legacy_glock.cfg
 ```
 
@@ -263,6 +275,48 @@ Cfg-driven observability:
 - weapon debug logs now include cfg-mode session fields plus compact `type=cfg` events when cfg apply or reload commands run successfully or fail
 - root-level exported `*.cfg` files, the deployed `HlConfigEditorCpp.exe`, and legacy `cfg_profiles\...` files are preserved across same-root live-mod refreshes so the simplified workflow remains usable
 - the editor deployment now writes a live-mod marker when the folder only contains known editor/live-mod content so later cfg-driven launcher refreshes can safely take ownership of the folder
+
+## Experimental 357 Workflow
+
+357 now plugs into the same shared server-side tuning core and live-lab loop as Glock and MP5. The implementation is still experimental and is meant for server-side iteration, not a claim of stock Counter-Strike parity.
+
+Key 357 cvars:
+
+- `sv_exp_357_primary_enabled`
+- `sv_exp_357_profile_name`
+- `sv_exp_357_primary_base_spread`
+- `sv_exp_357_primary_ground_move_penalty`
+- `sv_exp_357_primary_air_move_penalty`
+- `sv_exp_357_primary_duck_penalty_scale`
+- `sv_exp_357_primary_first_shot_accuracy`
+- `sv_exp_357_primary_first_shot_speed_threshold`
+- `sv_exp_357_primary_spread_recovery`
+- `sv_exp_357_primary_max_spread`
+- `sv_exp_357_primary_damage`
+- `sv_exp_357_primary_headshot_scale`
+- `sv_exp_357_primary_headshot_lethal`
+- `sv_exp_357_lab_loadout`
+- `sv_exp_357_lab_ammo`
+- `sv_exp_357_lab_autoswitch`
+
+Checked-in 357 preset JSON files live under `configs/357-presets/`:
+
+- `default.json`
+- `precision_test.json`
+- `headshot_test.json`
+
+Recommended 357 loop:
+
+1. Build and run the deployed editor from `<HalfLifeRoot>\hlserver_testbed\HlConfigEditorCpp.exe`.
+2. Configure the `357` tab and export `editor_357_test.cfg` with `Quick Export to Live Mod`.
+3. Launch or reconnect to the live server.
+4. Run `exp_cfg_apply editor_357_test.cfg`.
+5. If this is the first setup on the map, run `exp_target_mark default`.
+6. Run `exp_target_use_saved default` and `exp_target_respawn`.
+7. Use `exp_target_profile unarmored` when you want deterministic 357 dummy kill checks.
+8. Review the weapon log with `.\scripts\analyze-weapon-log.ps1 -Latest -Weapon 357`.
+
+The editor, launcher, and cfg command path stay unchanged. 357 is simply another shared-core weapon that can be exported to cfg, applied live, and exercised against the same target dummy workflow.
 
 ## Live BAT launchers
 
@@ -969,7 +1023,7 @@ Hit and kill telemetry stay on the same single-line `key=value` shape, for examp
 
 In this implementation, "lethal headshot evidence" means the server explicitly logged `headshot_lethal_applied=1` on a Glock hit or kill after the dedicated headshot-lethal path raised pre-armor damage for that specific hit. It is not inferred from a kill line alone, and it is not a claim of exact Counter-Strike parity or validated subjective feel.
 
-## Analyze Glock telemetry
+## Analyze weapon telemetry
 
 Analyze the newest disposable weapon log:
 
@@ -993,6 +1047,12 @@ Analyze the newest disposable log and surface the active preset metadata:
 
 ```powershell
 .\scripts\analyze-weapon-log.ps1 -Latest
+```
+
+Filter the summary to 357 only:
+
+```powershell
+.\scripts\analyze-weapon-log.ps1 -Latest -Weapon 357
 ```
 
 Use the BAT alias from `cmd.exe` or Explorer:
@@ -1041,7 +1101,7 @@ Weapon log analysis
   spread min/avg/max       : 0.0000 / 0.0350 / 0.0700
 ```
 
-The analyzer summarizes server-authoritative telemetry evidence only. It helps confirm that accepted shots, tap-fire hold rejections, movement penalties, recovery, and crouch-move candidates were logged, but it does not prove subjective stock-client feel or prediction quality.
+The analyzer summarizes server-authoritative telemetry evidence only. It helps confirm that accepted shots, tap-fire hold rejections, movement penalties, recovery, crouch-move candidates, and shared-core damage evidence were logged, but it does not prove subjective stock-client feel or prediction quality.
 
 ## Pointing the scripts at existing installs
 
@@ -1124,7 +1184,7 @@ Live client-attached mode creates or refreshes a managed mod folder at `Half-Lif
 - `scripts/list-weapon-comparison-matrices.ps1` lists the checked-in mixed Glock-plus-MP5 comparison matrices from `configs/weapon-comparison-matrices/`.
 - `scripts/run-weapon-comparison-matrix.ps1` dispatches mixed matrix steps to the existing Glock or MP5 session scripts, stamps normalized session metadata, exports per-step analyzer artifacts, and writes one consolidated mixed comparison report set under `testbed/logs/reports/weapon-comparison-matrices/`.
 - `scripts/compare-weapon-reports.ps1` aggregates analyzer JSON from Glock-only or mixed Glock-plus-MP5 sessions, prints a concise comparison table, and can export normalized JSON, CSV, and Markdown summaries.
-- `scripts/analyze-weapon-log.ps1` analyzes the newest or a specific `weapon-debug-*.log`, prints a concise evidence summary including session profile and target-profile metadata when present, optionally exports JSON and CSV under `testbed/logs/reports/`, and can fail non-zero when required armored-dummy telemetry signals are missing.
+- `scripts/analyze-weapon-log.ps1` analyzes the newest or a specific `weapon-debug-*.log`, prints a concise evidence summary including session profile and target-profile metadata when present, supports `-Weapon glock`, `-Weapon mp5`, `-Weapon 357`, or `-Weapon all`, optionally exports JSON and CSV under `testbed/logs/reports/`, and can fail non-zero when required armored-dummy telemetry signals are missing.
 - `scripts/show-latest-analysis.ps1` is the shared analyzer BAT helper that loads the newest disposable `weapon-debug-*.log`, prints the log and reports locations, and reruns the existing analyzer with `all`, `glock`, or `mp5` filtering.
 - `scripts/play-glock-live.bat`, `scripts/play-mp5-live.bat`, and `scripts/play-live-test.bat` are Explorer-friendly live launchers for stock-client-attached same-root `hlserver_testbed` sessions.
 - `scripts/show-latest-log-analysis.bat`, `scripts/show-latest-glock-analysis.bat`, and `scripts/show-latest-mp5-analysis.bat` are thin BAT entry points for the latest analyzer summaries.
@@ -1145,7 +1205,7 @@ Live client-attached mode creates or refreshes a managed mod folder at `Half-Lif
 
 ## Future direction
 
-This repository is aimed at iterative server-side gameplay experiments that keep the stock Steam Half-Life client compatible. The current checked-in manual flows cover Glock and MP5, and future work can extend the same seam to additional weapons without turning the project into a custom client or full conversion.
+This repository is aimed at iterative server-side gameplay experiments that keep the stock Steam Half-Life client compatible. The current checked-in manual flows cover Glock, MP5, and 357, and future work can extend the same seam to additional weapons without turning the project into a custom client or full conversion.
 
 See:
 

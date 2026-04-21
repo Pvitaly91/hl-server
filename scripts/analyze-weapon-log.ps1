@@ -2,7 +2,7 @@
 param(
  [Parameter(ParameterSetName='Path',Mandatory=$true)][string]$Path,
  [Parameter(ParameterSetName='Latest')][switch]$Latest,
- [ValidateSet('glock','mp5','all')][string]$Weapon='all',
+ [ValidateSet('glock','mp5','357','all')][string]$Weapon='all',
  [switch]$ExportJson,[switch]$ExportCsv,[string]$OutputDir,[switch]$PassThru,
  [switch]$RequireAccepted,[switch]$RequireRejections,[switch]$RequireFirstShot,[switch]$RequireMovePenalty,[switch]$RequireCrouchMoveEvidence,[switch]$RequireHits,[switch]$RequireKills,[switch]$RequireHeadshotKills,[switch]$RequireLethalHeadshotEvidence,[switch]$RequireDummySpawns,[switch]$RequireDummyHits,[switch]$RequireDummyHeadshotHits,[switch]$RequireDummyHeadshotKills,[switch]$RequireArmoredDummyHits,[switch]$RequireProtectedDummyHeadshotHits,[switch]$RequireProtectedDummyHeadshotKills,[switch]$RequireDummyLethalHeadshotEvidence,[switch]$RequireWeaponAccepted,[switch]$RequireWeaponHits,[switch]$RequireWeaponKills,[switch]$RequireWeaponHeadshotKills,[switch]$RequireBurstGrowthEvidence,[switch]$RequireMovementPenaltyEvidence)
 $ErrorActionPreference='Stop'; . "$PSScriptRoot\common.ps1"; Import-HLServerEnv
@@ -13,7 +13,13 @@ function I([string]$v){if([string]::IsNullOrWhiteSpace($v)-or $v -eq 'na'){retur
 function N([string]$v){if([string]::IsNullOrWhiteSpace($v)-or $v -eq 'na'){return $null};[double]::Parse($v,[Globalization.CultureInfo]::InvariantCulture)}
 function B([string]$v){if([string]::IsNullOrWhiteSpace($v)-or $v -eq 'na'){return $null};switch($v.ToLowerInvariant()){'1'{$true}'0'{$false}'true'{$true}'false'{$false}default{[bool]::Parse($v)}}}
 function S([object[]]$v){$f=@($v|?{$_ -ne $null});if($f.Count -eq 0){return $null};$m=$f|measure -Minimum -Maximum -Average;[pscustomobject]@{Count=[int]$m.Count;Min=[double]$m.Minimum;Average=[double]$m.Average;Max=[double]$m.Maximum}}
-function M($e){$Weapon -eq 'all' -or (([string]$e.Weapon).ToLowerInvariant() -eq $Weapon)}
+function M($e){
+ if($Weapon -eq 'all'){return $true}
+ if(-not $e){return $false}
+ $weaponName=[string]$e.Weapon
+ if([string]::IsNullOrWhiteSpace($weaponName)){return $false}
+ return $weaponName.ToLowerInvariant() -eq $Weapon
+}
 function FHitgroups($values){$items=@();foreach($value in @($values)){if($null -eq $value){continue};$name=[string]$value.Name;$count=$value.Count;if([string]::IsNullOrWhiteSpace($name)){continue};$items+=('{0}={1}' -f $name,$count)};if($items.Count -eq 0){return 'n/a'};return ($items -join ', ')}
 function D($e){$e.VictimKind -eq 'dummy' -or $e.VictimClass -eq 'glock_lab_dummy'}
 function A($e){(D $e) -and ($e.ArmorApplied -eq $true -or (($e.DummyArmorBefore) -gt 0))}
@@ -37,6 +43,7 @@ function P([string]$l,[int]$n){
   ProfileName=F $h 'profile'
   GlockProfileName=FF $h @('glock_profile','glockProfile','sv_exp_glock_profile_name')
   Mp5ProfileName=FF $h @('mp5_profile','mp5Profile','sv_exp_mp5_profile_name')
+  Profile357Name=FF $h @('357_profile','profile357','sv_exp_357_profile_name')
   TargetProfileName=FF $h @('target_profile','targetProfile','sv_exp_glock_lab_target_profile_name')
   SessionTag=FF $h @('session_tag','sv_exp_session_tag')
   MatrixName=FF $h @('matrix_name','sv_exp_matrix_name')
@@ -251,7 +258,7 @@ $report=[ordered]@{
  observations=@($obs)
  warnings=@($warnings)
 }
-$exports=[ordered]@{};$exportEvents=if($Weapon -eq 'all'){$events}else{@($events|?{$_.Type -eq 'session' -or $_.Type -like 'dummy_*' -or $_.Type -like 'target_*' -or (M $_)})};if($ExportJson -or $ExportCsv){$out=if([string]::IsNullOrWhiteSpace($OutputDir)){Get-WeaponDebugReportsRoot}else{Get-FullPath -Path $OutputDir};Ensure-Directory -Path $out;$stamp=Get-Date -Format 'yyyyMMdd-HHmmss';if($ExportJson){$j=Join-Path $out ('weapon-report-'+$stamp+'.json');$report|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $j -Encoding UTF8;$exports.json=$j};if($ExportCsv){$c=Join-Path $out ('weapon-events-'+$stamp+'.csv');$exportEvents|Export-Csv -LiteralPath $c -NoTypeInformation -Encoding UTF8;$exports.csv=$c}}
+$exports=[ordered]@{};$exportEvents=if($Weapon -eq 'all'){$events}else{@($events|?{$_ -and ($_.Type -eq 'session' -or $_.Type -like 'dummy_*' -or $_.Type -like 'target_*' -or (M $_))})};if($ExportJson -or $ExportCsv){$out=if([string]::IsNullOrWhiteSpace($OutputDir)){Get-WeaponDebugReportsRoot}else{Get-FullPath -Path $OutputDir};Ensure-Directory -Path $out;$stamp=Get-Date -Format 'yyyyMMdd-HHmmss';if($ExportJson){$j=Join-Path $out ('weapon-report-'+$stamp+'.json');$report|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $j -Encoding UTF8;$exports.json=$j};if($ExportCsv){$c=Join-Path $out ('weapon-events-'+$stamp+'.csv');$exportEvents|Export-Csv -LiteralPath $c -NoTypeInformation -Encoding UTF8;$exports.csv=$c}}
 Write-Host 'Weapon log analysis'
 Write-Host "  log path                 : $($log.FullName)"
 Write-Host "  weapon filter            : $Weapon"

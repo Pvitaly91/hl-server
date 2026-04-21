@@ -1331,7 +1331,8 @@ void CBaseMonster :: TraceAttack( entvars_t *pevAttacker, float flDamage, Vector
 		m_LastHitGroup = ptr->iHitgroup;
 
 		if (!ApplyActiveGlockPrimaryTraceDamage(this, pevAttacker, ptr->iHitgroup, &flDamage) &&
-			!ApplyActiveMp5PrimaryTraceDamage(this, pevAttacker, ptr->iHitgroup, &flDamage))
+			!ApplyActiveMp5PrimaryTraceDamage(this, pevAttacker, ptr->iHitgroup, &flDamage) &&
+			!ApplyActive357PrimaryTraceDamage(this, pevAttacker, ptr->iHitgroup, &flDamage))
 		{
 			switch ( ptr->iHitgroup )
 			{
@@ -1567,7 +1568,7 @@ Vector CBaseEntity::FireBulletsPlayer ( ULONG cShots, Vector vecSrc, Vector vecD
 				break;
 			
 			case BULLET_PLAYER_357:		
-				pEntity->TraceAttack(pevAttacker, gSkillData.plrDmg357, vecDir, &tr, DMG_BULLET); 
+				pEntity->TraceAttack(pevAttacker, GetActive357PrimaryBaseDamage(pevAttacker, gSkillData.plrDmg357), vecDir, &tr, DMG_BULLET); 
 				break;
 				
 			case BULLET_NONE: // FIX 
@@ -1588,6 +1589,7 @@ Vector CBaseEntity::FireBulletsPlayer ( ULONG cShots, Vector vecSrc, Vector vecD
 	ApplyMultiDamage(pev, pevAttacker);
 	FinalizeActiveGlockPrimaryHitTelemetry();
 	FinalizeActiveMp5PrimaryHitTelemetry();
+	FinalizeActive357PrimaryHitTelemetry();
 
 	return Vector( x * vecSpread.x, y * vecSpread.y, 0.0 );
 }

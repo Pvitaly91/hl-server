@@ -21,6 +21,14 @@
 #include "monsters.h"
 #include "player.h"
 #include "gamerules.h"
+#include "future_gameplay_hooks.h"
+#include "weapon_tuning_core.h"
+#include "weapon_debug_logger.h"
+
+namespace
+{
+const float k357FallbackMaxSpeed = 250.0f;
+}
 
 
 enum python_e {
@@ -74,6 +82,7 @@ void CPython::Spawn( )
 	SET_MODEL(ENT(pev), "models/w_357.mdl");
 
 	m_iDefaultAmmo = PYTHON_DEFAULT_GIVE;
+	m_flLastAcceptedPrimaryShotTime = -1.0f;
 
 	FallInit();// get ready to fall down.
 }
@@ -180,6 +189,10 @@ void CPython::PrimaryAttack()
 
 	m_pPlayer->m_iWeaponVolume = LOUD_GUN_VOLUME;
 	m_pPlayer->m_iWeaponFlash = BRIGHT_GUN_FLASH;
+	const BOOL fHadAmmo = (m_iClip > 0);
+	const BOOL fExperimentalPrimary = Exp357PrimaryEnabled();
+	const BOOL fHasPreviousAcceptedShot = m_flLastAcceptedPrimaryShotTime >= 0.0f;
+	const float flTimeSincePreviousAcceptedShot = fHasPreviousAcceptedShot ? (gpGlobals->time - m_flLastAcceptedPrimaryShotTime) : 0.0f;
 
 	m_iClip--;
 
@@ -195,7 +208,46 @@ void CPython::PrimaryAttack()
 	Vector vecAiming = m_pPlayer->GetAutoaimVector( AUTOAIM_10DEGREES );
 
 	Vector vecDir;
-	vecDir = m_pPlayer->FireBulletsPlayer( 1, vecSrc, vecAiming, VECTOR_CONE_1DEGREES, 8192, BULLET_PLAYER_357, 0, 0, m_pPlayer->pev, m_pPlayer->random_seed );
+	if (fExperimentalPrimary)
+	{
+		const SharedWeaponSpreadProfile spreadProfile = Build357PrimarySpreadProfile();
+		const SharedWeaponSpreadState spreadState = BuildPlayerWeaponSpreadState(
+			m_pPlayer,
+			k357FallbackMaxSpeed,
+			fHasPreviousAcceptedShot != FALSE,
+			flTimeSincePreviousAcceptedShot,
+			0.0f);
+		const SharedWeaponSpreadResult spreadResult = ComputeSharedWeaponSpread(spreadProfile, spreadState);
+		const float flSpread = spreadResult.spread;
+
+		Begin357PrimaryShotContext(m_pPlayer);
+		vecDir = m_pPlayer->FireBulletsPlayer( 1, vecSrc, vecAiming, Vector( flSpread, flSpread, flSpread ), 8192, BULLET_PLAYER_357, 0, 0, m_pPlayer->pev, m_pPlayer->random_seed );
+		End357PrimaryShotContext();
+
+		if (fHadAmmo)
+		{
+			Weapon357AcceptedShotTelemetry acceptedTelemetry = {};
+			acceptedTelemetry.experimentalModeActive = Exp357ExperimentalModeEnabled() != FALSE;
+			acceptedTelemetry.firstShotAccuracyApplied = spreadResult.firstShotAccuracyApplied ? TRUE : FALSE;
+			acceptedTelemetry.spread = flSpread;
+			acceptedTelemetry.baseSpread = spreadProfile.baseSpread;
+			acceptedTelemetry.movementPenalty = spreadResult.movementPenalty;
+			acceptedTelemetry.horizontalSpeed = spreadState.horizontalSpeed;
+			acceptedTelemetry.maxSpeedForNormalization = spreadResult.normalizedMaxSpeed;
+			acceptedTelemetry.grounded = spreadState.grounded ? TRUE : FALSE;
+			acceptedTelemetry.ducking = spreadState.ducking ? TRUE : FALSE;
+			acceptedTelemetry.hasPreviousAcceptedShot = fHasPreviousAcceptedShot != FALSE;
+			acceptedTelemetry.timeSincePreviousAcceptedShot = flTimeSincePreviousAcceptedShot;
+			acceptedTelemetry.clipAfterShot = m_iClip;
+
+			LogAccepted357PrimaryShot(m_pPlayer, acceptedTelemetry);
+			m_flLastAcceptedPrimaryShotTime = gpGlobals->time;
+		}
+	}
+	else
+	{
+		vecDir = m_pPlayer->FireBulletsPlayer( 1, vecSrc, vecAiming, VECTOR_CONE_1DEGREES, 8192, BULLET_PLAYER_357, 0, 0, m_pPlayer->pev, m_pPlayer->random_seed );
+	}
 
     int flags;
 #if defined( CLIENT_WEAPONS )

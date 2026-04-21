@@ -563,6 +563,7 @@ public:
 	}
 
 private:
+	float m_flLastAcceptedPrimaryShotTime;
 	unsigned short m_usFirePython;
 };
 

@@ -1,0 +1,22 @@
+{
+  "name": "precision_test",
+  "description": "Lab-oriented 357 profile that emphasizes first-shot precision and tighter standing spread for controlled dummy validation.",
+  "cvars": {
+    "sv_exp_357_primary_enabled": "1",
+    "sv_exp_357_profile_name": "precision_test",
+    "sv_exp_357_primary_base_spread": "0.0045",
+    "sv_exp_357_primary_ground_move_penalty": "0.0150",
+    "sv_exp_357_primary_air_move_penalty": "0.0600",
+    "sv_exp_357_primary_duck_penalty_scale": "0.6000",
+    "sv_exp_357_primary_first_shot_accuracy": "1",
+    "sv_exp_357_primary_first_shot_speed_threshold": "18.0",
+    "sv_exp_357_primary_spread_recovery": "0.6500",
+    "sv_exp_357_primary_max_spread": "0.0800",
+    "sv_exp_357_primary_damage": "42.0",
+    "sv_exp_357_primary_headshot_scale": "2.8",
+    "sv_exp_357_primary_headshot_lethal": "0",
+    "sv_exp_357_lab_loadout": "1",
+    "sv_exp_357_lab_ammo": "48",
+    "sv_exp_357_lab_autoswitch": "1"
+  }
+}

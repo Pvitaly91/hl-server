@@ -1,0 +1,22 @@
+{
+  "name": "default",
+  "description": "Experimental shared-core 357 baseline for live-lab validation. This is a practical server-side test profile, not an authentic Counter-Strike value set.",
+  "cvars": {
+    "sv_exp_357_primary_enabled": "1",
+    "sv_exp_357_profile_name": "default",
+    "sv_exp_357_primary_base_spread": "0.0087",
+    "sv_exp_357_primary_ground_move_penalty": "0.0200",
+    "sv_exp_357_primary_air_move_penalty": "0.0800",
+    "sv_exp_357_primary_duck_penalty_scale": "0.7000",
+    "sv_exp_357_primary_first_shot_accuracy": "0",
+    "sv_exp_357_primary_first_shot_speed_threshold": "25.0",
+    "sv_exp_357_primary_spread_recovery": "0.7500",
+    "sv_exp_357_primary_max_spread": "0.1200",
+    "sv_exp_357_primary_damage": "40.0",
+    "sv_exp_357_primary_headshot_scale": "2.5",
+    "sv_exp_357_primary_headshot_lethal": "0",
+    "sv_exp_357_lab_loadout": "1",
+    "sv_exp_357_lab_ammo": "36",
+    "sv_exp_357_lab_autoswitch": "1"
+  }
+}

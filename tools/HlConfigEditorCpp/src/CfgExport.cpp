@@ -328,6 +328,30 @@ bool IsMp5Relevant(const ProjectDocument& document) {
            document.mp5.labAutoswitch != defaults.mp5.labAutoswitch;
 }
 
+bool Is357Relevant(const ProjectDocument& document) {
+    const ProjectDocument defaults = CreateDefaultProject();
+    if (ToLower(Trim(document.general.weaponUnderTest)) == L"357") {
+        return true;
+    }
+
+    return document.weapon357.primaryEnabled != defaults.weapon357.primaryEnabled ||
+           !EqualTrimmed(document.weapon357.profileName, defaults.weapon357.profileName) ||
+           !EqualTrimmed(document.weapon357.primaryBaseSpread, defaults.weapon357.primaryBaseSpread) ||
+           !EqualTrimmed(document.weapon357.primaryGroundMovePenalty, defaults.weapon357.primaryGroundMovePenalty) ||
+           !EqualTrimmed(document.weapon357.primaryAirMovePenalty, defaults.weapon357.primaryAirMovePenalty) ||
+           !EqualTrimmed(document.weapon357.primaryDuckPenaltyScale, defaults.weapon357.primaryDuckPenaltyScale) ||
+           document.weapon357.primaryFirstShotAccuracy != defaults.weapon357.primaryFirstShotAccuracy ||
+           !EqualTrimmed(document.weapon357.primaryFirstShotSpeedThreshold, defaults.weapon357.primaryFirstShotSpeedThreshold) ||
+           !EqualTrimmed(document.weapon357.primarySpreadRecovery, defaults.weapon357.primarySpreadRecovery) ||
+           !EqualTrimmed(document.weapon357.primaryMaxSpread, defaults.weapon357.primaryMaxSpread) ||
+           !EqualTrimmed(document.weapon357.primaryDamage, defaults.weapon357.primaryDamage) ||
+           !EqualTrimmed(document.weapon357.primaryHeadshotScale, defaults.weapon357.primaryHeadshotScale) ||
+           document.weapon357.primaryHeadshotLethal != defaults.weapon357.primaryHeadshotLethal ||
+           document.weapon357.labLoadout != defaults.weapon357.labLoadout ||
+           !EqualTrimmed(document.weapon357.labAmmo, defaults.weapon357.labAmmo) ||
+           document.weapon357.labAutoswitch != defaults.weapon357.labAutoswitch;
+}
+
 bool IsDummyRelevant(const ProjectDocument& document) {
     const ProjectDocument defaults = CreateDefaultProject();
     return document.targetDummy.enabled != defaults.targetDummy.enabled ||
@@ -427,6 +451,7 @@ bool BuildCfgLines(const ProjectDocument& document, std::vector<std::wstring>& l
     std::wstring normalized;
     const bool includeGlock = IsGlockRelevant(document);
     const bool includeMp5 = IsMp5Relevant(document);
+    const bool include357 = Is357Relevant(document);
     const bool includeDummy = IsDummyRelevant(document);
 
     AddLine(lines, L"sv_exp_weapon_under_test", QuoteCfgString(document.general.weaponUnderTest));
@@ -538,6 +563,56 @@ bool BuildCfgLines(const ProjectDocument& document, std::vector<std::wstring>& l
         }
         AddLine(lines, L"sv_exp_mp5_lab_ammo", normalized);
         AddLine(lines, L"sv_exp_mp5_lab_autoswitch", document.mp5.labAutoswitch ? L"1" : L"0");
+    }
+
+    if (include357) {
+        AddBlankLine(lines);
+        AddLine(lines, L"sv_exp_357_primary_enabled", document.weapon357.primaryEnabled ? L"1" : L"0");
+        AddLine(lines, L"sv_exp_357_profile_name", QuoteCfgString(document.weapon357.profileName));
+        if (!NormalizeFloatValue(document.weapon357.primaryBaseSpread, normalized, errorMessage, L"357 base spread")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_357_primary_base_spread", normalized);
+        if (!NormalizeFloatValue(document.weapon357.primaryGroundMovePenalty, normalized, errorMessage, L"357 ground move penalty")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_357_primary_ground_move_penalty", normalized);
+        if (!NormalizeFloatValue(document.weapon357.primaryAirMovePenalty, normalized, errorMessage, L"357 air move penalty")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_357_primary_air_move_penalty", normalized);
+        if (!NormalizeFloatValue(document.weapon357.primaryDuckPenaltyScale, normalized, errorMessage, L"357 duck penalty scale")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_357_primary_duck_penalty_scale", normalized);
+        AddLine(lines, L"sv_exp_357_primary_first_shot_accuracy", document.weapon357.primaryFirstShotAccuracy ? L"1" : L"0");
+        if (!NormalizeFloatValue(document.weapon357.primaryFirstShotSpeedThreshold, normalized, errorMessage, L"357 first-shot speed threshold")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_357_primary_first_shot_speed_threshold", normalized);
+        if (!NormalizeFloatValue(document.weapon357.primarySpreadRecovery, normalized, errorMessage, L"357 spread recovery")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_357_primary_spread_recovery", normalized);
+        if (!NormalizeFloatValue(document.weapon357.primaryMaxSpread, normalized, errorMessage, L"357 max spread")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_357_primary_max_spread", normalized);
+        if (!NormalizeFloatValue(document.weapon357.primaryDamage, normalized, errorMessage, L"357 damage")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_357_primary_damage", normalized);
+        if (!NormalizeFloatValue(document.weapon357.primaryHeadshotScale, normalized, errorMessage, L"357 headshot scale")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_357_primary_headshot_scale", normalized);
+        AddLine(lines, L"sv_exp_357_primary_headshot_lethal", document.weapon357.primaryHeadshotLethal ? L"1" : L"0");
+        AddLine(lines, L"sv_exp_357_lab_loadout", document.weapon357.labLoadout ? L"1" : L"0");
+        if (!NormalizeIntegerValue(document.weapon357.labAmmo, normalized, errorMessage, L"357 lab ammo")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_357_lab_ammo", normalized);
+        AddLine(lines, L"sv_exp_357_lab_autoswitch", document.weapon357.labAutoswitch ? L"1" : L"0");
     }
 
     if (includeDummy) {

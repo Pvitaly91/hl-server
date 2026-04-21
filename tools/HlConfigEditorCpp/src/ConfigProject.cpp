@@ -171,6 +171,18 @@ ProjectDocument CreateDefaultProject() {
     document.mp5.primaryHeadshotScale = L"3.0";
     document.mp5.labAmmo = L"250";
 
+    document.weapon357.profileName = L"default";
+    document.weapon357.primaryBaseSpread = L"0.0087";
+    document.weapon357.primaryGroundMovePenalty = L"0.0200";
+    document.weapon357.primaryAirMovePenalty = L"0.0800";
+    document.weapon357.primaryDuckPenaltyScale = L"0.7000";
+    document.weapon357.primaryFirstShotSpeedThreshold = L"25.0";
+    document.weapon357.primarySpreadRecovery = L"0.7500";
+    document.weapon357.primaryMaxSpread = L"0.1200";
+    document.weapon357.primaryDamage = L"40.0";
+    document.weapon357.primaryHeadshotScale = L"2.5";
+    document.weapon357.labAmmo = L"36";
+
     document.targetDummy.targetProfileName = L"default";
     document.targetDummy.dummyHealth = L"100.0";
     document.targetDummy.dummyArmor = L"0.0";
@@ -282,6 +294,24 @@ bool SaveProjectDocumentToFile(const ProjectDocument& document, const std::wstri
     SetString(mp5, L"sv_exp_mp5_lab_ammo", document.mp5.labAmmo);
     SetBool(mp5, L"sv_exp_mp5_lab_autoswitch", document.mp5.labAutoswitch);
 
+    JsonValue::Object& weapon357 = AddObjectMember(rootObject, L"weapon357");
+    SetBool(weapon357, L"sv_exp_357_primary_enabled", document.weapon357.primaryEnabled);
+    SetString(weapon357, L"sv_exp_357_profile_name", document.weapon357.profileName);
+    SetString(weapon357, L"sv_exp_357_primary_base_spread", document.weapon357.primaryBaseSpread);
+    SetString(weapon357, L"sv_exp_357_primary_ground_move_penalty", document.weapon357.primaryGroundMovePenalty);
+    SetString(weapon357, L"sv_exp_357_primary_air_move_penalty", document.weapon357.primaryAirMovePenalty);
+    SetString(weapon357, L"sv_exp_357_primary_duck_penalty_scale", document.weapon357.primaryDuckPenaltyScale);
+    SetBool(weapon357, L"sv_exp_357_primary_first_shot_accuracy", document.weapon357.primaryFirstShotAccuracy);
+    SetString(weapon357, L"sv_exp_357_primary_first_shot_speed_threshold", document.weapon357.primaryFirstShotSpeedThreshold);
+    SetString(weapon357, L"sv_exp_357_primary_spread_recovery", document.weapon357.primarySpreadRecovery);
+    SetString(weapon357, L"sv_exp_357_primary_max_spread", document.weapon357.primaryMaxSpread);
+    SetString(weapon357, L"sv_exp_357_primary_damage", document.weapon357.primaryDamage);
+    SetString(weapon357, L"sv_exp_357_primary_headshot_scale", document.weapon357.primaryHeadshotScale);
+    SetBool(weapon357, L"sv_exp_357_primary_headshot_lethal", document.weapon357.primaryHeadshotLethal);
+    SetBool(weapon357, L"sv_exp_357_lab_loadout", document.weapon357.labLoadout);
+    SetString(weapon357, L"sv_exp_357_lab_ammo", document.weapon357.labAmmo);
+    SetBool(weapon357, L"sv_exp_357_lab_autoswitch", document.weapon357.labAutoswitch);
+
     JsonValue::Object& targetDummy = AddObjectMember(rootObject, L"targetDummy");
     SetBool(targetDummy, L"sv_exp_glock_lab_dummy", document.targetDummy.enabled);
     SetString(targetDummy, L"sv_exp_glock_lab_target_profile_name", document.targetDummy.targetProfileName);
@@ -375,6 +405,25 @@ bool LoadProjectDocumentFromFile(const std::wstring& path, ProjectDocument& docu
         loaded.mp5.labLoadout = ReadBoolValue(*mp5, L"sv_exp_mp5_lab_loadout", loaded.mp5.labLoadout);
         loaded.mp5.labAmmo = ReadStringValue(*mp5, L"sv_exp_mp5_lab_ammo", loaded.mp5.labAmmo);
         loaded.mp5.labAutoswitch = ReadBoolValue(*mp5, L"sv_exp_mp5_lab_autoswitch", loaded.mp5.labAutoswitch);
+    }
+
+    if (const JsonValue::Object* weapon357 = FindObject(rootObject, L"weapon357")) {
+        loaded.weapon357.primaryEnabled = ReadBoolValue(*weapon357, L"sv_exp_357_primary_enabled", loaded.weapon357.primaryEnabled);
+        loaded.weapon357.profileName = ReadStringValue(*weapon357, L"sv_exp_357_profile_name", loaded.weapon357.profileName);
+        loaded.weapon357.primaryBaseSpread = ReadStringValue(*weapon357, L"sv_exp_357_primary_base_spread", loaded.weapon357.primaryBaseSpread);
+        loaded.weapon357.primaryGroundMovePenalty = ReadStringValue(*weapon357, L"sv_exp_357_primary_ground_move_penalty", loaded.weapon357.primaryGroundMovePenalty);
+        loaded.weapon357.primaryAirMovePenalty = ReadStringValue(*weapon357, L"sv_exp_357_primary_air_move_penalty", loaded.weapon357.primaryAirMovePenalty);
+        loaded.weapon357.primaryDuckPenaltyScale = ReadStringValue(*weapon357, L"sv_exp_357_primary_duck_penalty_scale", loaded.weapon357.primaryDuckPenaltyScale);
+        loaded.weapon357.primaryFirstShotAccuracy = ReadBoolValue(*weapon357, L"sv_exp_357_primary_first_shot_accuracy", loaded.weapon357.primaryFirstShotAccuracy);
+        loaded.weapon357.primaryFirstShotSpeedThreshold = ReadStringValue(*weapon357, L"sv_exp_357_primary_first_shot_speed_threshold", loaded.weapon357.primaryFirstShotSpeedThreshold);
+        loaded.weapon357.primarySpreadRecovery = ReadStringValue(*weapon357, L"sv_exp_357_primary_spread_recovery", loaded.weapon357.primarySpreadRecovery);
+        loaded.weapon357.primaryMaxSpread = ReadStringValue(*weapon357, L"sv_exp_357_primary_max_spread", loaded.weapon357.primaryMaxSpread);
+        loaded.weapon357.primaryDamage = ReadStringValue(*weapon357, L"sv_exp_357_primary_damage", loaded.weapon357.primaryDamage);
+        loaded.weapon357.primaryHeadshotScale = ReadStringValue(*weapon357, L"sv_exp_357_primary_headshot_scale", loaded.weapon357.primaryHeadshotScale);
+        loaded.weapon357.primaryHeadshotLethal = ReadBoolValue(*weapon357, L"sv_exp_357_primary_headshot_lethal", loaded.weapon357.primaryHeadshotLethal);
+        loaded.weapon357.labLoadout = ReadBoolValue(*weapon357, L"sv_exp_357_lab_loadout", loaded.weapon357.labLoadout);
+        loaded.weapon357.labAmmo = ReadStringValue(*weapon357, L"sv_exp_357_lab_ammo", loaded.weapon357.labAmmo);
+        loaded.weapon357.labAutoswitch = ReadBoolValue(*weapon357, L"sv_exp_357_lab_autoswitch", loaded.weapon357.labAutoswitch);
     }
 
     if (const JsonValue::Object* targetDummy = FindObject(rootObject, L"targetDummy")) {

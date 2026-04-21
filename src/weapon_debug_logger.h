@@ -47,10 +47,27 @@ struct Mp5AcceptedShotTelemetry
     int clipAfterShot;
 };
 
+struct Weapon357AcceptedShotTelemetry
+{
+    bool experimentalModeActive;
+    bool firstShotAccuracyApplied;
+    float spread;
+    float baseSpread;
+    float movementPenalty;
+    float horizontalSpeed;
+    float maxSpeedForNormalization;
+    bool grounded;
+    bool ducking;
+    bool hasPreviousAcceptedShot;
+    float timeSincePreviousAcceptedShot;
+    int clipAfterShot;
+};
+
 void EnsureWeaponDebugLogReady();
 void LogLiveCfgCommand(const char *action, const char *requestedPath, const char *execPath, const char *resolvedPath, bool success, const char *details);
 void LogAcceptedGlockPrimaryShot(CBasePlayer *pPlayer, const GlockAcceptedShotTelemetry &telemetry);
 void LogAcceptedMp5PrimaryShot(CBasePlayer *pPlayer, const Mp5AcceptedShotTelemetry &telemetry);
+void LogAccepted357PrimaryShot(CBasePlayer *pPlayer, const Weapon357AcceptedShotTelemetry &telemetry);
 void LogRejectedGlockPrimaryHold(CBasePlayer *pPlayer, const GlockRejectedShotTelemetry &telemetry);
 void LogLiveLabConsoleMessage(const char *line);
 void LogGlockLabDummySpawn(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, bool respawn, const Vector &origin, const Vector &angles, const char *source, const char *candidate, const char *spotName, const char *spotStorage);
@@ -60,11 +77,16 @@ void LogGlockLabDummyReposition(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer,
 void LogGlockLabDummyClear(CBaseEntity *pDummy, const char *reason);
 void BeginGlockPrimaryShotContext(CBasePlayer *pPlayer);
 void BeginMp5PrimaryShotContext(CBasePlayer *pPlayer);
+void Begin357PrimaryShotContext(CBasePlayer *pPlayer);
 void EndGlockPrimaryShotContext();
 void EndMp5PrimaryShotContext();
+void End357PrimaryShotContext();
 float GetActiveGlockPrimaryBaseDamage(entvars_t *pevAttacker, float fallbackDamage);
 float GetActiveMp5PrimaryBaseDamage(entvars_t *pevAttacker, float fallbackDamage);
+float GetActive357PrimaryBaseDamage(entvars_t *pevAttacker, float fallbackDamage);
 bool ApplyActiveGlockPrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAttacker, int hitgroup, float *pDamage);
 bool ApplyActiveMp5PrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAttacker, int hitgroup, float *pDamage);
+bool ApplyActive357PrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAttacker, int hitgroup, float *pDamage);
 void FinalizeActiveGlockPrimaryHitTelemetry();
 void FinalizeActiveMp5PrimaryHitTelemetry();
+void FinalizeActive357PrimaryHitTelemetry();
