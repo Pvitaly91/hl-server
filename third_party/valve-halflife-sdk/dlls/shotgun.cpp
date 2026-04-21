@@ -21,10 +21,18 @@
 #include "nodes.h"
 #include "player.h"
 #include "gamerules.h"
+#include "future_gameplay_hooks.h"
+#include "weapon_tuning_core.h"
+#include "weapon_debug_logger.h"
 
 // special deathmatch shotgun spreads
 #define VECTOR_CONE_DM_SHOTGUN	Vector( 0.08716, 0.04362, 0.00  )// 10 degrees by 5 degrees
 #define VECTOR_CONE_DM_DOUBLESHOTGUN Vector( 0.17365, 0.04362, 0.00 ) // 20 degrees by 5 degrees
+
+namespace
+{
+const float kShotgunFallbackMaxSpeed = 250.0f;
+}
 
 enum shotgun_e {
 	SHOTGUN_IDLE = 0,
@@ -48,6 +56,7 @@ void CShotgun::Spawn( )
 	SET_MODEL(ENT(pev), "models/w_shotgun.mdl");
 
 	m_iDefaultAmmo = SHOTGUN_DEFAULT_GIVE;
+	m_flLastAcceptedPrimaryShotTime = -1.0f;
 
 	FallInit();// get ready to fall
 }
@@ -136,6 +145,9 @@ void CShotgun::PrimaryAttack()
 
 	m_pPlayer->m_iWeaponVolume = LOUD_GUN_VOLUME;
 	m_pPlayer->m_iWeaponFlash = NORMAL_GUN_FLASH;
+	const BOOL fExperimentalPrimary = ExpShotgunPrimaryEnabled();
+	const BOOL fHasPreviousAcceptedShot = m_flLastAcceptedPrimaryShotTime >= 0.0f;
+	const float flTimeSincePreviousAcceptedShot = fHasPreviousAcceptedShot ? (gpGlobals->time - m_flLastAcceptedPrimaryShotTime) : 0.0f;
 
 	m_iClip--;
 
@@ -154,18 +166,66 @@ void CShotgun::PrimaryAttack()
 
 	Vector vecDir;
 
-#ifdef CLIENT_DLL
-	if ( bIsMultiplayer() )
-#else
-	if ( g_pGameRules->IsMultiplayer() )
-#endif
+	if (fExperimentalPrimary)
 	{
-		vecDir = m_pPlayer->FireBulletsPlayer( 4, vecSrc, vecAiming, VECTOR_CONE_DM_SHOTGUN, 2048, BULLET_PLAYER_BUCKSHOT, 0, 0, m_pPlayer->pev, m_pPlayer->random_seed );
+		const SharedWeaponSpreadProfile spreadProfile = BuildShotgunPrimarySpreadProfile();
+		const SharedWeaponSpreadState spreadState = BuildPlayerWeaponSpreadState(
+			m_pPlayer,
+			kShotgunFallbackMaxSpeed,
+			fHasPreviousAcceptedShot != FALSE,
+			flTimeSincePreviousAcceptedShot,
+			0.0f);
+		const SharedWeaponSpreadResult spreadResult = ComputeSharedWeaponSpread(spreadProfile, spreadState);
+		const float flSpread = spreadResult.spread;
+		const int pelletCount = ExpShotgunPrimaryPelletCount();
+
+		BeginShotgunPrimaryShotContext(m_pPlayer, pelletCount);
+		vecDir = m_pPlayer->FireBulletsPlayer(
+			pelletCount,
+			vecSrc,
+			vecAiming,
+			Vector(flSpread, flSpread, 0.0f),
+			2048,
+			BULLET_PLAYER_BUCKSHOT,
+			0,
+			0,
+			m_pPlayer->pev,
+			m_pPlayer->random_seed);
+
+		ShotgunAcceptedShotTelemetry acceptedTelemetry = {};
+		acceptedTelemetry.experimentalModeActive = ExpShotgunExperimentalModeEnabled();
+		acceptedTelemetry.firstShotAccuracyApplied = spreadResult.firstShotAccuracyApplied;
+		acceptedTelemetry.spread = flSpread;
+		acceptedTelemetry.baseSpread = spreadProfile.baseSpread;
+		acceptedTelemetry.movementPenalty = spreadResult.movementPenalty;
+		acceptedTelemetry.horizontalSpeed = spreadState.horizontalSpeed;
+		acceptedTelemetry.maxSpeedForNormalization = spreadState.maxSpeedForNormalization;
+		acceptedTelemetry.grounded = spreadState.grounded;
+		acceptedTelemetry.ducking = spreadState.ducking;
+		acceptedTelemetry.hasPreviousAcceptedShot = fHasPreviousAcceptedShot != FALSE;
+		acceptedTelemetry.timeSincePreviousAcceptedShot = flTimeSincePreviousAcceptedShot;
+		acceptedTelemetry.clipAfterShot = m_iClip;
+		acceptedTelemetry.pelletCount = pelletCount;
+
+		LogAcceptedShotgunPrimaryShot(m_pPlayer, acceptedTelemetry);
+		EndShotgunPrimaryShotContext();
+		m_flLastAcceptedPrimaryShotTime = gpGlobals->time;
 	}
 	else
 	{
-		// regular old, untouched spread. 
-		vecDir = m_pPlayer->FireBulletsPlayer( 6, vecSrc, vecAiming, VECTOR_CONE_10DEGREES, 2048, BULLET_PLAYER_BUCKSHOT, 0, 0, m_pPlayer->pev, m_pPlayer->random_seed );
+#ifdef CLIENT_DLL
+		if ( bIsMultiplayer() )
+#else
+		if ( g_pGameRules->IsMultiplayer() )
+#endif
+		{
+			vecDir = m_pPlayer->FireBulletsPlayer( 4, vecSrc, vecAiming, VECTOR_CONE_DM_SHOTGUN, 2048, BULLET_PLAYER_BUCKSHOT, 0, 0, m_pPlayer->pev, m_pPlayer->random_seed );
+		}
+		else
+		{
+			// regular old, untouched spread. 
+			vecDir = m_pPlayer->FireBulletsPlayer( 6, vecSrc, vecAiming, VECTOR_CONE_10DEGREES, 2048, BULLET_PLAYER_BUCKSHOT, 0, 0, m_pPlayer->pev, m_pPlayer->random_seed );
+		}
 	}
 
 	PLAYBACK_EVENT_FULL( flags, m_pPlayer->edict(), m_usSingleFire, 0.0, (float *)&g_vecZero, (float *)&g_vecZero, vecDir.x, vecDir.y, 0, 0, 0, 0 );

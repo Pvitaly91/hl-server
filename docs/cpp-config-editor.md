@@ -33,7 +33,7 @@ This is now the default path:
 
 1. Build `HlConfigEditorCpp` in Visual Studio 2022.
 2. Run `<HalfLifeRoot>\hlserver_testbed\HlConfigEditorCpp.exe`.
-3. Edit values on the `General`, `Glock`, `MP5`, `357`, and `Target Dummy` tabs.
+3. Edit values on the `General`, `Glock`, `MP5`, `357`, `Shotgun`, and `Target Dummy` tabs.
 4. Save the editable project as `.hlcfg.json`.
 5. Open the `Export` tab.
 6. Confirm the resolved-path fields show the expected Half-Life root, live mod root, and quick-export target.
@@ -82,7 +82,7 @@ The `Export` tab now emphasizes the simple live-mod workflow first:
 - `Copy launcher`, `Copy raw cfg`, `Open export folder`, and `Open live mod` all provide visible success or error feedback instead of failing silently.
 - `Copy launcher` still works when the exported cfg resolves to a live-mod-relative path.
 
-The default cfg filename is derived from the current project/config name so the common path does not start from a generic placeholder. Example defaults include `editor_glock_simple.cfg`, `editor_mp5_simple.cfg`, and `editor_357_test.cfg`.
+The default cfg filename is derived from the current project/config name so the common path does not start from a generic placeholder. Example defaults include `editor_glock_simple.cfg`, `editor_mp5_simple.cfg`, `editor_357_test.cfg`, and `editor_shotgun_test.cfg`.
 
 ## Advanced and backward-compatible workflow
 
@@ -150,6 +150,16 @@ For 357 specifically, the same editor path applies:
 5. Run `exp_target_use_saved default` and `exp_target_respawn`.
 6. Review 357-only telemetry with `.\scripts\analyze-weapon-log.ps1 -Latest -Weapon 357`.
 
+For shotgun specifically, the same editor path applies:
+
+1. Open the `Shotgun` tab.
+2. Choose a checked-in preset such as `default`, `close_quickkill`, or `precision_test`.
+3. Export `editor_shotgun_test.cfg` to the live mod root.
+4. In HLDS, run `exp_cfg_apply editor_shotgun_test.cfg`.
+5. Run `exp_target_use_saved default` and `exp_target_respawn`.
+6. Use `exp_target_profile unarmored` when you want deterministic close-range dummy checks.
+7. Review shotgun-only telemetry with `.\scripts\analyze-weapon-log.ps1 -Latest -Weapon shotgun`.
+
 Subsystem provenance for this recommended path is recorded in [docs/stable-live-lab-state.md](/D:/DEV/CPP/HL-Server/docs/stable-live-lab-state.md).
 
 Live lab console commands:
@@ -175,13 +185,13 @@ Persistent target spots are stored under `<HalfLifeRoot>\hlserver_testbed\target
 
 ## Shared tuning compatibility
 
-The current server build routes Glock, MP5, and 357 through one shared server-side tuning core for common spread and damage calculations, but the editor surface is unchanged on purpose:
+The current server build routes Glock, MP5, 357, and shotgun through one shared server-side tuning core for common spread and damage calculations, but the editor surface is unchanged on purpose:
 
-- existing `sv_exp_glock_*`, `sv_exp_mp5_*`, and `sv_exp_357_*` names still map to the same exported cfg fields
+- existing `sv_exp_glock_*`, `sv_exp_mp5_*`, `sv_exp_357_*`, and `sv_exp_shotgun_*` names still map to the same exported cfg fields
 - existing `.hlcfg.json` projects still export normal GoldSrc `.cfg` files
-- existing exported cfgs such as `editor_glock_simple.cfg`, `editor_mp5_simple.cfg`, and `editor_357_test.cfg` still apply through `exp_cfg_apply`, `exp_lab_apply`, `-CfgProfile`, and `-CfgPath`
+- existing exported cfgs such as `editor_glock_simple.cfg`, `editor_mp5_simple.cfg`, `editor_357_test.cfg`, and `editor_shotgun_test.cfg` still apply through `exp_cfg_apply`, `exp_lab_apply`, `-CfgProfile`, and `-CfgPath`
 
-That means the editor workflow in this document remains the recommended path even after the Glock/MP5/357 shared-core server refactor.
+That means the editor workflow in this document remains the recommended path even after the Glock/MP5/357/shotgun shared-core server refactor.
 
 ## JSON vs CFG
 
@@ -201,9 +211,9 @@ Run the built-in self-test with:
 The self-test:
 
 - saves example `.hlcfg.json` projects under `<repo-root>\artifacts\HlConfigEditorCppSelfTest\`
-- exports example cfgs such as `editor_glock_simple.cfg`, `editor_mp5_simple.cfg`, and `editor_357_test.cfg`
+- exports example cfgs such as `editor_glock_simple.cfg`, `editor_mp5_simple.cfg`, `editor_357_test.cfg`, and `editor_shotgun_test.cfg`
 - writes the summary file to `<repo-root>\artifacts\HlConfigEditorCppSelfTest\selftest-summary.txt`
-- records the expected simple exec commands, for example `exec editor_glock_simple.cfg` and `exec editor_357_test.cfg`
+- records the expected simple exec commands, for example `exec editor_glock_simple.cfg`, `exec editor_357_test.cfg`, and `exec editor_shotgun_test.cfg`
 
 When the real Half-Life root is available, the self-test exports directly into `<HalfLifeRoot>\hlserver_testbed\`. If the live root is not available, it falls back to `<repo-root>\testbed\mods\hlserver_testbed\`.
 

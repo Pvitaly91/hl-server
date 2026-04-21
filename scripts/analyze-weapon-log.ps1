@@ -2,7 +2,7 @@
 param(
  [Parameter(ParameterSetName='Path',Mandatory=$true)][string]$Path,
  [Parameter(ParameterSetName='Latest')][switch]$Latest,
- [ValidateSet('glock','mp5','357','all')][string]$Weapon='all',
+ [ValidateSet('glock','mp5','357','shotgun','all')][string]$Weapon='all',
  [switch]$ExportJson,[switch]$ExportCsv,[string]$OutputDir,[switch]$PassThru,
  [switch]$RequireAccepted,[switch]$RequireRejections,[switch]$RequireFirstShot,[switch]$RequireMovePenalty,[switch]$RequireCrouchMoveEvidence,[switch]$RequireHits,[switch]$RequireKills,[switch]$RequireHeadshotKills,[switch]$RequireLethalHeadshotEvidence,[switch]$RequireDummySpawns,[switch]$RequireDummyHits,[switch]$RequireDummyHeadshotHits,[switch]$RequireDummyHeadshotKills,[switch]$RequireArmoredDummyHits,[switch]$RequireProtectedDummyHeadshotHits,[switch]$RequireProtectedDummyHeadshotKills,[switch]$RequireDummyLethalHeadshotEvidence,[switch]$RequireWeaponAccepted,[switch]$RequireWeaponHits,[switch]$RequireWeaponKills,[switch]$RequireWeaponHeadshotKills,[switch]$RequireBurstGrowthEvidence,[switch]$RequireMovementPenaltyEvidence)
 $ErrorActionPreference='Stop'; . "$PSScriptRoot\common.ps1"; Import-HLServerEnv
@@ -44,6 +44,7 @@ function P([string]$l,[int]$n){
   GlockProfileName=FF $h @('glock_profile','glockProfile','sv_exp_glock_profile_name')
   Mp5ProfileName=FF $h @('mp5_profile','mp5Profile','sv_exp_mp5_profile_name')
   Profile357Name=FF $h @('357_profile','profile357','sv_exp_357_profile_name')
+  ShotgunProfileName=FF $h @('shotgun_profile','shotgunProfile','sv_exp_shotgun_profile_name')
   TargetProfileName=FF $h @('target_profile','targetProfile','sv_exp_glock_lab_target_profile_name')
   SessionTag=FF $h @('session_tag','sv_exp_session_tag')
   MatrixName=FF $h @('matrix_name','sv_exp_matrix_name')
@@ -66,6 +67,9 @@ function P([string]$l,[int]$n){
   MovementPenalty=N(F $h 'move_penalty')
   BurstAddedSpread=N(FF $h @('burst_additional_spread','burstAddedSpread'))
   BurstIndex=I(FF $h @('burst_index','burstIndex'))
+  PelletsPlanned=I(FF $h @('pellets_planned','pellets'))
+  PelletsHit=I(F $h 'pellets_hit')
+  HeadshotPellets=I(F $h 'headshot_pellets')
   HorizontalSpeed=N(F $h 'speed2d')
   MaxSpeed=N(F $h 'maxspeed')
   Grounded=B(F $h 'grounded')
@@ -88,16 +92,25 @@ $moveStats=S($accepted|%{$_.MovementPenalty})
 $speedStats=S($accepted|%{$_.HorizontalSpeed})
 $burstStats=S($accepted|%{$_.BurstAddedSpread})
 $appliedStats=S($hits|%{$_.AppliedDamage})
+$pelletPlanStats=S($accepted|%{$_.PelletsPlanned})
+$pelletHitStats=S($hits|%{$_.PelletsHit})
+$headshotPelletStats=S($hits|%{$_.HeadshotPellets})
 $recentTargetFailureReasons=@($dummySpawnFailures|Select-Object -Last 3|ForEach-Object{if($_.FailureCode -and $_.Reason){'{0}: {1}' -f $_.FailureCode,$_.Reason}elseif($_.Reason){$_.Reason}elseif($_.FailureCode){$_.FailureCode}else{'unknown target spawn failure'}})
 $firstTarget=@($dummySpawns+$dummyHits+$dummyKills|?{$_.TargetProfileName}|select -first 1)
 $targetProfile=if($session.TargetProfileName){$session.TargetProfileName}elseif($firstTarget.Count){$firstTarget[0].TargetProfileName}else{$null}
 $isGlockSession=(($session.WeaponUnderTest -eq 'glock') -or $effectiveWeapon -eq 'glock')
 $isMp5Session=(($session.WeaponUnderTest -eq 'mp5') -or $effectiveWeapon -eq 'mp5')
+$is357Session=(($session.WeaponUnderTest -eq '357') -or $effectiveWeapon -eq '357')
+$isShotgunSession=(($session.WeaponUnderTest -eq 'shotgun') -or $effectiveWeapon -eq 'shotgun')
 $glockAccepted=@($accepted|?{$_.Weapon -eq 'glock' -and $_.ProfileName}|select -first 1)
 $glockProfile=if($isGlockSession -and $session.GlockProfileName){$session.GlockProfileName}elseif($isGlockSession -and $session.ProfileName){$session.ProfileName}elseif((-not $isMp5Session) -and $glockAccepted.Count){$glockAccepted[0].ProfileName}else{$null}
 $mp5Accepted=@($accepted|?{$_.Weapon -eq 'mp5' -and $_.ProfileName}|select -first 1)
 $mp5Profile=if($isMp5Session -and $session.Mp5ProfileName){$session.Mp5ProfileName}elseif($isMp5Session -and $session.ProfileName){$session.ProfileName}elseif((-not $isGlockSession) -and $mp5Accepted.Count){$mp5Accepted[0].ProfileName}else{$null}
-$weaponProfile=if($effectiveWeapon -eq 'mp5'){if($mp5Profile){$mp5Profile}else{$glockProfile}}elseif($effectiveWeapon -eq 'glock'){if($glockProfile){$glockProfile}else{$mp5Profile}}elseif($mp5Profile){$mp5Profile}elseif($glockProfile){$glockProfile}elseif($session.ProfileName){$session.ProfileName}else{$null}
+$accepted357=@($accepted|?{$_.Weapon -eq '357' -and $_.ProfileName}|select -first 1)
+$profile357=if($is357Session -and $session.Profile357Name){$session.Profile357Name}elseif($is357Session -and $session.ProfileName){$session.ProfileName}elseif($accepted357.Count){$accepted357[0].ProfileName}else{$null}
+$shotgunAccepted=@($accepted|?{$_.Weapon -eq 'shotgun' -and $_.ProfileName}|select -first 1)
+$shotgunProfile=if($isShotgunSession -and $session.ShotgunProfileName){$session.ShotgunProfileName}elseif($isShotgunSession -and $session.ProfileName){$session.ProfileName}elseif($shotgunAccepted.Count){$shotgunAccepted[0].ProfileName}else{$null}
+$weaponProfile=if($effectiveWeapon -eq 'mp5'){if($mp5Profile){$mp5Profile}else{$glockProfile}}elseif($effectiveWeapon -eq 'glock'){if($glockProfile){$glockProfile}else{$mp5Profile}}elseif($effectiveWeapon -eq '357'){if($profile357){$profile357}else{$session.ProfileName}}elseif($effectiveWeapon -eq 'shotgun'){if($shotgunProfile){$shotgunProfile}else{$session.ProfileName}}elseif($shotgunProfile){$shotgunProfile}elseif($profile357){$profile357}elseif($mp5Profile){$mp5Profile}elseif($glockProfile){$glockProfile}elseif($session.ProfileName){$session.ProfileName}else{$null}
 if(-not $session){[void]$warnings.Add('No session header line was parsed. The analyzer can still summarize event telemetry, but launch metadata is missing.')} ; if($accepted.Count){[void]$obs.Add("Parsed $($accepted.Count) accepted event(s).")}else{[void]$warnings.Add('No accepted weapon telemetry matched the current filter.')}; if($hits.Count){[void]$obs.Add("Parsed $($hits.Count) hit event(s).")}else{[void]$warnings.Add('No hit telemetry matched the current filter.')}; if($movePenaltyAccepted.Count){[void]$obs.Add("Movement-penalty evidence exists ($($movePenaltyAccepted.Count)).")}else{[void]$warnings.Add('No accepted event with move_penalty > 0 matched the current filter.')}; if($effectiveWeapon -eq 'glock' -and -not $rejected.Count){[void]$warnings.Add('No Glock tap-fire rejection evidence was logged for this selection.')}; if($effectiveWeapon -eq 'mp5' -and -not $burstGrowthAccepted.Count){[void]$warnings.Add('No MP5 burst-growth evidence was logged for this selection.')} ; if($dummySpawns.Count -or $dummyRespawns.Count -or $dummyClears.Count -or $dummyRepositions.Count -or $dummySpawnFailures.Count -or $targetMarks.Count -or $targetUnmarks.Count -or $targetUseSaved.Count){[void]$obs.Add("Target lifecycle telemetry was present ($($dummySpawns.Count) spawn, $($dummyRespawns.Count) respawn, $($dummySpawnFailures.Count) spawn_failed, $($dummyClears.Count) clear, $($dummyRepositions.Count) reposition, $($targetMarks.Count) mark, $($targetUnmarks.Count) unmark, $($targetUseSaved.Count) use_saved).")} ; if($dummySpawnFailures.Count){[void]$obs.Add("Target spawn failures were logged ($($dummySpawnFailures.Count)).")} ; if($savedSpotUsage.Count){[void]$obs.Add("Saved-spot spawn usage was logged ($($savedSpotUsage.Count)).")} ; if($dummyHeadshotKills.Count){[void]$obs.Add("Target headshot kill evidence exists ($($dummyHeadshotKills.Count)).")}
 $signals=[ordered]@{acceptedShots=($accepted.Count -gt 0);tapFireHoldRejections=($rejected.Count -gt 0);firstShotAccepted=($firstShotAccepted.Count -gt 0);movementPenaltyPositive=($movePenaltyAccepted.Count -gt 0);recoveryReturnedFirstShot=$recoveryReturnedFirstShot;crouchMovePenaltyReductionCandidate=$crouchMoveEvidence;hitsPresent=($hits.Count -gt 0);killsPresent=($kills.Count -gt 0);headshotHitsPresent=($headshotHits.Count -gt 0);headshotKillsPresent=($headshotKills.Count -gt 0);lethalHeadshotEvidencePresent=($lethal.Count -gt 0);dummySpawnsPresent=($dummySpawns.Count -gt 0);dummyRespawnsPresent=($dummyRespawns.Count -gt 0);dummyHitsPresent=($dummyHits.Count -gt 0);dummyKillsPresent=($dummyKills.Count -gt 0);dummyHeadshotHitsPresent=($dummyHeadshotHits.Count -gt 0);dummyHeadshotKillsPresent=($dummyHeadshotKills.Count -gt 0);armoredDummyHitsPresent=($armoredDummyHits.Count -gt 0);protectedDummyHeadshotHitsPresent=($protectedDummyHeadshotHits.Count -gt 0);protectedDummyHeadshotKillsPresent=($protectedDummyHeadshotKills.Count -gt 0);dummyLethalHeadshotEvidencePresent=($dummyLethal.Count -gt 0);weaponAcceptedPresent=($accepted.Count -gt 0);weaponHitsPresent=($hits.Count -gt 0);weaponKillsPresent=($kills.Count -gt 0);weaponHeadshotKillsPresent=($headshotKills.Count -gt 0);burstGrowthEvidencePresent=($burstGrowthAccepted.Count -gt 0);movementPenaltyEvidencePresent=($movePenaltyAccepted.Count -gt 0)}
 $missing=New-Object Collections.ArrayList; if($effectiveWeapon -eq 'glock' -and -not $signals.tapFireHoldRejections){[void]$missing.Add('No tap-fire rejection evidence was logged for this step.')}; if(-not $signals.movementPenaltyPositive){[void]$missing.Add('No accepted shot with move_penalty > 0 was logged for this step.')}; if($effectiveWeapon -eq 'mp5' -and -not $signals.burstGrowthEvidencePresent){[void]$missing.Add('No burst-growth evidence was logged for this MP5 step.')}; if(-not $signals.dummyHeadshotHitsPresent){[void]$missing.Add('No dummy headshot hit evidence was logged for this step.')}; if(-not $signals.armoredDummyHitsPresent){[void]$missing.Add('No armored dummy hit evidence was logged for this step.')}; if(-not $signals.protectedDummyHeadshotHitsPresent){[void]$missing.Add('No protected-head dummy headshot evidence was logged for this step.')}; if(-not ($signals.dummyLethalHeadshotEvidencePresent -or $signals.lethalHeadshotEvidencePresent)){[void]$missing.Add('No lethal-headshot evidence was logged for this step.')}
@@ -115,6 +128,8 @@ $meta=[ordered]@{
  cfgLastAppliedAt=$session.CfgLastAppliedAt
  glockProfile=$glockProfile
  mp5Profile=$mp5Profile
+ profile357=$profile357
+ shotgunProfile=$shotgunProfile
  labTargetProfile=$targetProfile
 }
 $summary=[ordered]@{
@@ -130,6 +145,8 @@ $summary=[ordered]@{
  cfgLastAppliedAt=$meta.cfgLastAppliedAt
  glockProfile=$meta.glockProfile
  mp5Profile=$meta.mp5Profile
+ profile357=$meta.profile357
+ shotgunProfile=$meta.shotgunProfile
  labTargetProfile=$meta.labTargetProfile
  acceptedShotCount=$accepted.Count
  rejectedShotCount=$rejected.Count
@@ -166,6 +183,21 @@ $summary=[ordered]@{
   average=$(if($appliedStats){$appliedStats.Average}else{$null})
   max=$(if($appliedStats){$appliedStats.Max}else{$null})
  }
+ pelletsPlanned=[ordered]@{
+  min=$(if($pelletPlanStats){$pelletPlanStats.Min}else{$null})
+  average=$(if($pelletPlanStats){$pelletPlanStats.Average}else{$null})
+  max=$(if($pelletPlanStats){$pelletPlanStats.Max}else{$null})
+ }
+ pelletsHit=[ordered]@{
+  min=$(if($pelletHitStats){$pelletHitStats.Min}else{$null})
+  average=$(if($pelletHitStats){$pelletHitStats.Average}else{$null})
+  max=$(if($pelletHitStats){$pelletHitStats.Max}else{$null})
+ }
+ headshotPellets=[ordered]@{
+  min=$(if($headshotPelletStats){$headshotPelletStats.Min}else{$null})
+  average=$(if($headshotPelletStats){$headshotPelletStats.Average}else{$null})
+  max=$(if($headshotPelletStats){$headshotPelletStats.Max}else{$null})
+ }
  evidence=[ordered]@{
   tapFireRejection=$signals.tapFireHoldRejections
   tapFireRejectionEvidence=$signals.tapFireHoldRejections
@@ -197,6 +229,8 @@ $report=[ordered]@{
   profileName=$session.ProfileName
   glockProfileName=$glockProfile
   mp5ProfileName=$mp5Profile
+  profile357Name=$profile357
+  shotgunProfileName=$shotgunProfile
   targetProfileName=$targetProfile
   sessionTag=$session.SessionTag
   matrixName=$session.MatrixName
@@ -248,7 +282,10 @@ $report=[ordered]@{
   movementPenalty=$moveStats
   horizontalSpeed=$speedStats
   burstAddedSpread=$burstStats
- appliedDamage=$appliedStats
+  appliedDamage=$appliedStats
+  pelletsPlanned=$pelletPlanStats
+  pelletsHit=$pelletHitStats
+  headshotPellets=$headshotPelletStats
   targetSpawnBySource=@($targetSpawnBySource)
   hitgroupCounts=(($hits|group HitGroup|?{$_.Name}|sort Name|%{[ordered]@{Name=$_.Name;Count=$_.Count}}))
   dummyHitgroupCounts=(($dummyHits|group HitGroup|?{$_.Name}|sort Name|%{[ordered]@{Name=$_.Name;Count=$_.Count}}))
@@ -267,6 +304,8 @@ if($session){
  if($effectiveWeapon){Write-Host "  weapon under test        : $effectiveWeapon"}
  if($glockProfile){Write-Host "  glock profile            : $glockProfile"}
  if($mp5Profile){Write-Host "  mp5 profile              : $mp5Profile"}
+ if($profile357){Write-Host "  357 profile              : $profile357"}
+ if($shotgunProfile){Write-Host "  shotgun profile          : $shotgunProfile"}
  Write-Host "  target profile           : $(if($targetProfile){$targetProfile}else{'n/a'})"
 }else{
  Write-Host '  session                  : missing'
@@ -304,6 +343,9 @@ Write-Host "  hitgroups                : $(FHitgroups $report.stats.hitgroupCoun
 Write-Host "  spread min/avg/max       : $(if($spreadStats){('{0:F4} / {1:F4} / {2:F4}' -f $spreadStats.Min,$spreadStats.Average,$spreadStats.Max)}else{'n/a / n/a / n/a'})"
 Write-Host "  move penalty min/avg/max : $(if($moveStats){('{0:F4} / {1:F4} / {2:F4}' -f $moveStats.Min,$moveStats.Average,$moveStats.Max)}else{'n/a / n/a / n/a'})"
 if($effectiveWeapon -eq 'mp5' -or $Weapon -eq 'mp5'){Write-Host "  burst add min/avg/max    : $(if($burstStats){('{0:F4} / {1:F4} / {2:F4}' -f $burstStats.Min,$burstStats.Average,$burstStats.Max)}else{'n/a / n/a / n/a'})"}
+if($effectiveWeapon -eq 'shotgun' -or $Weapon -eq 'shotgun'){Write-Host "  pellets min/avg/max      : $(if($pelletPlanStats){('{0:N0} / {1:F2} / {2:N0}' -f $pelletPlanStats.Min,$pelletPlanStats.Average,$pelletPlanStats.Max)}else{'n/a / n/a / n/a'})"}
+if($effectiveWeapon -eq 'shotgun' -or $Weapon -eq 'shotgun'){Write-Host "  pellet hits min/avg/max  : $(if($pelletHitStats){('{0:N0} / {1:F2} / {2:N0}' -f $pelletHitStats.Min,$pelletHitStats.Average,$pelletHitStats.Max)}else{'n/a / n/a / n/a'})"}
+if($effectiveWeapon -eq 'shotgun' -or $Weapon -eq 'shotgun'){Write-Host "  hs pellets min/avg/max   : $(if($headshotPelletStats){('{0:N0} / {1:F2} / {2:N0}' -f $headshotPelletStats.Min,$headshotPelletStats.Average,$headshotPelletStats.Max)}else{'n/a / n/a / n/a'})"}
 Write-Host "  speed2d min/avg/max      : $(if($speedStats){('{0:F1} / {1:F1} / {2:F1}' -f $speedStats.Min,$speedStats.Average,$speedStats.Max)}else{'n/a / n/a / n/a'})"
 Write-Host ''
 Write-Host 'Observations'

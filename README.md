@@ -15,8 +15,8 @@ The repository vendors a pinned snapshot of Valve's official Half-Life source ba
 - A reproducible VS2022 Win32 build for the vanilla Half-Life server GameDLL.
 - A disposable HLDS test stand for no-client and dedicated flows under `testbed/runtime/`.
 - A managed same-root live mod at `Half-Life\hlserver_testbed` for client-attached sessions.
-- Server-only experimental Glock, MP5, and 357 paths for manual stock-client-compatible gameplay iteration without changing the stock client DLL.
-- A shared server-side tuning core for Glock, MP5, and 357 so future weapons can reuse the same spread and damage primitives instead of copying ad-hoc math per weapon.
+- Server-only experimental Glock, MP5, 357, and shotgun paths for manual stock-client-compatible gameplay iteration without changing the stock client DLL.
+- A shared server-side tuning core for Glock, MP5, 357, and shotgun so future weapons can reuse the same spread and damage primitives instead of copying ad-hoc math per weapon.
 
 It is not yet a gameplay conversion and it does not ship any proprietary game assets, Steam files, or HLDS binaries.
 
@@ -89,7 +89,7 @@ Simplest workflow:
 
 How to use the editor:
 
-1. Edit values on the `General`, `Glock`, `MP5`, `357`, and `Target Dummy` tabs.
+1. Edit values on the `General`, `Glock`, `MP5`, `357`, `Shotgun`, and `Target Dummy` tabs.
 2. Use `File -> Save` or `File -> Save As` to store the editable project as `.hlcfg.json`.
 3. Open the `Export` tab. The default filename follows the project or config name, for example `editor_glock_simple.cfg`.
 4. `Quick Export to Live Mod` is the primary action. It exports directly into `<HalfLifeRoot>\hlserver_testbed\` and prompts before overwriting an existing file.
@@ -114,7 +114,7 @@ Export behavior:
 Troubleshooting:
 
 - If `Quick Export to Live Mod` appears to do nothing, the current editor should now always show either a success dialog or a clear error dialog plus an updated `Last Action` status field on the `Export` tab.
-- The default quick-export file should appear directly in `<HalfLifeRoot>\hlserver_testbed\`, for example `D:\Steam\steamapps\common\Half-Life\hlserver_testbed\editor_gui_simple.cfg` or `editor_357_test.cfg`.
+- The default quick-export file should appear directly in `<HalfLifeRoot>\hlserver_testbed\`, for example `D:\Steam\steamapps\common\Half-Life\hlserver_testbed\editor_gui_simple.cfg`, `editor_357_test.cfg`, or `editor_shotgun_test.cfg`.
 - To confirm you are testing the deployed build, start `D:\Steam\steamapps\common\Half-Life\hlserver_testbed\HlConfigEditorCpp.exe` and compare its timestamp with the normal build output under `tools\HlConfigEditorCpp\bin\Debug\Win32\`.
 - If Visual Studio warns that deployment failed because the destination EXE is in use, close the running `HlConfigEditorCpp.exe` from the mod root and rebuild.
 
@@ -122,7 +122,7 @@ Built-in self-test:
 
 - Run `<repo-root>\tools\HlConfigEditorCpp\bin\Debug\Win32\HlConfigEditorCpp.exe --self-test`.
 - When the editor resolves the repository root, it writes the summary to `<repo-root>\artifacts\HlConfigEditorCppSelfTest\selftest-summary.txt`.
-- When the live Half-Life root is available, the self-test writes example Glock, MP5, and 357 `.hlcfg.json` projects plus exported `.cfg` files such as `<HalfLifeRoot>\hlserver_testbed\editor_glock_simple.cfg`, `<HalfLifeRoot>\hlserver_testbed\editor_mp5_simple.cfg`, and `<HalfLifeRoot>\hlserver_testbed\editor_357_test.cfg`.
+- When the live Half-Life root is available, the self-test writes example Glock, MP5, 357, and shotgun `.hlcfg.json` projects plus exported `.cfg` files such as `<HalfLifeRoot>\hlserver_testbed\editor_glock_simple.cfg`, `<HalfLifeRoot>\hlserver_testbed\editor_mp5_simple.cfg`, `<HalfLifeRoot>\hlserver_testbed\editor_357_test.cfg`, and `<HalfLifeRoot>\hlserver_testbed\editor_shotgun_test.cfg`.
 - If the live root is not available, the self-test falls back to `<repo-root>\testbed\mods\hlserver_testbed\`.
 
 For a step-by-step walkthrough with exact file paths, Glock and MP5 examples, and live launch commands, see [docs/cpp-config-editor.md](docs/cpp-config-editor.md).
@@ -189,7 +189,7 @@ Persistent named target spots are stored under `<HalfLifeRoot>\hlserver_testbed\
 
 ## Shared Weapon Tuning Core
 
-Glock, MP5, and 357 now share a lightweight server-side tuning core for the common tuning dimensions that were already present in the repo:
+Glock, MP5, 357, and shotgun now share a lightweight server-side tuning core for the common tuning dimensions that were already present in the repo:
 
 - base spread
 - ground movement penalty
@@ -207,9 +207,10 @@ Weapon-specific behavior stays in the weapon wrappers:
 - Glock still owns its tap-fire press/hold semantics.
 - MP5 still owns burst-growth and burst-specific spread accumulation.
 - 357 stays a simple single-shot wrapper on top of the shared spread and damage helpers plus its own lab loadout wiring.
+- Shotgun uses the shared spread and per-pellet damage profile helpers for primary fire, while keeping pellet-count, per-pellet traces, and aggregation-specific behavior in the shotgun wrapper and telemetry layer.
 - Lab loadout and target workflow stay unchanged.
 
-The editor and cfg surface is intentionally unchanged. Existing `sv_exp_glock_*`, `sv_exp_mp5_*`, `sv_exp_357_*`, and exported cfg files still load through the same live-lab workflow. See [docs/shared-weapon-tuning.md](/D:/DEV/CPP/HL-Server/docs/shared-weapon-tuning.md) for the implementation note and verification summary.
+The editor and cfg surface is intentionally unchanged. Existing `sv_exp_glock_*`, `sv_exp_mp5_*`, `sv_exp_357_*`, `sv_exp_shotgun_*`, and exported cfg files still load through the same live-lab workflow. See [docs/shared-weapon-tuning.md](/D:/DEV/CPP/HL-Server/docs/shared-weapon-tuning.md) for the implementation note and verification summary.
 
 Launch live with a Glock cfg already exported into the active live mod root:
 
@@ -229,12 +230,19 @@ Launch live with a 357 cfg already exported into the active live mod root:
 scripts\play-hlserver-testbed-direct.bat -CfgProfile editor_357_test.cfg
 ```
 
+Launch live with a shotgun cfg already exported into the active live mod root:
+
+```bat
+scripts\play-hlserver-testbed-direct.bat -CfgProfile editor_shotgun_test.cfg
+```
+
 Use the shorthand cfg alias when you only want to supply a profile plus extra launcher flags:
 
 ```bat
 scripts\run-testbed.bat play-direct-cfg my_glock.cfg
 scripts\run-testbed.bat play-direct-cfg my_mp5.cfg
 scripts\run-testbed.bat play-direct-cfg editor_357_test.cfg
+scripts\run-testbed.bat play-direct-cfg editor_shotgun_test.cfg
 ```
 
 Legacy `cfg_profiles` paths are still accepted:
@@ -260,6 +268,10 @@ exp_cfg_apply my_mp5.cfg
 exp_target_profile vest
 
 exp_cfg_apply editor_357_test.cfg
+exp_target_profile unarmored
+exp_target_respawn
+
+exp_cfg_apply editor_shotgun_test.cfg
 exp_target_profile unarmored
 exp_target_respawn
 
@@ -317,6 +329,49 @@ Recommended 357 loop:
 8. Review the weapon log with `.\scripts\analyze-weapon-log.ps1 -Latest -Weapon 357`.
 
 The editor, launcher, and cfg command path stay unchanged. 357 is simply another shared-core weapon that can be exported to cfg, applied live, and exercised against the same target dummy workflow.
+
+## Experimental Shotgun Workflow
+
+Shotgun now plugs into the same shared server-side tuning core and live-lab loop as Glock, MP5, and 357. This pass is focused on experimental primary fire only. It is meant for server-side iteration, not a claim of stock Counter-Strike parity or a completed alt-fire conversion.
+
+Key shotgun cvars:
+
+- `sv_exp_shotgun_primary_enabled`
+- `sv_exp_shotgun_profile_name`
+- `sv_exp_shotgun_primary_base_spread`
+- `sv_exp_shotgun_primary_ground_move_penalty`
+- `sv_exp_shotgun_primary_air_move_penalty`
+- `sv_exp_shotgun_primary_duck_penalty_scale`
+- `sv_exp_shotgun_primary_first_shot_accuracy`
+- `sv_exp_shotgun_primary_first_shot_speed_threshold`
+- `sv_exp_shotgun_primary_spread_recovery`
+- `sv_exp_shotgun_primary_max_spread`
+- `sv_exp_shotgun_primary_damage_per_pellet`
+- `sv_exp_shotgun_primary_pellet_count`
+- `sv_exp_shotgun_primary_headshot_scale`
+- `sv_exp_shotgun_primary_headshot_lethal`
+- `sv_exp_shotgun_lab_loadout`
+- `sv_exp_shotgun_lab_ammo`
+- `sv_exp_shotgun_lab_autoswitch`
+
+Checked-in shotgun preset JSON files live under `configs/shotgun-presets/`:
+
+- `default.json`
+- `close_quickkill.json`
+- `precision_test.json`
+
+Recommended shotgun loop:
+
+1. Build and run the deployed editor from `<HalfLifeRoot>\hlserver_testbed\HlConfigEditorCpp.exe`.
+2. Configure the `Shotgun` tab and export `editor_shotgun_test.cfg` with `Quick Export to Live Mod`.
+3. Launch or reconnect to the live server.
+4. Run `exp_cfg_apply editor_shotgun_test.cfg`.
+5. If this is the first setup on the map, run `exp_target_mark default`.
+6. Run `exp_target_use_saved default` and `exp_target_respawn`.
+7. Use `exp_target_profile unarmored` when you want deterministic close-range dummy kill checks.
+8. Review the weapon log with `.\scripts\analyze-weapon-log.ps1 -Latest -Weapon shotgun`.
+
+The editor, launcher, and cfg command path stay unchanged. Shotgun is another shared-core weapon that can be exported to cfg, applied live, and exercised against the same target dummy workflow.
 
 ## Live BAT launchers
 

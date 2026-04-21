@@ -107,6 +107,27 @@ enum ControlId : int {
     IDC_357_PRESET_PRECISION_TEST,
     IDC_357_PRESET_HEADSHOT_TEST,
 
+    IDC_SHOTGUN_PRIMARY_ENABLED = 1280,
+    IDC_SHOTGUN_PROFILE_NAME,
+    IDC_SHOTGUN_PRIMARY_BASE_SPREAD,
+    IDC_SHOTGUN_PRIMARY_GROUND_MOVE_PENALTY,
+    IDC_SHOTGUN_PRIMARY_AIR_MOVE_PENALTY,
+    IDC_SHOTGUN_PRIMARY_DUCK_PENALTY_SCALE,
+    IDC_SHOTGUN_PRIMARY_FIRST_SHOT_ACCURACY,
+    IDC_SHOTGUN_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD,
+    IDC_SHOTGUN_PRIMARY_SPREAD_RECOVERY,
+    IDC_SHOTGUN_PRIMARY_MAX_SPREAD,
+    IDC_SHOTGUN_PRIMARY_DAMAGE_PER_PELLET,
+    IDC_SHOTGUN_PRIMARY_PELLET_COUNT,
+    IDC_SHOTGUN_PRIMARY_HEADSHOT_SCALE,
+    IDC_SHOTGUN_PRIMARY_HEADSHOT_LETHAL,
+    IDC_SHOTGUN_LAB_LOADOUT,
+    IDC_SHOTGUN_LAB_AMMO,
+    IDC_SHOTGUN_LAB_AUTOSWITCH,
+    IDC_SHOTGUN_PRESET_DEFAULT,
+    IDC_SHOTGUN_PRESET_CLOSE_QUICKKILL,
+    IDC_SHOTGUN_PRESET_PRECISION_TEST,
+
     IDC_DUMMY_ENABLED = 1300,
     IDC_DUMMY_TARGET_PROFILE_NAME,
     IDC_DUMMY_HEALTH,
@@ -146,7 +167,7 @@ enum ControlId : int {
     IDC_EXPORT_STATUS,
 };
 
-constexpr int kPageCount = 6;
+constexpr int kPageCount = 7;
 
 HFONT GetUiFont() {
     return static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
@@ -403,6 +424,11 @@ std::wstring BuildSuggestedCfgFileName(const hlcfg::ProjectDocument& document) {
             if (!profileName.empty() && profileName != defaults.weapon357.profileName) {
                 candidate = profileName;
             }
+        } else if (weaponUnderTest == L"shotgun") {
+            const std::wstring profileName = hlcfg::Trimmed(document.shotgun.profileName);
+            if (!profileName.empty() && profileName != defaults.shotgun.profileName) {
+                candidate = profileName;
+            }
         }
     }
 
@@ -616,6 +642,15 @@ private:
         case IDC_357_PRESET_HEADSHOT_TEST:
             ApplyPreset([&] { hlcfg::Apply357Preset(document_, L"headshot_test"); });
             return 0;
+        case IDC_SHOTGUN_PRESET_DEFAULT:
+            ApplyPreset([&] { hlcfg::ApplyShotgunPreset(document_, L"default"); });
+            return 0;
+        case IDC_SHOTGUN_PRESET_CLOSE_QUICKKILL:
+            ApplyPreset([&] { hlcfg::ApplyShotgunPreset(document_, L"close_quickkill"); });
+            return 0;
+        case IDC_SHOTGUN_PRESET_PRECISION_TEST:
+            ApplyPreset([&] { hlcfg::ApplyShotgunPreset(document_, L"precision_test"); });
+            return 0;
         case IDC_DUMMY_PRESET_UNARMORED:
             ApplyPreset([&] { hlcfg::ApplyDummyPreset(document_, L"unarmored"); });
             return 0;
@@ -668,7 +703,7 @@ private:
                 MaybeRefreshSuggestedCfgFileName(controlId);
                 dirty_ = true;
                 UpdateWindowTitle();
-                if (controlId == IDC_EXPORT_FOLDER || controlId == IDC_EXPORT_FILE_NAME || TabCtrl_GetCurSel(tab_) == 5) {
+                if (controlId == IDC_EXPORT_FOLDER || controlId == IDC_EXPORT_FILE_NAME || TabCtrl_GetCurSel(tab_) == 6) {
                     RefreshExportPreview(true);
                 }
             }
@@ -703,7 +738,7 @@ private:
     void CreateUi() {
         tab_ = CreateChildControl(hwnd_, WC_TABCONTROLW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS, 0, 10, 10, 100, 100, IDC_TAB);
 
-        const wchar_t* pageTitles[kPageCount] = {L"General", L"Glock", L"MP5", L"357", L"Target Dummy", L"Export"};
+        const wchar_t* pageTitles[kPageCount] = {L"General", L"Glock", L"MP5", L"357", L"Shotgun", L"Target Dummy", L"Export"};
         for (int index = 0; index < kPageCount; ++index) {
             TCITEMW item{};
             item.mask = TCIF_TEXT;
@@ -718,6 +753,7 @@ private:
         CreateGlockPage();
         CreateMp5Page();
         Create357Page();
+        CreateShotgunPage();
         CreateDummyPage();
         CreateExportPage();
         ShowActivePage(0);
@@ -740,6 +776,7 @@ private:
         ComboBox_AddString(combo, L"glock");
         ComboBox_AddString(combo, L"mp5");
         ComboBox_AddString(combo, L"357");
+        ComboBox_AddString(combo, L"shotgun");
         CreateLabel(page, L"Session tag", 560, 95, 120, 20);
         CreateEdit(page, IDC_SESSION_TAG, 710, 90, 280, 24);
 
@@ -878,8 +915,51 @@ private:
         CreateCheckBox(page, L"Lethal headshot", IDC_357_PRIMARY_HEADSHOT_LETHAL, 360, 430, 120, 20);
     }
 
-    void CreateDummyPage() {
+    void CreateShotgunPage() {
         HWND page = pages_[4];
+        CreateGroupBox(page, L"Editor Templates", 20, 20, 1040, 70);
+        CreateButton(page, L"Default", IDC_SHOTGUN_PRESET_DEFAULT, 40, 45, 120, 24);
+        CreateButton(page, L"Close Quickkill", IDC_SHOTGUN_PRESET_CLOSE_QUICKKILL, 175, 45, 145, 24);
+        CreateButton(page, L"Precision Test", IDC_SHOTGUN_PRESET_PRECISION_TEST, 335, 45, 145, 24);
+
+        CreateGroupBox(page, L"General Shotgun Settings", 20, 110, 500, 235);
+        CreateCheckBox(page, L"Enable experimental shotgun primary", IDC_SHOTGUN_PRIMARY_ENABLED, 40, 145, 290, 20);
+        CreateLabel(page, L"Profile name", 40, 180, 120, 20);
+        CreateEdit(page, IDC_SHOTGUN_PROFILE_NAME, 220, 175, 260, 24);
+        CreateCheckBox(page, L"First-shot accuracy", IDC_SHOTGUN_PRIMARY_FIRST_SHOT_ACCURACY, 40, 215, 180, 20);
+        CreateCheckBox(page, L"Spawn shotgun loadout", IDC_SHOTGUN_LAB_LOADOUT, 40, 245, 190, 20);
+        CreateLabel(page, L"Lab ammo", 40, 280, 120, 20);
+        CreateEdit(page, IDC_SHOTGUN_LAB_AMMO, 220, 275, 120, 24);
+        CreateCheckBox(page, L"Enable autoswitch", IDC_SHOTGUN_LAB_AUTOSWITCH, 40, 310, 180, 20);
+
+        CreateGroupBox(page, L"Primary Spread Model", 540, 110, 520, 290);
+        CreateLabel(page, L"Base spread", 560, 145, 180, 20);
+        CreateEdit(page, IDC_SHOTGUN_PRIMARY_BASE_SPREAD, 790, 140, 220, 24);
+        CreateLabel(page, L"Ground move penalty", 560, 180, 180, 20);
+        CreateEdit(page, IDC_SHOTGUN_PRIMARY_GROUND_MOVE_PENALTY, 790, 175, 220, 24);
+        CreateLabel(page, L"Air move penalty", 560, 215, 180, 20);
+        CreateEdit(page, IDC_SHOTGUN_PRIMARY_AIR_MOVE_PENALTY, 790, 210, 220, 24);
+        CreateLabel(page, L"Duck penalty scale", 560, 250, 180, 20);
+        CreateEdit(page, IDC_SHOTGUN_PRIMARY_DUCK_PENALTY_SCALE, 790, 245, 220, 24);
+        CreateLabel(page, L"Spread recovery", 560, 285, 180, 20);
+        CreateEdit(page, IDC_SHOTGUN_PRIMARY_SPREAD_RECOVERY, 790, 280, 220, 24);
+        CreateLabel(page, L"First-shot speed threshold", 560, 320, 180, 20);
+        CreateEdit(page, IDC_SHOTGUN_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD, 790, 315, 220, 24);
+        CreateLabel(page, L"Max spread", 560, 355, 180, 20);
+        CreateEdit(page, IDC_SHOTGUN_PRIMARY_MAX_SPREAD, 790, 350, 220, 24);
+
+        CreateGroupBox(page, L"Pellet And Damage Model", 20, 365, 500, 145);
+        CreateLabel(page, L"Damage per pellet", 40, 400, 140, 20);
+        CreateEdit(page, IDC_SHOTGUN_PRIMARY_DAMAGE_PER_PELLET, 220, 395, 120, 24);
+        CreateLabel(page, L"Pellet count", 40, 435, 140, 20);
+        CreateEdit(page, IDC_SHOTGUN_PRIMARY_PELLET_COUNT, 220, 430, 120, 24);
+        CreateLabel(page, L"Headshot scale", 40, 470, 140, 20);
+        CreateEdit(page, IDC_SHOTGUN_PRIMARY_HEADSHOT_SCALE, 220, 465, 120, 24);
+        CreateCheckBox(page, L"Lethal headshot", IDC_SHOTGUN_PRIMARY_HEADSHOT_LETHAL, 360, 465, 120, 20);
+    }
+
+    void CreateDummyPage() {
+        HWND page = pages_[5];
         CreateGroupBox(page, L"Editor Templates", 20, 20, 1040, 70);
         CreateButton(page, L"Unarmored", IDC_DUMMY_PRESET_UNARMORED, 40, 45, 130, 24);
         CreateButton(page, L"Vest", IDC_DUMMY_PRESET_VEST, 185, 45, 120, 24);
@@ -915,7 +995,7 @@ private:
     }
 
     void CreateExportPage() {
-        HWND page = pages_[5];
+        HWND page = pages_[6];
         CreateGroupBox(page, L"Resolved Paths And Targets", 20, 20, 1040, 255);
         CreateLabel(page, L"Half-Life root", 40, 55, 120, 20);
         CreateEdit(page, IDC_HALF_LIFE_ROOT_PREVIEW, 160, 50, 850, 24, ES_READONLY);
@@ -975,7 +1055,7 @@ private:
             ShowWindow(pages_[index], index == pageIndex ? SW_SHOW : SW_HIDE);
         }
 
-        if (pageIndex == 5) {
+        if (pageIndex == 6) {
             RefreshExportPreview(true);
         }
     }
@@ -993,7 +1073,8 @@ private:
             controlId != IDC_WEAPON_UNDER_TEST &&
             controlId != IDC_GLOCK_PROFILE_NAME &&
             controlId != IDC_MP5_PROFILE_NAME &&
-            controlId != IDC_357_PROFILE_NAME) {
+            controlId != IDC_357_PROFILE_NAME &&
+            controlId != IDC_SHOTGUN_PROFILE_NAME) {
             return;
         }
 
@@ -1011,6 +1092,7 @@ private:
         previewDocument.glock.profileName = GetTextValue(IDC_GLOCK_PROFILE_NAME);
         previewDocument.mp5.profileName = GetTextValue(IDC_MP5_PROFILE_NAME);
         previewDocument.weapon357.profileName = GetTextValue(IDC_357_PROFILE_NAME);
+        previewDocument.shotgun.profileName = GetTextValue(IDC_SHOTGUN_PROFILE_NAME);
 
         const std::wstring suggestedFileName = BuildSuggestedCfgFileName(previewDocument);
         lastSuggestedCfgFileName_ = suggestedFileName;
@@ -1324,6 +1406,24 @@ private:
         SetTextValue(IDC_357_LAB_AMMO, document_.weapon357.labAmmo);
         Button_SetCheck(FindControl(IDC_357_LAB_AUTOSWITCH), document_.weapon357.labAutoswitch ? BST_CHECKED : BST_UNCHECKED);
 
+        Button_SetCheck(FindControl(IDC_SHOTGUN_PRIMARY_ENABLED), document_.shotgun.primaryEnabled ? BST_CHECKED : BST_UNCHECKED);
+        SetTextValue(IDC_SHOTGUN_PROFILE_NAME, document_.shotgun.profileName);
+        SetTextValue(IDC_SHOTGUN_PRIMARY_BASE_SPREAD, document_.shotgun.primaryBaseSpread);
+        SetTextValue(IDC_SHOTGUN_PRIMARY_GROUND_MOVE_PENALTY, document_.shotgun.primaryGroundMovePenalty);
+        SetTextValue(IDC_SHOTGUN_PRIMARY_AIR_MOVE_PENALTY, document_.shotgun.primaryAirMovePenalty);
+        SetTextValue(IDC_SHOTGUN_PRIMARY_DUCK_PENALTY_SCALE, document_.shotgun.primaryDuckPenaltyScale);
+        Button_SetCheck(FindControl(IDC_SHOTGUN_PRIMARY_FIRST_SHOT_ACCURACY), document_.shotgun.primaryFirstShotAccuracy ? BST_CHECKED : BST_UNCHECKED);
+        SetTextValue(IDC_SHOTGUN_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD, document_.shotgun.primaryFirstShotSpeedThreshold);
+        SetTextValue(IDC_SHOTGUN_PRIMARY_SPREAD_RECOVERY, document_.shotgun.primarySpreadRecovery);
+        SetTextValue(IDC_SHOTGUN_PRIMARY_MAX_SPREAD, document_.shotgun.primaryMaxSpread);
+        SetTextValue(IDC_SHOTGUN_PRIMARY_DAMAGE_PER_PELLET, document_.shotgun.primaryDamagePerPellet);
+        SetTextValue(IDC_SHOTGUN_PRIMARY_PELLET_COUNT, document_.shotgun.primaryPelletCount);
+        SetTextValue(IDC_SHOTGUN_PRIMARY_HEADSHOT_SCALE, document_.shotgun.primaryHeadshotScale);
+        Button_SetCheck(FindControl(IDC_SHOTGUN_PRIMARY_HEADSHOT_LETHAL), document_.shotgun.primaryHeadshotLethal ? BST_CHECKED : BST_UNCHECKED);
+        Button_SetCheck(FindControl(IDC_SHOTGUN_LAB_LOADOUT), document_.shotgun.labLoadout ? BST_CHECKED : BST_UNCHECKED);
+        SetTextValue(IDC_SHOTGUN_LAB_AMMO, document_.shotgun.labAmmo);
+        Button_SetCheck(FindControl(IDC_SHOTGUN_LAB_AUTOSWITCH), document_.shotgun.labAutoswitch ? BST_CHECKED : BST_UNCHECKED);
+
         Button_SetCheck(FindControl(IDC_DUMMY_ENABLED), document_.targetDummy.enabled ? BST_CHECKED : BST_UNCHECKED);
         SetTextValue(IDC_DUMMY_TARGET_PROFILE_NAME, document_.targetDummy.targetProfileName);
         SetTextValue(IDC_DUMMY_HEALTH, document_.targetDummy.dummyHealth);
@@ -1411,6 +1511,24 @@ private:
         document_.weapon357.labLoadout = GetCheckValue(IDC_357_LAB_LOADOUT);
         document_.weapon357.labAmmo = GetTextValue(IDC_357_LAB_AMMO);
         document_.weapon357.labAutoswitch = GetCheckValue(IDC_357_LAB_AUTOSWITCH);
+
+        document_.shotgun.primaryEnabled = GetCheckValue(IDC_SHOTGUN_PRIMARY_ENABLED);
+        document_.shotgun.profileName = GetTextValue(IDC_SHOTGUN_PROFILE_NAME);
+        document_.shotgun.primaryBaseSpread = GetTextValue(IDC_SHOTGUN_PRIMARY_BASE_SPREAD);
+        document_.shotgun.primaryGroundMovePenalty = GetTextValue(IDC_SHOTGUN_PRIMARY_GROUND_MOVE_PENALTY);
+        document_.shotgun.primaryAirMovePenalty = GetTextValue(IDC_SHOTGUN_PRIMARY_AIR_MOVE_PENALTY);
+        document_.shotgun.primaryDuckPenaltyScale = GetTextValue(IDC_SHOTGUN_PRIMARY_DUCK_PENALTY_SCALE);
+        document_.shotgun.primaryFirstShotAccuracy = GetCheckValue(IDC_SHOTGUN_PRIMARY_FIRST_SHOT_ACCURACY);
+        document_.shotgun.primaryFirstShotSpeedThreshold = GetTextValue(IDC_SHOTGUN_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD);
+        document_.shotgun.primarySpreadRecovery = GetTextValue(IDC_SHOTGUN_PRIMARY_SPREAD_RECOVERY);
+        document_.shotgun.primaryMaxSpread = GetTextValue(IDC_SHOTGUN_PRIMARY_MAX_SPREAD);
+        document_.shotgun.primaryDamagePerPellet = GetTextValue(IDC_SHOTGUN_PRIMARY_DAMAGE_PER_PELLET);
+        document_.shotgun.primaryPelletCount = GetTextValue(IDC_SHOTGUN_PRIMARY_PELLET_COUNT);
+        document_.shotgun.primaryHeadshotScale = GetTextValue(IDC_SHOTGUN_PRIMARY_HEADSHOT_SCALE);
+        document_.shotgun.primaryHeadshotLethal = GetCheckValue(IDC_SHOTGUN_PRIMARY_HEADSHOT_LETHAL);
+        document_.shotgun.labLoadout = GetCheckValue(IDC_SHOTGUN_LAB_LOADOUT);
+        document_.shotgun.labAmmo = GetTextValue(IDC_SHOTGUN_LAB_AMMO);
+        document_.shotgun.labAutoswitch = GetCheckValue(IDC_SHOTGUN_LAB_AUTOSWITCH);
 
         document_.targetDummy.enabled = GetCheckValue(IDC_DUMMY_ENABLED);
         document_.targetDummy.targetProfileName = GetTextValue(IDC_DUMMY_TARGET_PROFILE_NAME);
@@ -1827,6 +1945,42 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
         return 1;
     }
 
+    hlcfg::ProjectDocument shotgun = hlcfg::CreateDefaultProject();
+    shotgun.metadata.projectName = L"SelfTest Shotgun";
+    shotgun.general.sessionTag = L"editor_cfg_test";
+    shotgun.exportSettings.exportFolder = exportRoot.wstring();
+    shotgun.exportSettings.cfgFileName = L"editor_shotgun_test.cfg";
+    hlcfg::ApplyShotgunPreset(shotgun, L"precision_test");
+    shotgun.shotgun.profileName = L"editor_shotgun_test";
+    hlcfg::ApplyDummyPreset(shotgun, L"vest");
+
+    const std::filesystem::path shotgunProjectPath = root / L"editor_shotgun_test.hlcfg.json";
+    if (!hlcfg::SaveProjectDocumentToFile(shotgun, shotgunProjectPath.wstring(), errorMessage)) {
+        return 1;
+    }
+
+    hlcfg::ProjectDocument loadedShotgun;
+    if (!hlcfg::LoadProjectDocumentFromFile(shotgunProjectPath.wstring(), loadedShotgun, errorMessage)) {
+        return 1;
+    }
+
+    hlcfg::ExportResult shotgunExport;
+    if (!hlcfg::ExportCfgToFile(loadedShotgun, environment, shotgunExport, errorMessage)) {
+        return 1;
+    }
+
+    if (!ValidateContains(shotgunExport.cfgText, L"sv_exp_weapon_under_test \"shotgun\"") ||
+        !ValidateContains(shotgunExport.cfgText, L"sv_exp_session_tag \"editor_cfg_test\"") ||
+        !ValidateContains(shotgunExport.cfgText, L"sv_exp_shotgun_primary_enabled 1") ||
+        !ValidateContains(shotgunExport.cfgText, L"sv_exp_shotgun_profile_name \"editor_shotgun_test\"") ||
+        !ValidateContains(shotgunExport.cfgText, L"sv_exp_shotgun_lab_loadout 1") ||
+        !ValidateContains(shotgunExport.cfgText, L"sv_exp_shotgun_primary_pellet_count") ||
+        !ValidateContains(shotgunExport.cfgText, L"sv_exp_glock_lab_target_profile_name \"vest\"") ||
+        shotgunExport.execCommand != L"exec editor_shotgun_test.cfg" ||
+        shotgunExport.launcherCommand != L"scripts\\play-hlserver-testbed-direct.bat -CfgProfile \"editor_shotgun_test.cfg\"") {
+        return 1;
+    }
+
     std::wostringstream summary;
     summary << L"glock_project=" << glockProjectPath.wstring() << L"\n";
     summary << L"glock_cfg=" << glockExport.exportPath << L"\n";
@@ -1837,6 +1991,9 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
     summary << L"357_project=" << weapon357ProjectPath.wstring() << L"\n";
     summary << L"357_cfg=" << weapon357Export.exportPath << L"\n";
     summary << L"357_exec=" << weapon357Export.execCommand << L"\n";
+    summary << L"shotgun_project=" << shotgunProjectPath.wstring() << L"\n";
+    summary << L"shotgun_cfg=" << shotgunExport.exportPath << L"\n";
+    summary << L"shotgun_exec=" << shotgunExport.execCommand << L"\n";
 
     if (!WriteSummaryFile(root / L"selftest-summary.txt", summary.str())) {
         return 1;

@@ -79,6 +79,26 @@ struct Weapon357Config {
     bool labAutoswitch = true;
 };
 
+struct ShotgunConfig {
+    bool primaryEnabled = false;
+    std::wstring profileName;
+    std::wstring primaryBaseSpread;
+    std::wstring primaryGroundMovePenalty;
+    std::wstring primaryAirMovePenalty;
+    std::wstring primaryDuckPenaltyScale;
+    bool primaryFirstShotAccuracy = false;
+    std::wstring primaryFirstShotSpeedThreshold;
+    std::wstring primarySpreadRecovery;
+    std::wstring primaryMaxSpread;
+    std::wstring primaryDamagePerPellet;
+    std::wstring primaryPelletCount;
+    std::wstring primaryHeadshotScale;
+    bool primaryHeadshotLethal = false;
+    bool labLoadout = false;
+    std::wstring labAmmo;
+    bool labAutoswitch = true;
+};
+
 struct TargetDummyConfig {
     bool enabled = false;
     std::wstring targetProfileName;
@@ -106,6 +126,7 @@ struct ProjectDocument {
     GlockConfig glock;
     Mp5Config mp5;
     Weapon357Config weapon357;
+    ShotgunConfig shotgun;
     TargetDummyConfig targetDummy;
 };
 

@@ -193,6 +193,7 @@ cvar_t sv_exp_weapon_under_test = {"sv_exp_weapon_under_test", "", FCVAR_SERVER 
 cvar_t sv_exp_glock_profile_name = {"sv_exp_glock_profile_name", "default", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
 cvar_t sv_exp_mp5_profile_name = {"sv_exp_mp5_profile_name", "default", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
 cvar_t sv_exp_357_profile_name = {"sv_exp_357_profile_name", "default", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
+cvar_t sv_exp_shotgun_profile_name = {"sv_exp_shotgun_profile_name", "default", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
 cvar_t sv_exp_session_tag = {"sv_exp_session_tag", "", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
 cvar_t sv_exp_matrix_name = {"sv_exp_matrix_name", "", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
 cvar_t sv_exp_matrix_step = {"sv_exp_matrix_step", "", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
@@ -237,6 +238,22 @@ cvar_t sv_exp_357_primary_headshot_lethal = {"sv_exp_357_primary_headshot_lethal
 cvar_t sv_exp_357_lab_loadout = {"sv_exp_357_lab_loadout", "0", FCVAR_SERVER};
 cvar_t sv_exp_357_lab_ammo = {"sv_exp_357_lab_ammo", "24", FCVAR_SERVER};
 cvar_t sv_exp_357_lab_autoswitch = {"sv_exp_357_lab_autoswitch", "1", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_primary_enabled = {"sv_exp_shotgun_primary_enabled", "0", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_primary_base_spread = {"sv_exp_shotgun_primary_base_spread", "0.0600", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_primary_ground_move_penalty = {"sv_exp_shotgun_primary_ground_move_penalty", "0.0300", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_primary_air_move_penalty = {"sv_exp_shotgun_primary_air_move_penalty", "0.0800", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_primary_duck_penalty_scale = {"sv_exp_shotgun_primary_duck_penalty_scale", "0.8000", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_primary_first_shot_accuracy = {"sv_exp_shotgun_primary_first_shot_accuracy", "0", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_primary_first_shot_speed_threshold = {"sv_exp_shotgun_primary_first_shot_speed_threshold", "35.0", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_primary_spread_recovery = {"sv_exp_shotgun_primary_spread_recovery", "0.8500", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_primary_max_spread = {"sv_exp_shotgun_primary_max_spread", "0.1200", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_primary_damage_per_pellet = {"sv_exp_shotgun_primary_damage_per_pellet", "5.0", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_primary_pellet_count = {"sv_exp_shotgun_primary_pellet_count", "6", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_primary_headshot_scale = {"sv_exp_shotgun_primary_headshot_scale", "1.5", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_primary_headshot_lethal = {"sv_exp_shotgun_primary_headshot_lethal", "0", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_lab_loadout = {"sv_exp_shotgun_lab_loadout", "0", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_lab_ammo = {"sv_exp_shotgun_lab_ammo", "48", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_lab_autoswitch = {"sv_exp_shotgun_lab_autoswitch", "1", FCVAR_SERVER};
 cvar_t sv_exp_debug_weaponlog = {"sv_exp_debug_weaponlog", "0", FCVAR_SERVER};
 cvar_t sv_exp_debug_weaponlog_rejections = {"sv_exp_debug_weaponlog_rejections", "0", FCVAR_SERVER};
 cvar_t sv_exp_glock_lab_dummy = {"sv_exp_glock_lab_dummy", "0", FCVAR_SERVER};
@@ -4294,6 +4311,43 @@ void Maintain357LabLoadout()
         pPlayer->SelectItem("weapon_357");
     }
 }
+
+void MaintainShotgunLabLoadout()
+{
+    if (!ExpShotgunLabLoadoutEnabled())
+    {
+        return;
+    }
+
+    CBasePlayer *pPlayer = FindFirstLivePlayer();
+    if (pPlayer == NULL || pPlayer->pev == NULL)
+    {
+        return;
+    }
+
+    const bool hadShotgun = pPlayer->HasPlayerItemFromID(WEAPON_SHOTGUN) != FALSE;
+    if (!hadShotgun)
+    {
+        pPlayer->GiveNamedItem("weapon_shotgun");
+    }
+
+    const int ammoIndex = CBasePlayer::GetAmmoIndex("buckshot");
+    const int targetAmmo = (int)ClampFloat(ExpShotgunLabAmmo(), 0.0f, (float)BUCKSHOT_MAX_CARRY);
+    if (ammoIndex >= 0)
+    {
+        const int currentAmmo = pPlayer->AmmoInventory(ammoIndex);
+        const int ammoToGive = targetAmmo - currentAmmo;
+        if (ammoToGive > 0)
+        {
+            pPlayer->GiveAmmo(ammoToGive, "buckshot", BUCKSHOT_MAX_CARRY);
+        }
+    }
+
+    if (!hadShotgun && ExpShotgunLabAutoswitch())
+    {
+        pPlayer->SelectItem("weapon_shotgun");
+    }
+}
 }
 
 void RegisterFutureGameplayCvars()
@@ -4313,6 +4367,7 @@ void RegisterFutureGameplayCvars()
     CVAR_REGISTER(&sv_exp_glock_profile_name);
     CVAR_REGISTER(&sv_exp_mp5_profile_name);
     CVAR_REGISTER(&sv_exp_357_profile_name);
+    CVAR_REGISTER(&sv_exp_shotgun_profile_name);
     CVAR_REGISTER(&sv_exp_session_tag);
     CVAR_REGISTER(&sv_exp_matrix_name);
     CVAR_REGISTER(&sv_exp_matrix_step);
@@ -4357,6 +4412,22 @@ void RegisterFutureGameplayCvars()
     CVAR_REGISTER(&sv_exp_357_lab_loadout);
     CVAR_REGISTER(&sv_exp_357_lab_ammo);
     CVAR_REGISTER(&sv_exp_357_lab_autoswitch);
+    CVAR_REGISTER(&sv_exp_shotgun_primary_enabled);
+    CVAR_REGISTER(&sv_exp_shotgun_primary_base_spread);
+    CVAR_REGISTER(&sv_exp_shotgun_primary_ground_move_penalty);
+    CVAR_REGISTER(&sv_exp_shotgun_primary_air_move_penalty);
+    CVAR_REGISTER(&sv_exp_shotgun_primary_duck_penalty_scale);
+    CVAR_REGISTER(&sv_exp_shotgun_primary_first_shot_accuracy);
+    CVAR_REGISTER(&sv_exp_shotgun_primary_first_shot_speed_threshold);
+    CVAR_REGISTER(&sv_exp_shotgun_primary_spread_recovery);
+    CVAR_REGISTER(&sv_exp_shotgun_primary_max_spread);
+    CVAR_REGISTER(&sv_exp_shotgun_primary_damage_per_pellet);
+    CVAR_REGISTER(&sv_exp_shotgun_primary_pellet_count);
+    CVAR_REGISTER(&sv_exp_shotgun_primary_headshot_scale);
+    CVAR_REGISTER(&sv_exp_shotgun_primary_headshot_lethal);
+    CVAR_REGISTER(&sv_exp_shotgun_lab_loadout);
+    CVAR_REGISTER(&sv_exp_shotgun_lab_ammo);
+    CVAR_REGISTER(&sv_exp_shotgun_lab_autoswitch);
     CVAR_REGISTER(&sv_exp_debug_weaponlog);
     CVAR_REGISTER(&sv_exp_debug_weaponlog_rejections);
     CVAR_REGISTER(&sv_exp_glock_lab_dummy);
@@ -4385,6 +4456,7 @@ void UpdateFutureGameplayHooksFrame()
     RefreshFutureHooksMapState();
     MaintainMp5LabLoadout();
     Maintain357LabLoadout();
+    MaintainShotgunLabLoadout();
     MaintainGlockLabDummy();
 }
 
@@ -4426,6 +4498,11 @@ const char *ExpMP5ProfileName()
 const char *Exp357ProfileName()
 {
     return GetNonEmptyCvarString(sv_exp_357_profile_name, "default");
+}
+
+const char *ExpShotgunProfileName()
+{
+    return GetNonEmptyCvarString(sv_exp_shotgun_profile_name, "default");
 }
 
 const char *ExpSessionTag()
@@ -4598,9 +4675,19 @@ bool Exp357ExperimentalModeEnabled()
     return Exp357PrimaryEnabled();
 }
 
+bool ExpShotgunExperimentalModeEnabled()
+{
+    return ExpShotgunPrimaryEnabled();
+}
+
 bool Exp357PrimaryEnabled()
 {
     return sv_exp_357_primary_enabled.value != 0.0f;
+}
+
+bool ExpShotgunPrimaryEnabled()
+{
+    return sv_exp_shotgun_primary_enabled.value != 0.0f;
 }
 
 float Exp357PrimaryBaseSpread()
@@ -4608,9 +4695,19 @@ float Exp357PrimaryBaseSpread()
     return GetNonNegativeCvarValue(sv_exp_357_primary_base_spread);
 }
 
+float ExpShotgunPrimaryBaseSpread()
+{
+    return GetNonNegativeCvarValue(sv_exp_shotgun_primary_base_spread);
+}
+
 float Exp357PrimaryGroundMovePenalty()
 {
     return GetNonNegativeCvarValue(sv_exp_357_primary_ground_move_penalty);
+}
+
+float ExpShotgunPrimaryGroundMovePenalty()
+{
+    return GetNonNegativeCvarValue(sv_exp_shotgun_primary_ground_move_penalty);
 }
 
 float Exp357PrimaryAirMovePenalty()
@@ -4618,9 +4715,19 @@ float Exp357PrimaryAirMovePenalty()
     return GetNonNegativeCvarValue(sv_exp_357_primary_air_move_penalty);
 }
 
+float ExpShotgunPrimaryAirMovePenalty()
+{
+    return GetNonNegativeCvarValue(sv_exp_shotgun_primary_air_move_penalty);
+}
+
 float Exp357PrimaryDuckPenaltyScale()
 {
     return GetNonNegativeCvarValue(sv_exp_357_primary_duck_penalty_scale);
+}
+
+float ExpShotgunPrimaryDuckPenaltyScale()
+{
+    return GetNonNegativeCvarValue(sv_exp_shotgun_primary_duck_penalty_scale);
 }
 
 float Exp357PrimarySpreadRecoverySeconds()
@@ -4628,9 +4735,25 @@ float Exp357PrimarySpreadRecoverySeconds()
     return GetNonNegativeCvarValue(sv_exp_357_primary_spread_recovery);
 }
 
+float ExpShotgunPrimarySpreadRecoverySeconds()
+{
+    return GetNonNegativeCvarValue(sv_exp_shotgun_primary_spread_recovery);
+}
+
 float Exp357PrimaryDamage()
 {
     return GetNonNegativeCvarValue(sv_exp_357_primary_damage);
+}
+
+float ExpShotgunPrimaryDamagePerPellet()
+{
+    return GetNonNegativeCvarValue(sv_exp_shotgun_primary_damage_per_pellet);
+}
+
+int ExpShotgunPrimaryPelletCount()
+{
+    const float pelletCount = GetNonNegativeCvarValue(sv_exp_shotgun_primary_pellet_count);
+    return pelletCount >= 1.0f ? (int)(pelletCount + 0.5f) : 1;
 }
 
 float Exp357PrimaryHeadshotScale()
@@ -4638,9 +4761,19 @@ float Exp357PrimaryHeadshotScale()
     return GetNonNegativeCvarValue(sv_exp_357_primary_headshot_scale);
 }
 
+float ExpShotgunPrimaryHeadshotScale()
+{
+    return GetNonNegativeCvarValue(sv_exp_shotgun_primary_headshot_scale);
+}
+
 bool Exp357PrimaryHeadshotLethal()
 {
     return sv_exp_357_primary_headshot_lethal.value != 0.0f;
+}
+
+bool ExpShotgunPrimaryHeadshotLethal()
+{
+    return sv_exp_shotgun_primary_headshot_lethal.value != 0.0f;
 }
 
 bool Exp357PrimaryFirstShotAccuracyEnabled()
@@ -4648,14 +4781,29 @@ bool Exp357PrimaryFirstShotAccuracyEnabled()
     return sv_exp_357_primary_first_shot_accuracy.value != 0.0f;
 }
 
+bool ExpShotgunPrimaryFirstShotAccuracyEnabled()
+{
+    return sv_exp_shotgun_primary_first_shot_accuracy.value != 0.0f;
+}
+
 float Exp357PrimaryFirstShotSpeedThreshold()
 {
     return GetNonNegativeCvarValue(sv_exp_357_primary_first_shot_speed_threshold);
 }
 
+float ExpShotgunPrimaryFirstShotSpeedThreshold()
+{
+    return GetNonNegativeCvarValue(sv_exp_shotgun_primary_first_shot_speed_threshold);
+}
+
 float Exp357PrimaryMaxSpread()
 {
     return GetNonNegativeCvarValue(sv_exp_357_primary_max_spread);
+}
+
+float ExpShotgunPrimaryMaxSpread()
+{
+    return GetNonNegativeCvarValue(sv_exp_shotgun_primary_max_spread);
 }
 
 bool Exp357LabLoadoutEnabled()
@@ -4671,6 +4819,21 @@ float Exp357LabAmmo()
 bool Exp357LabAutoswitch()
 {
     return sv_exp_357_lab_autoswitch.value != 0.0f;
+}
+
+bool ExpShotgunLabLoadoutEnabled()
+{
+    return sv_exp_shotgun_lab_loadout.value != 0.0f;
+}
+
+float ExpShotgunLabAmmo()
+{
+    return GetNonNegativeCvarValue(sv_exp_shotgun_lab_ammo);
+}
+
+bool ExpShotgunLabAutoswitch()
+{
+    return sv_exp_shotgun_lab_autoswitch.value != 0.0f;
 }
 
 bool ExpCfgDrivenModeActive()

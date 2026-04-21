@@ -63,9 +63,11 @@ struct SharedWeaponTraceDamageResult
 SharedWeaponSpreadProfile BuildGlockPrimarySpreadProfile();
 SharedWeaponSpreadProfile BuildMp5PrimarySpreadProfile();
 SharedWeaponSpreadProfile Build357PrimarySpreadProfile();
+SharedWeaponSpreadProfile BuildShotgunPrimarySpreadProfile();
 SharedWeaponDamageProfile BuildGlockPrimaryDamageProfile();
 SharedWeaponDamageProfile BuildMp5PrimaryDamageProfile();
 SharedWeaponDamageProfile Build357PrimaryDamageProfile();
+SharedWeaponDamageProfile BuildShotgunPrimaryDamageProfile();
 SharedWeaponSpreadState BuildPlayerWeaponSpreadState(
     CBasePlayer *pPlayer,
     float fallbackMaxSpeed,

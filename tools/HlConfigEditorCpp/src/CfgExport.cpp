@@ -352,6 +352,31 @@ bool Is357Relevant(const ProjectDocument& document) {
            document.weapon357.labAutoswitch != defaults.weapon357.labAutoswitch;
 }
 
+bool IsShotgunRelevant(const ProjectDocument& document) {
+    const ProjectDocument defaults = CreateDefaultProject();
+    if (ToLower(Trim(document.general.weaponUnderTest)) == L"shotgun") {
+        return true;
+    }
+
+    return document.shotgun.primaryEnabled != defaults.shotgun.primaryEnabled ||
+           !EqualTrimmed(document.shotgun.profileName, defaults.shotgun.profileName) ||
+           !EqualTrimmed(document.shotgun.primaryBaseSpread, defaults.shotgun.primaryBaseSpread) ||
+           !EqualTrimmed(document.shotgun.primaryGroundMovePenalty, defaults.shotgun.primaryGroundMovePenalty) ||
+           !EqualTrimmed(document.shotgun.primaryAirMovePenalty, defaults.shotgun.primaryAirMovePenalty) ||
+           !EqualTrimmed(document.shotgun.primaryDuckPenaltyScale, defaults.shotgun.primaryDuckPenaltyScale) ||
+           document.shotgun.primaryFirstShotAccuracy != defaults.shotgun.primaryFirstShotAccuracy ||
+           !EqualTrimmed(document.shotgun.primaryFirstShotSpeedThreshold, defaults.shotgun.primaryFirstShotSpeedThreshold) ||
+           !EqualTrimmed(document.shotgun.primarySpreadRecovery, defaults.shotgun.primarySpreadRecovery) ||
+           !EqualTrimmed(document.shotgun.primaryMaxSpread, defaults.shotgun.primaryMaxSpread) ||
+           !EqualTrimmed(document.shotgun.primaryDamagePerPellet, defaults.shotgun.primaryDamagePerPellet) ||
+           !EqualTrimmed(document.shotgun.primaryPelletCount, defaults.shotgun.primaryPelletCount) ||
+           !EqualTrimmed(document.shotgun.primaryHeadshotScale, defaults.shotgun.primaryHeadshotScale) ||
+           document.shotgun.primaryHeadshotLethal != defaults.shotgun.primaryHeadshotLethal ||
+           document.shotgun.labLoadout != defaults.shotgun.labLoadout ||
+           !EqualTrimmed(document.shotgun.labAmmo, defaults.shotgun.labAmmo) ||
+           document.shotgun.labAutoswitch != defaults.shotgun.labAutoswitch;
+}
+
 bool IsDummyRelevant(const ProjectDocument& document) {
     const ProjectDocument defaults = CreateDefaultProject();
     return document.targetDummy.enabled != defaults.targetDummy.enabled ||
@@ -452,6 +477,7 @@ bool BuildCfgLines(const ProjectDocument& document, std::vector<std::wstring>& l
     const bool includeGlock = IsGlockRelevant(document);
     const bool includeMp5 = IsMp5Relevant(document);
     const bool include357 = Is357Relevant(document);
+    const bool includeShotgun = IsShotgunRelevant(document);
     const bool includeDummy = IsDummyRelevant(document);
 
     AddLine(lines, L"sv_exp_weapon_under_test", QuoteCfgString(document.general.weaponUnderTest));
@@ -613,6 +639,60 @@ bool BuildCfgLines(const ProjectDocument& document, std::vector<std::wstring>& l
         }
         AddLine(lines, L"sv_exp_357_lab_ammo", normalized);
         AddLine(lines, L"sv_exp_357_lab_autoswitch", document.weapon357.labAutoswitch ? L"1" : L"0");
+    }
+
+    if (includeShotgun) {
+        AddBlankLine(lines);
+        AddLine(lines, L"sv_exp_shotgun_primary_enabled", document.shotgun.primaryEnabled ? L"1" : L"0");
+        AddLine(lines, L"sv_exp_shotgun_profile_name", QuoteCfgString(document.shotgun.profileName));
+        if (!NormalizeFloatValue(document.shotgun.primaryBaseSpread, normalized, errorMessage, L"Shotgun base spread")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_shotgun_primary_base_spread", normalized);
+        if (!NormalizeFloatValue(document.shotgun.primaryGroundMovePenalty, normalized, errorMessage, L"Shotgun ground move penalty")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_shotgun_primary_ground_move_penalty", normalized);
+        if (!NormalizeFloatValue(document.shotgun.primaryAirMovePenalty, normalized, errorMessage, L"Shotgun air move penalty")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_shotgun_primary_air_move_penalty", normalized);
+        if (!NormalizeFloatValue(document.shotgun.primaryDuckPenaltyScale, normalized, errorMessage, L"Shotgun duck penalty scale")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_shotgun_primary_duck_penalty_scale", normalized);
+        AddLine(lines, L"sv_exp_shotgun_primary_first_shot_accuracy", document.shotgun.primaryFirstShotAccuracy ? L"1" : L"0");
+        if (!NormalizeFloatValue(document.shotgun.primaryFirstShotSpeedThreshold, normalized, errorMessage, L"Shotgun first-shot speed threshold")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_shotgun_primary_first_shot_speed_threshold", normalized);
+        if (!NormalizeFloatValue(document.shotgun.primarySpreadRecovery, normalized, errorMessage, L"Shotgun spread recovery")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_shotgun_primary_spread_recovery", normalized);
+        if (!NormalizeFloatValue(document.shotgun.primaryMaxSpread, normalized, errorMessage, L"Shotgun max spread")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_shotgun_primary_max_spread", normalized);
+        if (!NormalizeFloatValue(document.shotgun.primaryDamagePerPellet, normalized, errorMessage, L"Shotgun damage per pellet")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_shotgun_primary_damage_per_pellet", normalized);
+        if (!NormalizeIntegerValue(document.shotgun.primaryPelletCount, normalized, errorMessage, L"Shotgun pellet count")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_shotgun_primary_pellet_count", normalized);
+        if (!NormalizeFloatValue(document.shotgun.primaryHeadshotScale, normalized, errorMessage, L"Shotgun headshot scale")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_shotgun_primary_headshot_scale", normalized);
+        AddLine(lines, L"sv_exp_shotgun_primary_headshot_lethal", document.shotgun.primaryHeadshotLethal ? L"1" : L"0");
+        AddLine(lines, L"sv_exp_shotgun_lab_loadout", document.shotgun.labLoadout ? L"1" : L"0");
+        if (!NormalizeIntegerValue(document.shotgun.labAmmo, normalized, errorMessage, L"Shotgun lab ammo")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_shotgun_lab_ammo", normalized);
+        AddLine(lines, L"sv_exp_shotgun_lab_autoswitch", document.shotgun.labAutoswitch ? L"1" : L"0");
     }
 
     if (includeDummy) {

@@ -183,6 +183,19 @@ ProjectDocument CreateDefaultProject() {
     document.weapon357.primaryHeadshotScale = L"2.5";
     document.weapon357.labAmmo = L"36";
 
+    document.shotgun.profileName = L"default";
+    document.shotgun.primaryBaseSpread = L"0.0600";
+    document.shotgun.primaryGroundMovePenalty = L"0.0300";
+    document.shotgun.primaryAirMovePenalty = L"0.0800";
+    document.shotgun.primaryDuckPenaltyScale = L"0.8000";
+    document.shotgun.primaryFirstShotSpeedThreshold = L"35.0";
+    document.shotgun.primarySpreadRecovery = L"0.8500";
+    document.shotgun.primaryMaxSpread = L"0.1200";
+    document.shotgun.primaryDamagePerPellet = L"5.0";
+    document.shotgun.primaryPelletCount = L"6";
+    document.shotgun.primaryHeadshotScale = L"1.5";
+    document.shotgun.labAmmo = L"48";
+
     document.targetDummy.targetProfileName = L"default";
     document.targetDummy.dummyHealth = L"100.0";
     document.targetDummy.dummyArmor = L"0.0";
@@ -312,6 +325,25 @@ bool SaveProjectDocumentToFile(const ProjectDocument& document, const std::wstri
     SetString(weapon357, L"sv_exp_357_lab_ammo", document.weapon357.labAmmo);
     SetBool(weapon357, L"sv_exp_357_lab_autoswitch", document.weapon357.labAutoswitch);
 
+    JsonValue::Object& shotgun = AddObjectMember(rootObject, L"shotgun");
+    SetBool(shotgun, L"sv_exp_shotgun_primary_enabled", document.shotgun.primaryEnabled);
+    SetString(shotgun, L"sv_exp_shotgun_profile_name", document.shotgun.profileName);
+    SetString(shotgun, L"sv_exp_shotgun_primary_base_spread", document.shotgun.primaryBaseSpread);
+    SetString(shotgun, L"sv_exp_shotgun_primary_ground_move_penalty", document.shotgun.primaryGroundMovePenalty);
+    SetString(shotgun, L"sv_exp_shotgun_primary_air_move_penalty", document.shotgun.primaryAirMovePenalty);
+    SetString(shotgun, L"sv_exp_shotgun_primary_duck_penalty_scale", document.shotgun.primaryDuckPenaltyScale);
+    SetBool(shotgun, L"sv_exp_shotgun_primary_first_shot_accuracy", document.shotgun.primaryFirstShotAccuracy);
+    SetString(shotgun, L"sv_exp_shotgun_primary_first_shot_speed_threshold", document.shotgun.primaryFirstShotSpeedThreshold);
+    SetString(shotgun, L"sv_exp_shotgun_primary_spread_recovery", document.shotgun.primarySpreadRecovery);
+    SetString(shotgun, L"sv_exp_shotgun_primary_max_spread", document.shotgun.primaryMaxSpread);
+    SetString(shotgun, L"sv_exp_shotgun_primary_damage_per_pellet", document.shotgun.primaryDamagePerPellet);
+    SetString(shotgun, L"sv_exp_shotgun_primary_pellet_count", document.shotgun.primaryPelletCount);
+    SetString(shotgun, L"sv_exp_shotgun_primary_headshot_scale", document.shotgun.primaryHeadshotScale);
+    SetBool(shotgun, L"sv_exp_shotgun_primary_headshot_lethal", document.shotgun.primaryHeadshotLethal);
+    SetBool(shotgun, L"sv_exp_shotgun_lab_loadout", document.shotgun.labLoadout);
+    SetString(shotgun, L"sv_exp_shotgun_lab_ammo", document.shotgun.labAmmo);
+    SetBool(shotgun, L"sv_exp_shotgun_lab_autoswitch", document.shotgun.labAutoswitch);
+
     JsonValue::Object& targetDummy = AddObjectMember(rootObject, L"targetDummy");
     SetBool(targetDummy, L"sv_exp_glock_lab_dummy", document.targetDummy.enabled);
     SetString(targetDummy, L"sv_exp_glock_lab_target_profile_name", document.targetDummy.targetProfileName);
@@ -424,6 +456,26 @@ bool LoadProjectDocumentFromFile(const std::wstring& path, ProjectDocument& docu
         loaded.weapon357.labLoadout = ReadBoolValue(*weapon357, L"sv_exp_357_lab_loadout", loaded.weapon357.labLoadout);
         loaded.weapon357.labAmmo = ReadStringValue(*weapon357, L"sv_exp_357_lab_ammo", loaded.weapon357.labAmmo);
         loaded.weapon357.labAutoswitch = ReadBoolValue(*weapon357, L"sv_exp_357_lab_autoswitch", loaded.weapon357.labAutoswitch);
+    }
+
+    if (const JsonValue::Object* shotgun = FindObject(rootObject, L"shotgun")) {
+        loaded.shotgun.primaryEnabled = ReadBoolValue(*shotgun, L"sv_exp_shotgun_primary_enabled", loaded.shotgun.primaryEnabled);
+        loaded.shotgun.profileName = ReadStringValue(*shotgun, L"sv_exp_shotgun_profile_name", loaded.shotgun.profileName);
+        loaded.shotgun.primaryBaseSpread = ReadStringValue(*shotgun, L"sv_exp_shotgun_primary_base_spread", loaded.shotgun.primaryBaseSpread);
+        loaded.shotgun.primaryGroundMovePenalty = ReadStringValue(*shotgun, L"sv_exp_shotgun_primary_ground_move_penalty", loaded.shotgun.primaryGroundMovePenalty);
+        loaded.shotgun.primaryAirMovePenalty = ReadStringValue(*shotgun, L"sv_exp_shotgun_primary_air_move_penalty", loaded.shotgun.primaryAirMovePenalty);
+        loaded.shotgun.primaryDuckPenaltyScale = ReadStringValue(*shotgun, L"sv_exp_shotgun_primary_duck_penalty_scale", loaded.shotgun.primaryDuckPenaltyScale);
+        loaded.shotgun.primaryFirstShotAccuracy = ReadBoolValue(*shotgun, L"sv_exp_shotgun_primary_first_shot_accuracy", loaded.shotgun.primaryFirstShotAccuracy);
+        loaded.shotgun.primaryFirstShotSpeedThreshold = ReadStringValue(*shotgun, L"sv_exp_shotgun_primary_first_shot_speed_threshold", loaded.shotgun.primaryFirstShotSpeedThreshold);
+        loaded.shotgun.primarySpreadRecovery = ReadStringValue(*shotgun, L"sv_exp_shotgun_primary_spread_recovery", loaded.shotgun.primarySpreadRecovery);
+        loaded.shotgun.primaryMaxSpread = ReadStringValue(*shotgun, L"sv_exp_shotgun_primary_max_spread", loaded.shotgun.primaryMaxSpread);
+        loaded.shotgun.primaryDamagePerPellet = ReadStringValue(*shotgun, L"sv_exp_shotgun_primary_damage_per_pellet", loaded.shotgun.primaryDamagePerPellet);
+        loaded.shotgun.primaryPelletCount = ReadStringValue(*shotgun, L"sv_exp_shotgun_primary_pellet_count", loaded.shotgun.primaryPelletCount);
+        loaded.shotgun.primaryHeadshotScale = ReadStringValue(*shotgun, L"sv_exp_shotgun_primary_headshot_scale", loaded.shotgun.primaryHeadshotScale);
+        loaded.shotgun.primaryHeadshotLethal = ReadBoolValue(*shotgun, L"sv_exp_shotgun_primary_headshot_lethal", loaded.shotgun.primaryHeadshotLethal);
+        loaded.shotgun.labLoadout = ReadBoolValue(*shotgun, L"sv_exp_shotgun_lab_loadout", loaded.shotgun.labLoadout);
+        loaded.shotgun.labAmmo = ReadStringValue(*shotgun, L"sv_exp_shotgun_lab_ammo", loaded.shotgun.labAmmo);
+        loaded.shotgun.labAutoswitch = ReadBoolValue(*shotgun, L"sv_exp_shotgun_lab_autoswitch", loaded.shotgun.labAutoswitch);
     }
 
     if (const JsonValue::Object* targetDummy = FindObject(rootObject, L"targetDummy")) {

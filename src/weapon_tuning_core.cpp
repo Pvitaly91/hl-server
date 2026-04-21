@@ -211,6 +211,21 @@ SharedWeaponSpreadProfile Build357PrimarySpreadProfile()
     return profile;
 }
 
+SharedWeaponSpreadProfile BuildShotgunPrimarySpreadProfile()
+{
+    SharedWeaponSpreadProfile profile = {};
+    profile.baseSpread = ExpShotgunPrimaryBaseSpread();
+    profile.groundMovePenalty = ExpShotgunPrimaryGroundMovePenalty();
+    profile.airMovePenalty = ExpShotgunPrimaryAirMovePenalty();
+    profile.duckPenaltyScale = ExpShotgunPrimaryDuckPenaltyScale();
+    profile.movementPenaltyScale = 1.0f;
+    profile.firstShotAccuracyEnabled = ExpShotgunPrimaryFirstShotAccuracyEnabled();
+    profile.firstShotSpeedThreshold = ExpShotgunPrimaryFirstShotSpeedThreshold();
+    profile.firstShotRecoverySeconds = ExpShotgunPrimarySpreadRecoverySeconds();
+    profile.maxSpread = ExpShotgunPrimaryMaxSpread();
+    return profile;
+}
+
 SharedWeaponDamageProfile BuildGlockPrimaryDamageProfile()
 {
     SharedWeaponDamageProfile profile = {};
@@ -235,6 +250,15 @@ SharedWeaponDamageProfile Build357PrimaryDamageProfile()
     profile.baseDamage = Exp357PrimaryDamage();
     profile.headshotScale = Exp357PrimaryHeadshotScale();
     profile.headshotLethal = Exp357PrimaryHeadshotLethal();
+    return profile;
+}
+
+SharedWeaponDamageProfile BuildShotgunPrimaryDamageProfile()
+{
+    SharedWeaponDamageProfile profile = {};
+    profile.baseDamage = ExpShotgunPrimaryDamagePerPellet();
+    profile.headshotScale = ExpShotgunPrimaryHeadshotScale();
+    profile.headshotLethal = ExpShotgunPrimaryHeadshotLethal();
     return profile;
 }
 

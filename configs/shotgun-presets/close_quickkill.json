@@ -1,0 +1,23 @@
+{
+  "name": "close_quickkill",
+  "description": "Short-range lethality test profile with denser spread and more per-shot pellet damage for dummy validation. This is intentionally experimental, not a canonical Counter-Strike preset.",
+  "cvars": {
+    "sv_exp_shotgun_primary_enabled": "1",
+    "sv_exp_shotgun_profile_name": "close_quickkill",
+    "sv_exp_shotgun_primary_base_spread": "0.0450",
+    "sv_exp_shotgun_primary_ground_move_penalty": "0.0220",
+    "sv_exp_shotgun_primary_air_move_penalty": "0.0700",
+    "sv_exp_shotgun_primary_duck_penalty_scale": "0.7500",
+    "sv_exp_shotgun_primary_first_shot_accuracy": "1",
+    "sv_exp_shotgun_primary_first_shot_speed_threshold": "20.0",
+    "sv_exp_shotgun_primary_spread_recovery": "0.7000",
+    "sv_exp_shotgun_primary_max_spread": "0.0900",
+    "sv_exp_shotgun_primary_damage_per_pellet": "8.0",
+    "sv_exp_shotgun_primary_pellet_count": "8",
+    "sv_exp_shotgun_primary_headshot_scale": "1.7",
+    "sv_exp_shotgun_primary_headshot_lethal": "0",
+    "sv_exp_shotgun_lab_loadout": "1",
+    "sv_exp_shotgun_lab_ammo": "60",
+    "sv_exp_shotgun_lab_autoswitch": "1"
+  }
+}

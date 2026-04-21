@@ -1,0 +1,23 @@
+{
+  "name": "default",
+  "description": "Experimental shared-core shotgun baseline for live-lab validation. This is a practical server-side test profile, not an authoritative Counter-Strike value set.",
+  "cvars": {
+    "sv_exp_shotgun_primary_enabled": "1",
+    "sv_exp_shotgun_profile_name": "default",
+    "sv_exp_shotgun_primary_base_spread": "0.0600",
+    "sv_exp_shotgun_primary_ground_move_penalty": "0.0300",
+    "sv_exp_shotgun_primary_air_move_penalty": "0.0800",
+    "sv_exp_shotgun_primary_duck_penalty_scale": "0.8000",
+    "sv_exp_shotgun_primary_first_shot_accuracy": "0",
+    "sv_exp_shotgun_primary_first_shot_speed_threshold": "35.0",
+    "sv_exp_shotgun_primary_spread_recovery": "0.8500",
+    "sv_exp_shotgun_primary_max_spread": "0.1200",
+    "sv_exp_shotgun_primary_damage_per_pellet": "5.0",
+    "sv_exp_shotgun_primary_pellet_count": "6",
+    "sv_exp_shotgun_primary_headshot_scale": "1.5",
+    "sv_exp_shotgun_primary_headshot_lethal": "0",
+    "sv_exp_shotgun_lab_loadout": "1",
+    "sv_exp_shotgun_lab_ammo": "48",
+    "sv_exp_shotgun_lab_autoswitch": "1"
+  }
+}

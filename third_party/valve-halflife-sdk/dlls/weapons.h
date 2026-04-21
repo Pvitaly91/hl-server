@@ -661,6 +661,7 @@ public:
 	void ItemPostFrame( void );
 	int m_fInReload;
 	float m_flNextReload;
+	float m_flLastAcceptedPrimaryShotTime;
 	int m_iShell;
 
 	virtual BOOL UseDecrement( void )

@@ -1332,7 +1332,8 @@ void CBaseMonster :: TraceAttack( entvars_t *pevAttacker, float flDamage, Vector
 
 		if (!ApplyActiveGlockPrimaryTraceDamage(this, pevAttacker, ptr->iHitgroup, &flDamage) &&
 			!ApplyActiveMp5PrimaryTraceDamage(this, pevAttacker, ptr->iHitgroup, &flDamage) &&
-			!ApplyActive357PrimaryTraceDamage(this, pevAttacker, ptr->iHitgroup, &flDamage))
+			!ApplyActive357PrimaryTraceDamage(this, pevAttacker, ptr->iHitgroup, &flDamage) &&
+			!ApplyActiveShotgunPrimaryTraceDamage(this, pevAttacker, ptr->iHitgroup, &flDamage))
 		{
 			switch ( ptr->iHitgroup )
 			{
@@ -1564,7 +1565,7 @@ Vector CBaseEntity::FireBulletsPlayer ( ULONG cShots, Vector vecSrc, Vector vecD
 
 			case BULLET_PLAYER_BUCKSHOT:	
 				 // make distance based!
-				pEntity->TraceAttack(pevAttacker, gSkillData.plrDmgBuckshot, vecDir, &tr, DMG_BULLET); 
+				pEntity->TraceAttack(pevAttacker, GetActiveShotgunPrimaryBaseDamage(pevAttacker, gSkillData.plrDmgBuckshot), vecDir, &tr, DMG_BULLET); 
 				break;
 			
 			case BULLET_PLAYER_357:		
@@ -1590,6 +1591,7 @@ Vector CBaseEntity::FireBulletsPlayer ( ULONG cShots, Vector vecSrc, Vector vecD
 	FinalizeActiveGlockPrimaryHitTelemetry();
 	FinalizeActiveMp5PrimaryHitTelemetry();
 	FinalizeActive357PrimaryHitTelemetry();
+	FinalizeActiveShotgunPrimaryHitTelemetry();
 
 	return Vector( x * vecSpread.x, y * vecSpread.y, 0.0 );
 }

@@ -117,6 +117,47 @@ struct Weapon357PrimaryShotContext
 
 Weapon357PrimaryShotContext g_357PrimaryShotContext = {};
 
+const int kMaxShotgunVictimsPerShot = 16;
+
+struct ShotgunPrimaryVictimAggregate
+{
+    bool active;
+    CBaseEntity *victim;
+    int firstHitgroup;
+    bool mixedHitgroups;
+    bool anyHeadshot;
+    int pelletHits;
+    int headshotPellets;
+    int headshotLethalPellets;
+    float totalTraceDamage;
+    float totalDamageToHealth;
+    float totalDamageAbsorbed;
+    float totalArmorDrain;
+    float victimHealthBefore;
+    bool victimArmorKnown;
+    float victimArmorBefore;
+    bool victimIsDummy;
+    char targetProfileName[64];
+    bool dummyArmorApplied;
+    bool dummyHeadProtected;
+};
+
+struct ShotgunPrimaryShotContext
+{
+    bool active;
+    entvars_t *attacker;
+    CBasePlayer *attackerPlayer;
+    bool experimentalModeActive;
+    float baseDamagePerPellet;
+    float headshotScale;
+    bool headshotLethal;
+    int pelletCount;
+    char profileName[64];
+    ShotgunPrimaryVictimAggregate victims[kMaxShotgunVictimsPerShot];
+};
+
+ShotgunPrimaryShotContext g_shotgunPrimaryShotContext = {};
+
 void PrintWeaponDebugWarningOnce(const char *message)
 {
     if (g_weaponDebugLogWarningPrinted)
@@ -222,6 +263,47 @@ void ClearPending357PrimaryHit()
 bool HasMatchingActive357PrimaryShot(entvars_t *pevAttacker)
 {
     return g_357PrimaryShotContext.active && g_357PrimaryShotContext.attacker == pevAttacker;
+}
+
+void ResetShotgunPrimaryShotContext()
+{
+    memset(&g_shotgunPrimaryShotContext, 0, sizeof(g_shotgunPrimaryShotContext));
+}
+
+bool HasMatchingActiveShotgunPrimaryShot(entvars_t *pevAttacker)
+{
+    return g_shotgunPrimaryShotContext.active && g_shotgunPrimaryShotContext.attacker == pevAttacker;
+}
+
+ShotgunPrimaryVictimAggregate *FindShotgunVictimAggregate(CBaseEntity *pVictim)
+{
+    if (pVictim == NULL)
+    {
+        return NULL;
+    }
+
+    for (int index = 0; index < kMaxShotgunVictimsPerShot; ++index)
+    {
+        ShotgunPrimaryVictimAggregate *aggregate = &g_shotgunPrimaryShotContext.victims[index];
+        if (aggregate->active && aggregate->victim == pVictim)
+        {
+            return aggregate;
+        }
+    }
+
+    for (int index = 0; index < kMaxShotgunVictimsPerShot; ++index)
+    {
+        ShotgunPrimaryVictimAggregate *aggregate = &g_shotgunPrimaryShotContext.victims[index];
+        if (!aggregate->active)
+        {
+            aggregate->active = true;
+            aggregate->victim = pVictim;
+            aggregate->firstHitgroup = HITGROUP_GENERIC;
+            return aggregate;
+        }
+    }
+
+    return NULL;
 }
 
 void FormatTimestamp(char *buffer, size_t bufferSize)
@@ -493,6 +575,11 @@ const char *GetSafeMapName()
 const char *GetSessionProfileName()
 {
     const char *weaponUnderTest = ExpWeaponUnderTest();
+    if (weaponUnderTest != NULL && weaponUnderTest[0] != '\0' && _stricmp(weaponUnderTest, "shotgun") == 0)
+    {
+        return ExpShotgunProfileName();
+    }
+
     if (weaponUnderTest != NULL && weaponUnderTest[0] != '\0' && _stricmp(weaponUnderTest, "357") == 0)
     {
         return Exp357ProfileName();
@@ -1253,6 +1340,56 @@ void LogAccepted357PrimaryShot(CBasePlayer *pPlayer, const Weapon357AcceptedShot
     WriteTelemetryLine(line);
 }
 
+void LogAcceptedShotgunPrimaryShot(CBasePlayer *pPlayer, const ShotgunAcceptedShotTelemetry &telemetry)
+{
+    if (!ExpDebugWeaponLogEnabled())
+    {
+        return;
+    }
+
+    EnsureWeaponDebugLogOpen();
+
+    char timestamp[64];
+    char deltaPreviousShot[32];
+    char line[1024];
+    FormatTimestamp(timestamp, sizeof(timestamp));
+
+    if (telemetry.hasPreviousAcceptedShot)
+    {
+        _snprintf_s(deltaPreviousShot, sizeof(deltaPreviousShot), _TRUNCATE, "%.3f", telemetry.timeSincePreviousAcceptedShot);
+    }
+    else
+    {
+        strcpy_s(deltaPreviousShot, sizeof(deltaPreviousShot), "na");
+    }
+
+    _snprintf_s(
+        line,
+        sizeof(line),
+        _TRUNCATE,
+        "[weaponlog] type=accepted ts=%s map=%s player=\"%s\" entindex=%d userid=%d weapon=shotgun fire=primary experimental=%d profile=\"%s\" firstshot=%d spread=%.4f base=%.4f move_penalty=%.4f speed2d=%.1f maxspeed=%.1f grounded=%d ducking=%d delta_prev=%s clip=%d pellets=%d",
+        timestamp,
+        SanitizeLogValue(GetSafeMapName()).c_str(),
+        GetSafePlayerName(pPlayer).c_str(),
+        GetPlayerEntityIndex(pPlayer),
+        GetPlayerUserId(pPlayer),
+        telemetry.experimentalModeActive ? 1 : 0,
+        SanitizeLogValue(ExpShotgunProfileName()).c_str(),
+        telemetry.firstShotAccuracyApplied ? 1 : 0,
+        telemetry.spread,
+        telemetry.baseSpread,
+        telemetry.movementPenalty,
+        telemetry.horizontalSpeed,
+        telemetry.maxSpeedForNormalization,
+        telemetry.grounded ? 1 : 0,
+        telemetry.ducking ? 1 : 0,
+        deltaPreviousShot,
+        telemetry.clipAfterShot,
+        telemetry.pelletCount);
+
+    WriteTelemetryLine(line);
+}
+
 void LogRejectedGlockPrimaryHold(CBasePlayer *pPlayer, const GlockRejectedShotTelemetry &telemetry)
 {
     if (!ExpDebugWeaponLogEnabled() || !ExpDebugWeaponLogRejectionsEnabled())
@@ -1929,4 +2066,250 @@ void FinalizeActive357PrimaryHitTelemetry()
     }
 
     ClearPending357PrimaryHit();
+}
+
+void BeginShotgunPrimaryShotContext(CBasePlayer *pPlayer, int pelletCount)
+{
+    ResetShotgunPrimaryShotContext();
+    if (pPlayer == NULL || pPlayer->pev == NULL)
+    {
+        return;
+    }
+
+    const SharedWeaponDamageProfile damageProfile = BuildShotgunPrimaryDamageProfile();
+    g_shotgunPrimaryShotContext.active = true;
+    g_shotgunPrimaryShotContext.attacker = pPlayer->pev;
+    g_shotgunPrimaryShotContext.attackerPlayer = pPlayer;
+    g_shotgunPrimaryShotContext.experimentalModeActive = ExpShotgunExperimentalModeEnabled();
+    g_shotgunPrimaryShotContext.baseDamagePerPellet = damageProfile.baseDamage;
+    g_shotgunPrimaryShotContext.headshotScale = damageProfile.headshotScale;
+    g_shotgunPrimaryShotContext.headshotLethal = damageProfile.headshotLethal;
+    g_shotgunPrimaryShotContext.pelletCount = pelletCount > 0 ? pelletCount : 1;
+    strncpy_s(g_shotgunPrimaryShotContext.profileName, sizeof(g_shotgunPrimaryShotContext.profileName), ExpShotgunProfileName(), _TRUNCATE);
+}
+
+void EndShotgunPrimaryShotContext()
+{
+    ResetShotgunPrimaryShotContext();
+}
+
+float GetActiveShotgunPrimaryBaseDamage(entvars_t *pevAttacker, float fallbackDamage)
+{
+    if (!HasMatchingActiveShotgunPrimaryShot(pevAttacker))
+    {
+        return fallbackDamage;
+    }
+
+    return g_shotgunPrimaryShotContext.baseDamagePerPellet;
+}
+
+bool ApplyActiveShotgunPrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAttacker, int hitgroup, float *pDamage)
+{
+    if (pDamage == NULL || pVictim == NULL || pVictim->pev == NULL || !HasMatchingActiveShotgunPrimaryShot(pevAttacker))
+    {
+        return false;
+    }
+
+    SharedWeaponDamageProfile damageProfile = {};
+    damageProfile.baseDamage = g_shotgunPrimaryShotContext.baseDamagePerPellet;
+    damageProfile.headshotScale = g_shotgunPrimaryShotContext.headshotScale;
+    damageProfile.headshotLethal = g_shotgunPrimaryShotContext.headshotLethal;
+
+    SharedWeaponTraceDamageResult traceResult = {};
+    if (!ApplySharedWeaponTraceDamage(
+            pVictim,
+            hitgroup,
+            damageProfile,
+            *pDamage,
+            &traceResult))
+    {
+        return false;
+    }
+
+    *pDamage = traceResult.damageToHealth;
+
+    ShotgunPrimaryVictimAggregate *aggregate = FindShotgunVictimAggregate(pVictim);
+    if (aggregate == NULL)
+    {
+        return true;
+    }
+
+    if (aggregate->pelletHits <= 0)
+    {
+        aggregate->victimHealthBefore = pVictim->pev->health;
+        aggregate->victimArmorKnown = traceResult.victimArmorKnown;
+        aggregate->victimArmorBefore = traceResult.victimArmorBefore;
+        aggregate->victimIsDummy = traceResult.dummyVictim;
+        aggregate->dummyHeadProtected = traceResult.dummyHeadProtected;
+        strncpy_s(aggregate->targetProfileName, sizeof(aggregate->targetProfileName), ExpGlockLabTargetProfileName(), _TRUNCATE);
+        aggregate->firstHitgroup = hitgroup;
+    }
+    else if (aggregate->firstHitgroup != hitgroup)
+    {
+        aggregate->mixedHitgroups = true;
+    }
+
+    aggregate->anyHeadshot = aggregate->anyHeadshot || traceResult.headshot;
+    aggregate->pelletHits += 1;
+    aggregate->headshotPellets += traceResult.headshot ? 1 : 0;
+    aggregate->headshotLethalPellets += traceResult.headshotLethalApplied ? 1 : 0;
+    aggregate->totalTraceDamage += traceResult.traceDamage;
+    aggregate->totalDamageToHealth += traceResult.damageToHealth;
+    aggregate->totalDamageAbsorbed += traceResult.damageAbsorbed;
+    aggregate->totalArmorDrain += traceResult.armorDrain;
+    aggregate->dummyArmorApplied = aggregate->dummyArmorApplied || traceResult.dummyArmorApplied;
+
+    return true;
+}
+
+void FinalizeActiveShotgunPrimaryHitTelemetry()
+{
+    if (!g_shotgunPrimaryShotContext.active)
+    {
+        return;
+    }
+
+    if (!ExpDebugWeaponLogEnabled())
+    {
+        return;
+    }
+
+    EnsureWeaponDebugLogOpen();
+
+    for (int index = 0; index < kMaxShotgunVictimsPerShot; ++index)
+    {
+        ShotgunPrimaryVictimAggregate *aggregate = &g_shotgunPrimaryShotContext.victims[index];
+        if (!aggregate->active || aggregate->victim == NULL || aggregate->victim->pev == NULL || aggregate->pelletHits <= 0)
+        {
+            continue;
+        }
+
+        CBaseEntity *pVictim = aggregate->victim;
+        const float healthAfter = pVictim->pev->health;
+        const float appliedDamage = aggregate->victimHealthBefore - healthAfter;
+        const bool armorKnown = aggregate->victimArmorKnown;
+        const float armorAfter = armorKnown ? pVictim->pev->armorvalue : 0.0f;
+        const float armorDamage = armorKnown ? (aggregate->victimArmorBefore - armorAfter) : 0.0f;
+        const bool dummyTelemetry = aggregate->victimIsDummy;
+        const bool headshot = aggregate->anyHeadshot;
+        const bool headshotLethalApplied = aggregate->headshotLethalPellets > 0;
+        const bool killedByShot = (aggregate->victimHealthBefore > 0.0f) &&
+            (healthAfter <= 0.0f || !pVictim->IsAlive());
+        const char *hitgroupName = aggregate->mixedHitgroups ? "mixed" : GetHitgroupName(aggregate->firstHitgroup);
+        const int hitgroupId = aggregate->mixedHitgroups ? HITGROUP_GENERIC : aggregate->firstHitgroup;
+
+        char timestamp[64];
+        char armorBefore[32];
+        char armorAfterText[32];
+        char armorDamageText[32];
+        char dummyArmorBefore[32];
+        char dummyArmorAfter[32];
+        char damageRaw[32];
+        char damageToHealth[32];
+        char damageAbsorbed[32];
+        char armorDrain[32];
+        char line[3072];
+
+        FormatTimestamp(timestamp, sizeof(timestamp));
+        FormatOptionalFloat(armorBefore, sizeof(armorBefore), armorKnown, aggregate->victimArmorBefore, 1);
+        FormatOptionalFloat(armorAfterText, sizeof(armorAfterText), armorKnown, armorAfter, 1);
+        FormatOptionalFloat(armorDamageText, sizeof(armorDamageText), armorKnown, armorDamage, 1);
+        FormatOptionalFloat(dummyArmorBefore, sizeof(dummyArmorBefore), dummyTelemetry, aggregate->victimArmorBefore, 1);
+        FormatOptionalFloat(dummyArmorAfter, sizeof(dummyArmorAfter), dummyTelemetry, armorAfter, 1);
+        FormatOptionalFloat(damageRaw, sizeof(damageRaw), dummyTelemetry, aggregate->totalTraceDamage, 4);
+        FormatOptionalFloat(damageToHealth, sizeof(damageToHealth), dummyTelemetry, aggregate->totalDamageToHealth, 4);
+        FormatOptionalFloat(damageAbsorbed, sizeof(damageAbsorbed), dummyTelemetry, aggregate->totalDamageAbsorbed, 4);
+        FormatOptionalFloat(armorDrain, sizeof(armorDrain), dummyTelemetry, aggregate->totalArmorDrain, 4);
+
+        _snprintf_s(
+            line,
+            sizeof(line),
+            _TRUNCATE,
+            "[weaponlog] type=hit ts=%s map=%s attacker=\"%s\" attacker_entindex=%d attacker_userid=%d victim=\"%s\" victim_entindex=%d victim_userid=%d victim_kind=%s victim_class=%s victim_model=\"%s\" weapon=shotgun fire=primary hitgroup=%s hitgroup_id=%d headshot=%d experimental=%d profile=\"%s\" target_profile=\"%s\" base_damage=%.4f trace_damage=%.4f applied_damage=%.4f health_before=%.1f health_after=%.1f armor_before=%s armor_after=%s armor_damage=%s damage_raw=%s damage_to_health=%s damage_absorbed=%s armor_drain=%s dummy_armor_before=%s dummy_armor_after=%s armor_applied=%d head_protected=%d headshot_lethal_active=%d headshot_lethal_applied=%d pellets_planned=%d pellets_hit=%d headshot_pellets=%d",
+            timestamp,
+            SanitizeLogValue(GetSafeMapName()).c_str(),
+            GetSafePlayerName(g_shotgunPrimaryShotContext.attackerPlayer).c_str(),
+            GetPlayerEntityIndex(g_shotgunPrimaryShotContext.attackerPlayer),
+            GetPlayerUserId(g_shotgunPrimaryShotContext.attackerPlayer),
+            GetSafeEntityName(pVictim).c_str(),
+            GetEntityIndex(pVictim),
+            GetEntityUserId(pVictim),
+            GetEntityKind(pVictim),
+            GetSafeEntityClassname(pVictim).c_str(),
+            GetSafeEntityModel(pVictim).c_str(),
+            hitgroupName,
+            hitgroupId,
+            headshot ? 1 : 0,
+            g_shotgunPrimaryShotContext.experimentalModeActive ? 1 : 0,
+            SanitizeLogValue(g_shotgunPrimaryShotContext.profileName).c_str(),
+            dummyTelemetry ? SanitizeLogValue(aggregate->targetProfileName).c_str() : "na",
+            g_shotgunPrimaryShotContext.baseDamagePerPellet,
+            aggregate->totalTraceDamage,
+            appliedDamage,
+            aggregate->victimHealthBefore,
+            healthAfter,
+            armorBefore,
+            armorAfterText,
+            armorDamageText,
+            damageRaw,
+            damageToHealth,
+            damageAbsorbed,
+            armorDrain,
+            dummyArmorBefore,
+            dummyArmorAfter,
+            aggregate->dummyArmorApplied ? 1 : 0,
+            aggregate->dummyHeadProtected ? 1 : 0,
+            g_shotgunPrimaryShotContext.headshotLethal ? 1 : 0,
+            headshotLethalApplied ? 1 : 0,
+            g_shotgunPrimaryShotContext.pelletCount,
+            aggregate->pelletHits,
+            aggregate->headshotPellets);
+        WriteTelemetryLine(line);
+
+        if (killedByShot)
+        {
+            char killLine[3072];
+            _snprintf_s(
+                killLine,
+                sizeof(killLine),
+                _TRUNCATE,
+                "[weaponlog] type=kill ts=%s map=%s attacker=\"%s\" attacker_entindex=%d attacker_userid=%d victim=\"%s\" victim_entindex=%d victim_userid=%d victim_kind=%s victim_class=%s victim_model=\"%s\" weapon=shotgun fire=primary hitgroup=%s hitgroup_id=%d headshot=%d experimental=%d profile=\"%s\" target_profile=\"%s\" trace_damage=%.4f applied_damage=%.4f health_before=%.1f health_after=%.1f armor_before=%s armor_after=%s damage_raw=%s damage_to_health=%s damage_absorbed=%s armor_drain=%s dummy_armor_after=%s armor_applied=%d head_protected=%d headshot_lethal_active=%d headshot_lethal_applied=%d pellets_planned=%d pellets_hit=%d headshot_pellets=%d",
+                timestamp,
+                SanitizeLogValue(GetSafeMapName()).c_str(),
+                GetSafePlayerName(g_shotgunPrimaryShotContext.attackerPlayer).c_str(),
+                GetPlayerEntityIndex(g_shotgunPrimaryShotContext.attackerPlayer),
+                GetPlayerUserId(g_shotgunPrimaryShotContext.attackerPlayer),
+                GetSafeEntityName(pVictim).c_str(),
+                GetEntityIndex(pVictim),
+                GetEntityUserId(pVictim),
+                GetEntityKind(pVictim),
+                GetSafeEntityClassname(pVictim).c_str(),
+                GetSafeEntityModel(pVictim).c_str(),
+                hitgroupName,
+                hitgroupId,
+                headshot ? 1 : 0,
+                g_shotgunPrimaryShotContext.experimentalModeActive ? 1 : 0,
+                SanitizeLogValue(g_shotgunPrimaryShotContext.profileName).c_str(),
+                dummyTelemetry ? SanitizeLogValue(aggregate->targetProfileName).c_str() : "na",
+                aggregate->totalTraceDamage,
+                appliedDamage,
+                aggregate->victimHealthBefore,
+                healthAfter,
+                armorBefore,
+                armorAfterText,
+                damageRaw,
+                damageToHealth,
+                damageAbsorbed,
+                armorDrain,
+                dummyArmorAfter,
+                aggregate->dummyArmorApplied ? 1 : 0,
+                aggregate->dummyHeadProtected ? 1 : 0,
+                g_shotgunPrimaryShotContext.headshotLethal ? 1 : 0,
+                headshotLethalApplied ? 1 : 0,
+                g_shotgunPrimaryShotContext.pelletCount,
+                aggregate->pelletHits,
+                aggregate->headshotPellets);
+            WriteTelemetryLine(killLine);
+        }
+    }
 }

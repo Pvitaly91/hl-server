@@ -64,6 +64,27 @@ void Apply357Defaults(ProjectDocument& document) {
     document.weapon357.labAutoswitch = true;
 }
 
+void ApplyShotgunDefaults(ProjectDocument& document) {
+    document.general.weaponUnderTest = L"shotgun";
+    document.shotgun.primaryEnabled = true;
+    document.shotgun.profileName = L"default";
+    document.shotgun.primaryBaseSpread = L"0.0600";
+    document.shotgun.primaryGroundMovePenalty = L"0.0300";
+    document.shotgun.primaryAirMovePenalty = L"0.0800";
+    document.shotgun.primaryDuckPenaltyScale = L"0.8000";
+    document.shotgun.primaryFirstShotAccuracy = false;
+    document.shotgun.primaryFirstShotSpeedThreshold = L"35.0";
+    document.shotgun.primarySpreadRecovery = L"0.8500";
+    document.shotgun.primaryMaxSpread = L"0.1200";
+    document.shotgun.primaryDamagePerPellet = L"5.0";
+    document.shotgun.primaryPelletCount = L"6";
+    document.shotgun.primaryHeadshotScale = L"1.5";
+    document.shotgun.primaryHeadshotLethal = false;
+    document.shotgun.labLoadout = true;
+    document.shotgun.labAmmo = L"48";
+    document.shotgun.labAutoswitch = true;
+}
+
 void ApplyDummyDefaults(ProjectDocument& document) {
     document.targetDummy.enabled = true;
     document.targetDummy.targetProfileName = L"unarmored";
@@ -243,6 +264,49 @@ void Apply357Preset(ProjectDocument& document, const std::wstring& presetName) {
         document.weapon357.primaryHeadshotScale = L"4.0";
         document.weapon357.primaryHeadshotLethal = true;
         document.weapon357.labAmmo = L"48";
+    }
+}
+
+void ApplyShotgunPreset(ProjectDocument& document, const std::wstring& presetName) {
+    ApplyShotgunDefaults(document);
+
+    if (presetName == L"default") {
+        return;
+    }
+
+    if (presetName == L"close_quickkill") {
+        document.shotgun.profileName = L"close_quickkill";
+        document.shotgun.primaryBaseSpread = L"0.0450";
+        document.shotgun.primaryGroundMovePenalty = L"0.0220";
+        document.shotgun.primaryAirMovePenalty = L"0.0700";
+        document.shotgun.primaryDuckPenaltyScale = L"0.7500";
+        document.shotgun.primaryFirstShotAccuracy = true;
+        document.shotgun.primaryFirstShotSpeedThreshold = L"20.0";
+        document.shotgun.primarySpreadRecovery = L"0.7000";
+        document.shotgun.primaryMaxSpread = L"0.0900";
+        document.shotgun.primaryDamagePerPellet = L"8.0";
+        document.shotgun.primaryPelletCount = L"8";
+        document.shotgun.primaryHeadshotScale = L"1.7";
+        document.shotgun.primaryHeadshotLethal = false;
+        document.shotgun.labAmmo = L"60";
+        return;
+    }
+
+    if (presetName == L"precision_test") {
+        document.shotgun.profileName = L"precision_test";
+        document.shotgun.primaryBaseSpread = L"0.0280";
+        document.shotgun.primaryGroundMovePenalty = L"0.0160";
+        document.shotgun.primaryAirMovePenalty = L"0.0500";
+        document.shotgun.primaryDuckPenaltyScale = L"0.7000";
+        document.shotgun.primaryFirstShotAccuracy = true;
+        document.shotgun.primaryFirstShotSpeedThreshold = L"18.0";
+        document.shotgun.primarySpreadRecovery = L"0.6500";
+        document.shotgun.primaryMaxSpread = L"0.0600";
+        document.shotgun.primaryDamagePerPellet = L"6.0";
+        document.shotgun.primaryPelletCount = L"4";
+        document.shotgun.primaryHeadshotScale = L"1.6";
+        document.shotgun.primaryHeadshotLethal = false;
+        document.shotgun.labAmmo = L"48";
     }
 }
 
