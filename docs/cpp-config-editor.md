@@ -133,11 +133,13 @@ Use this loop when the server is already running and you want to iterate quickly
 
 1. Edit the values in `HlConfigEditorCpp`.
 2. Quick-export the cfg directly into `<HalfLifeRoot>\hlserver_testbed\`.
-3. In HLDS, run `exp_cfg_apply editor_glock_simple.cfg`.
-4. Rebuild the dummy with `exp_target_respawn`, or use `exp_lab_apply editor_glock_simple.cfg` to do both at once.
-5. Switch target presets with `exp_target_profile unarmored`, `exp_target_profile vest`, or `exp_target_profile vest_headprotected`.
-6. Inspect the current live state with `exp_cfg_status` and `exp_target_status`.
-7. Test in-game and then review the weapon log or analyzer output.
+3. Join the live server and stand in the firing lane you want to reuse.
+4. Run `exp_target_mark` once to save a reliable target spot for the current map and session.
+5. In HLDS, run `exp_cfg_apply editor_glock_simple.cfg`, or use `exp_lab_apply editor_glock_simple.cfg` to apply the cfg and rebuild the dummy in one command.
+6. Rebuild the dummy with `exp_target_respawn`, move it back to the saved spot with `exp_target_use_saved`, or force a fresh anchor-front placement with `exp_target_tp_front`.
+7. Switch target presets with `exp_target_profile unarmored`, `exp_target_profile vest`, or `exp_target_profile vest_headprotected`.
+8. Inspect the current live state with `exp_cfg_status` and `exp_target_status`.
+9. Test in-game and then review the weapon log or analyzer output.
 
 Live lab console commands:
 
@@ -147,10 +149,15 @@ Live lab console commands:
 - `exp_lab_apply <cfg_name_or_path>` applies the cfg and respawns the current dummy with one summary.
 - `exp_target_spawn` enables and spawns the standing dummy.
 - `exp_target_clear` removes the standing dummy and disables automatic respawn.
-- `exp_target_respawn` rebuilds the dummy using the current profile and saved placement.
-- `exp_target_status` prints the current dummy profile, placement, anchor, and entity state.
+- `exp_target_mark` stores a session-local saved target spot for the current map.
+- `exp_target_unmark` clears the saved target spot for the current map.
+- `exp_target_use_saved` immediately moves or respawns the dummy onto the saved target spot.
+- `exp_target_respawn` rebuilds the dummy using saved spot, current anchor search, and last known good transform fallback.
+- `exp_target_status` prints the current dummy profile, saved spot, last known good transform, anchor, last failure, and respawn viability.
 - `exp_target_tp_front` moves or respawns the dummy in front of the current live player anchor.
 - `exp_target_profile <name>` switches between `unarmored`, `vest`, and `vest_headprotected`, then refreshes the dummy when possible.
+
+The live dummy now forces `mp_allowmonsters 1` before spawning, because the backing `monster_generic` entity is removed immediately on deathmatch maps when monster spawning is disabled.
 
 ## JSON vs CFG
 

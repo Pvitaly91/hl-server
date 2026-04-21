@@ -947,7 +947,7 @@ void LogLiveLabConsoleMessage(const char *line)
     fflush(g_weaponDebugLogFile);
 }
 
-void LogGlockLabDummySpawn(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, bool respawn, const Vector &origin, const Vector &angles)
+void LogGlockLabDummySpawn(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, bool respawn, const Vector &origin, const Vector &angles, const char *source, const char *candidate)
 {
     if (!ExpDebugWeaponLogEnabled())
     {
@@ -966,7 +966,7 @@ void LogGlockLabDummySpawn(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, bool
         line,
         sizeof(line),
         _TRUNCATE,
-        "[weaponlog] type=%s ts=%s map=%s dummy=\"%s\" entindex=%d dummy_class=%s dummy_model=\"%s\" health=%.1f autorespawn=%d respawn_delay=%.2f spawn_distance=%.1f anchor=\"%s\" anchor_entindex=%d anchor_userid=%d origin=\"%s\" yaw=%.1f profile=\"%s\" target_profile=\"%s\" spawn_health=%.1f spawn_armor=%.1f head_protected=%d armor_health_fraction=%.3f armor_drain_scale=%.3f",
+        "[weaponlog] type=%s ts=%s map=%s dummy=\"%s\" entindex=%d dummy_class=%s dummy_model=\"%s\" health=%.1f autorespawn=%d respawn_delay=%.2f spawn_distance=%.1f anchor=\"%s\" anchor_entindex=%d anchor_userid=%d origin=\"%s\" yaw=%.1f source=\"%s\" candidate=\"%s\" profile=\"%s\" target_profile=\"%s\" spawn_health=%.1f spawn_armor=%.1f head_protected=%d armor_health_fraction=%.3f armor_drain_scale=%.3f",
         respawn ? "dummy_respawn" : "dummy_spawn",
         timestamp,
         SanitizeLogValue(GetSafeMapName()).c_str(),
@@ -983,6 +983,8 @@ void LogGlockLabDummySpawn(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, bool
         GetPlayerUserId(pAnchorPlayer),
         originValue,
         angles.y,
+        SanitizeLogValue(source).c_str(),
+        SanitizeLogValue(candidate).c_str(),
         SanitizeLogValue(GetSessionProfileName()).c_str(),
         SanitizeLogValue(ExpGlockLabTargetProfileName()).c_str(),
         pDummy != NULL && pDummy->pev != NULL ? pDummy->pev->max_health : ExpGlockLabDummyHealth(),
@@ -996,7 +998,46 @@ void LogGlockLabDummySpawn(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, bool
     WriteTelemetryLine(telemetryLine.c_str());
 }
 
-void LogGlockLabDummyReposition(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, const Vector &origin, const Vector &angles, const char *reason)
+void LogGlockLabDummySpawnFailed(CBasePlayer *pAnchorPlayer, const char *source, const char *candidate, const char *code, const char *reason, const Vector *pOrigin, const Vector *pAngles)
+{
+    if (!ExpDebugWeaponLogEnabled())
+    {
+        return;
+    }
+
+    EnsureWeaponDebugLogOpen();
+
+    char timestamp[64];
+    char originValue[64];
+    char line[2048];
+    FormatTimestamp(timestamp, sizeof(timestamp));
+    FormatVector3(originValue, sizeof(originValue), pOrigin != NULL ? *pOrigin : g_vecZero);
+
+    _snprintf_s(
+        line,
+        sizeof(line),
+        _TRUNCATE,
+        "[weaponlog] type=dummy_spawn_failed ts=%s map=%s anchor=\"%s\" anchor_entindex=%d anchor_userid=%d source=\"%s\" candidate=\"%s\" code=\"%s\" reason=\"%s\" origin=\"%s\" yaw=%.1f profile=\"%s\" target_profile=\"%s\"",
+        timestamp,
+        SanitizeLogValue(GetSafeMapName()).c_str(),
+        GetSafePlayerName(pAnchorPlayer).c_str(),
+        GetPlayerEntityIndex(pAnchorPlayer),
+        GetPlayerUserId(pAnchorPlayer),
+        SanitizeLogValue(source).c_str(),
+        SanitizeLogValue(candidate).c_str(),
+        SanitizeLogValue(code).c_str(),
+        SanitizeLogValue(reason).c_str(),
+        originValue,
+        pAngles != NULL ? pAngles->y : 0.0f,
+        SanitizeLogValue(GetSessionProfileName()).c_str(),
+        SanitizeLogValue(ExpGlockLabTargetProfileName()).c_str());
+
+    std::string telemetryLine = line;
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "weapon_under_test", ExpWeaponUnderTest());
+    WriteTelemetryLine(telemetryLine.c_str());
+}
+
+void LogGlockLabDummyMark(const char *action, CBasePlayer *pAnchorPlayer, const Vector &origin, const Vector &angles, const char *details)
 {
     if (!ExpDebugWeaponLogEnabled())
     {
@@ -1015,7 +1056,44 @@ void LogGlockLabDummyReposition(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer,
         line,
         sizeof(line),
         _TRUNCATE,
-        "[weaponlog] type=dummy_reposition ts=%s map=%s dummy=\"%s\" entindex=%d dummy_class=%s dummy_model=\"%s\" reason=\"%s\" health=%.1f armor=%.1f head_protected=%d anchor=\"%s\" anchor_entindex=%d anchor_userid=%d origin=\"%s\" yaw=%.1f profile=\"%s\" target_profile=\"%s\"",
+        "[weaponlog] type=%s ts=%s map=%s anchor=\"%s\" anchor_entindex=%d anchor_userid=%d origin=\"%s\" yaw=%.1f details=\"%s\" profile=\"%s\" target_profile=\"%s\"",
+        action != NULL && action[0] != '\0' ? action : "target_mark",
+        timestamp,
+        SanitizeLogValue(GetSafeMapName()).c_str(),
+        GetSafePlayerName(pAnchorPlayer).c_str(),
+        GetPlayerEntityIndex(pAnchorPlayer),
+        GetPlayerUserId(pAnchorPlayer),
+        originValue,
+        angles.y,
+        SanitizeLogValue(details).c_str(),
+        SanitizeLogValue(GetSessionProfileName()).c_str(),
+        SanitizeLogValue(ExpGlockLabTargetProfileName()).c_str());
+
+    std::string telemetryLine = line;
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "weapon_under_test", ExpWeaponUnderTest());
+    WriteTelemetryLine(telemetryLine.c_str());
+}
+
+void LogGlockLabDummyReposition(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, const Vector &origin, const Vector &angles, const char *reason, const char *source, const char *candidate)
+{
+    if (!ExpDebugWeaponLogEnabled())
+    {
+        return;
+    }
+
+    EnsureWeaponDebugLogOpen();
+
+    char timestamp[64];
+    char originValue[64];
+    char line[2048];
+    FormatTimestamp(timestamp, sizeof(timestamp));
+    FormatVector3(originValue, sizeof(originValue), origin);
+
+    _snprintf_s(
+        line,
+        sizeof(line),
+        _TRUNCATE,
+        "[weaponlog] type=dummy_reposition ts=%s map=%s dummy=\"%s\" entindex=%d dummy_class=%s dummy_model=\"%s\" reason=\"%s\" source=\"%s\" candidate=\"%s\" health=%.1f armor=%.1f head_protected=%d anchor=\"%s\" anchor_entindex=%d anchor_userid=%d origin=\"%s\" yaw=%.1f profile=\"%s\" target_profile=\"%s\"",
         timestamp,
         SanitizeLogValue(GetSafeMapName()).c_str(),
         GetSafeEntityName(pDummy).c_str(),
@@ -1023,6 +1101,8 @@ void LogGlockLabDummyReposition(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer,
         GetSafeEntityClassname(pDummy).c_str(),
         GetSafeEntityModel(pDummy).c_str(),
         SanitizeLogValue(reason).c_str(),
+        SanitizeLogValue(source).c_str(),
+        SanitizeLogValue(candidate).c_str(),
         pDummy != NULL && pDummy->pev != NULL ? pDummy->pev->health : ExpGlockLabDummyHealth(),
         pDummy != NULL && pDummy->pev != NULL ? pDummy->pev->armorvalue : ExpGlockLabDummyArmor(),
         ExpGlockLabDummyHeadProtected() ? 1 : 0,

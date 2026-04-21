@@ -155,11 +155,13 @@ The fastest day-to-day tuning loop is now:
 
 1. Edit values in `HlConfigEditorCpp`.
 2. `Quick Export to Live Mod` so the cfg lands directly in `<HalfLifeRoot>\hlserver_testbed\`.
-3. In the running HLDS console, apply it with `exp_cfg_apply editor_glock_simple.cfg`.
-4. Rebuild the current dummy with `exp_target_respawn`, or use `exp_lab_apply editor_glock_simple.cfg` to do both in one command.
-5. Change dummy presets on the fly with `exp_target_profile unarmored`, `exp_target_profile vest`, or `exp_target_profile vest_headprotected`.
-6. Inspect state any time with `exp_cfg_status` and `exp_target_status`.
-7. Test in-game, then review the normal weapon log and analyzer output.
+3. Join the live server and stand where you want the dummy loop to anchor.
+4. Run `exp_target_mark` once to save a reliable target spot for the current map and session.
+5. Apply your tuning cfg with `exp_cfg_apply editor_glock_simple.cfg`, or use `exp_lab_apply editor_glock_simple.cfg` to apply the cfg and rebuild the dummy in one command.
+6. Rebuild the dummy with `exp_target_respawn`, move it back to the saved spot with `exp_target_use_saved`, or force a fresh front placement with `exp_target_tp_front`.
+7. Change dummy presets on the fly with `exp_target_profile unarmored`, `exp_target_profile vest`, or `exp_target_profile vest_headprotected`.
+8. Inspect state any time with `exp_cfg_status` and `exp_target_status`.
+9. Test in-game, then review the normal weapon log and analyzer output.
 
 Live lab console commands:
 
@@ -169,10 +171,15 @@ Live lab console commands:
 - `exp_lab_apply <cfg_name_or_path>` applies the cfg and then respawns the current target with a single summary.
 - `exp_target_spawn` enables and spawns the standing dummy.
 - `exp_target_clear` removes the standing dummy and disables automatic respawn.
-- `exp_target_respawn` rebuilds the dummy using the current target profile and saved placement.
-- `exp_target_status` prints the current dummy profile, placement, anchor player, and entity state.
+- `exp_target_mark` saves a reliable target spot for the current map and session. If a dummy already exists, it marks the dummy's current transform.
+- `exp_target_unmark` clears the saved target spot for the current map.
+- `exp_target_use_saved` immediately moves or respawns the dummy at the saved target spot.
+- `exp_target_respawn` rebuilds the dummy, preferring the saved map spot first, then the current anchor search, then the last known good transform.
+- `exp_target_status` prints the current dummy profile, anchor state, saved spot, last known good transform, last spawn failure, and whether respawn is currently possible.
 - `exp_target_tp_front` moves or respawns the dummy in front of the current live player anchor.
 - `exp_target_profile <name>` switches between `unarmored`, `vest`, and `vest_headprotected`, then refreshes the target when possible.
+
+The live dummy now forces `mp_allowmonsters 1` before spawning, because the underlying server-side `monster_generic` entity is otherwise removed immediately on deathmatch maps.
 
 Launch live with a Glock cfg already exported into the active live mod root:
 
@@ -336,6 +343,9 @@ Useful server console commands:
 ```text
 exp_target_spawn
 exp_target_clear
+exp_target_mark
+exp_target_unmark
+exp_target_use_saved
 exp_target_respawn
 exp_target_status
 exp_target_tp_front
@@ -347,11 +357,17 @@ exp_target_profile vest_headprotected
 What the commands do:
 
 - `exp_target_spawn` enables the target and spawns it now if a live player anchor or saved target position is available.
-- `exp_target_clear` removes the current target and disables automatic target spawning until you enable it again.
-- `exp_target_respawn` recreates the target immediately, preferring the current player-facing position when a live anchor exists.
-- `exp_target_status` prints the current target state, profile, placement settings, saved target spot, and active anchor to the server console.
+- `exp_target_clear` removes the current target and disables automatic target spawning until you enable it again. It does not erase the saved target spot.
+- `exp_target_mark` stores a session-local saved target spot for the current map so respawn no longer depends on reconnect timing.
+- `exp_target_unmark` clears the saved target spot when you want to mark a different area.
+- `exp_target_use_saved` forces the dummy back onto the saved spot immediately.
+- `exp_target_respawn` recreates the target immediately, preferring the saved map spot first, then a fresh anchor search, then the last known good transform.
+- `exp_target_status` prints the current target state, profile, placement settings, saved target spot, last known good transform, active anchor, and the latest placement failure.
 - `exp_target_tp_front` moves the current target, or spawns a fresh one, into a predictable position in front of the live player.
 - `exp_target_profile <name>` switches the built-in live profile and refreshes the target immediately when practical.
+
+Implementation note:
+The server-side dummy forces `mp_allowmonsters 1` when it needs to spawn `monster_generic`, so the target loop still works on live deathmatch maps such as `crossfire`.
 
 Built-in live profiles:
 
@@ -362,14 +378,16 @@ Built-in live profiles:
 - `vest_headprotected`
   Armored target with protected head enabled.
 
-Practical live flow:
+Reliable live target workflow:
 
 1. Launch `scripts\play-target-test-live.bat`.
 2. Join the live session on `-game hlserver_testbed`.
-3. Run `exp_target_status` once to confirm the anchor, current profile, and saved target spot.
-4. Use `exp_target_tp_front` if you want the standing target reset directly in front of you.
-5. Use `exp_target_profile unarmored`, `vest`, or `vest_headprotected` before comparing body shots, headshots, and protected-head behavior.
-6. Use `exp_target_respawn` after a kill when you want a clean full-health target immediately.
+3. Stand in a good firing lane and run `exp_target_mark` once.
+4. Run `exp_target_status` to confirm the saved spot, current anchor, and next respawn source.
+5. Use `exp_target_respawn` after a kill when you want a clean full-health target immediately.
+6. Use `exp_target_profile unarmored`, `vest`, or `vest_headprotected` before comparing body shots, headshots, and protected-head behavior.
+7. Use `exp_lab_apply editor_glock_simple.cfg` when you want to refresh the current cfg and rebuild the dummy in one step.
+8. If respawn fails, rerun `exp_target_status` and inspect the explicit saved-spot, anchor, and last-failure lines before remarking with `exp_target_mark`.
 
 After the session, analyze the latest telemetry:
 

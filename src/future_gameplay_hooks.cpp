@@ -25,6 +25,11 @@ const float kDefaultGlockLabDummySpawnDistance = 256.0f;
 const float kGlockLabDummyRetryDelay = 1.0f;
 const float kGlockLabDummyPlacementSearchStep = 32.0f;
 const float kGlockLabDummyPlacementMinDistance = 64.0f;
+const float kGlockLabDummyPlacementSideStep = 16.0f;
+const float kGlockLabDummyPlacementForwardStep = 16.0f;
+const float kGlockLabDummyPlacementVerticalStep = 18.0f;
+const float kGlockLabDummyPlacementWideStep = 64.0f;
+const float kGlockLabDummyPlacementLongStep = 96.0f;
 const char *kDefaultGlockLabDummyModel = "models/barney.mdl";
 const char *kGlockLabDummyDisplayName = "Damage Dummy";
 const size_t kMaxLiveCfgRequestLength = 512;
@@ -36,6 +41,9 @@ const char *kAllowedGlockLabDummyModels[] = {
     "models/scientist.mdl"};
 const char *kGlockLabDummyClassname = "glock_lab_dummy";
 const char *kGlockLabDummyTargetname = "exp_glock_lab_dummy";
+const char *kLabDummySourceSavedSpot = "saved_spot";
+const char *kLabDummySourceCurrentAnchor = "current_anchor";
+const char *kLabDummySourceLastGood = "last_known_good";
 
 struct LiveCfgState
 {
@@ -72,10 +80,77 @@ struct LabDummyProfileDefinition
     const char *description;
 };
 
+struct LabDummyTransformMemory
+{
+    bool valid;
+    Vector origin;
+    Vector angles;
+    char source[32];
+    char candidate[64];
+};
+
+struct LabDummySpawnSelection
+{
+    Vector origin;
+    Vector angles;
+    CBasePlayer *anchorPlayer;
+    char source[32];
+    char candidate[64];
+};
+
+struct LabDummyFailureInfo
+{
+    char code[64];
+    char source[32];
+    char candidate[64];
+    char reason[512];
+};
+
+struct LabDummyPlacementCandidate
+{
+    const char *label;
+    float forwardOffset;
+    float rightOffset;
+    float upOffset;
+};
+
 const LabDummyProfileDefinition kBuiltInLabDummyProfiles[] = {
     {"unarmored", "0", "0", "0.5", "1.0", "baseline unarmored target"},
     {"vest", "100", "0", "0.5", "1.0", "torso-armored target"},
     {"vest_headprotected", "100", "1", "0.5", "1.0", "armored target with protected head"}};
+
+const LabDummyPlacementCandidate kLabDummyPlacementCandidates[] = {
+    {"center", 0.0f, 0.0f, 0.0f},
+    {"right_16", 0.0f, kGlockLabDummyPlacementSideStep, 0.0f},
+    {"left_16", 0.0f, -kGlockLabDummyPlacementSideStep, 0.0f},
+    {"forward_16", kGlockLabDummyPlacementForwardStep, 0.0f, 0.0f},
+    {"back_16", -kGlockLabDummyPlacementForwardStep, 0.0f, 0.0f},
+    {"up_18", 0.0f, 0.0f, kGlockLabDummyPlacementVerticalStep},
+    {"down_18", 0.0f, 0.0f, -kGlockLabDummyPlacementVerticalStep},
+    {"right_32", 0.0f, kGlockLabDummyPlacementSideStep * 2.0f, 0.0f},
+    {"left_32", 0.0f, -kGlockLabDummyPlacementSideStep * 2.0f, 0.0f},
+    {"forward_32", kGlockLabDummyPlacementForwardStep * 2.0f, 0.0f, 0.0f},
+    {"back_32", -kGlockLabDummyPlacementForwardStep * 2.0f, 0.0f, 0.0f},
+    {"right_16_up_18", 0.0f, kGlockLabDummyPlacementSideStep, kGlockLabDummyPlacementVerticalStep},
+    {"left_16_up_18", 0.0f, -kGlockLabDummyPlacementSideStep, kGlockLabDummyPlacementVerticalStep},
+    {"forward_16_up_18", kGlockLabDummyPlacementForwardStep, 0.0f, kGlockLabDummyPlacementVerticalStep},
+    {"back_16_up_18", -kGlockLabDummyPlacementForwardStep, 0.0f, kGlockLabDummyPlacementVerticalStep},
+    {"right_64", 0.0f, kGlockLabDummyPlacementWideStep, 0.0f},
+    {"left_64", 0.0f, -kGlockLabDummyPlacementWideStep, 0.0f},
+    {"forward_64", kGlockLabDummyPlacementWideStep, 0.0f, 0.0f},
+    {"back_64", -kGlockLabDummyPlacementWideStep, 0.0f, 0.0f},
+    {"right_96", 0.0f, kGlockLabDummyPlacementLongStep, 0.0f},
+    {"left_96", 0.0f, -kGlockLabDummyPlacementLongStep, 0.0f},
+    {"forward_96", kGlockLabDummyPlacementLongStep, 0.0f, 0.0f},
+    {"back_96", -kGlockLabDummyPlacementLongStep, 0.0f, 0.0f},
+    {"right_64_back_64", -kGlockLabDummyPlacementWideStep, kGlockLabDummyPlacementWideStep, 0.0f},
+    {"left_64_back_64", -kGlockLabDummyPlacementWideStep, -kGlockLabDummyPlacementWideStep, 0.0f},
+    {"right_64_forward_64", kGlockLabDummyPlacementWideStep, kGlockLabDummyPlacementWideStep, 0.0f},
+    {"left_64_forward_64", kGlockLabDummyPlacementWideStep, -kGlockLabDummyPlacementWideStep, 0.0f},
+    {"right_96_up_18", 0.0f, kGlockLabDummyPlacementLongStep, kGlockLabDummyPlacementVerticalStep},
+    {"left_96_up_18", 0.0f, -kGlockLabDummyPlacementLongStep, kGlockLabDummyPlacementVerticalStep},
+    {"back_64_up_18", -kGlockLabDummyPlacementWideStep, 0.0f, kGlockLabDummyPlacementVerticalStep},
+    {"back_96_up_18", -kGlockLabDummyPlacementLongStep, 0.0f, kGlockLabDummyPlacementVerticalStep}};
 
 cvar_t sv_exp_pistol_tapfire = {"sv_exp_pistol_tapfire", "0", FCVAR_SERVER};
 cvar_t sv_exp_move_spread_scale = {"sv_exp_move_spread_scale", "0.0", FCVAR_SERVER};
@@ -134,9 +209,10 @@ bool g_futureGameplayCvarsRegistered = false;
 bool g_futureGameplayCommandsRegistered = false;
 EHANDLE g_glockLabDummy;
 EHANDLE g_glockLabDummyAnchorPlayer;
-Vector g_glockLabDummySpawnOrigin = g_vecZero;
-Vector g_glockLabDummySpawnAngles = g_vecZero;
-bool g_glockLabDummyHasSpawnTransform = false;
+LabDummyTransformMemory g_glockLabDummySavedSpot = {};
+LabDummyTransformMemory g_glockLabDummyLastGoodTransform = {};
+LabDummyFailureInfo g_glockLabDummyLastSpawnFailure = {};
+char g_glockLabDummyLastFailureAt[64] = "";
 bool g_glockLabDummyRespawnPending = false;
 float g_glockLabDummyRespawnTime = 0.0f;
 float g_glockLabDummyRetryTime = 0.0f;
@@ -144,6 +220,7 @@ char g_futureHooksMapName[64] = "";
 LiveCfgState g_liveCfgState = {};
 
 void PrintLabDummyStatus();
+bool EnsureLabDummyMonsterSpawningEnabled(LabDummyFailureInfo *failure, const LabDummySpawnSelection *selection);
 
 float GetNonNegativeCvarValue(const cvar_t &cvar)
 {
@@ -239,6 +316,86 @@ int GetPlayerUserId(CBasePlayer *pPlayer)
 void FormatVector3(char *buffer, size_t bufferSize, const Vector &value)
 {
     _snprintf_s(buffer, bufferSize, _TRUNCATE, "%.1f %.1f %.1f", value.x, value.y, value.z);
+}
+
+void ClearLabDummyFailureInfo(LabDummyFailureInfo *failure)
+{
+    if (failure == NULL)
+    {
+        return;
+    }
+
+    failure->code[0] = '\0';
+    failure->source[0] = '\0';
+    failure->candidate[0] = '\0';
+    failure->reason[0] = '\0';
+}
+
+void SetLabDummyFailureInfo(LabDummyFailureInfo *failure, const char *code, const char *source, const char *candidate, const char *reason)
+{
+    if (failure == NULL)
+    {
+        return;
+    }
+
+    strncpy_s(failure->code, sizeof(failure->code), code != NULL ? code : "", _TRUNCATE);
+    strncpy_s(failure->source, sizeof(failure->source), source != NULL ? source : "", _TRUNCATE);
+    strncpy_s(failure->candidate, sizeof(failure->candidate), candidate != NULL ? candidate : "", _TRUNCATE);
+    strncpy_s(failure->reason, sizeof(failure->reason), reason != NULL ? reason : "", _TRUNCATE);
+}
+
+void ClearLabDummyTransformMemory(LabDummyTransformMemory *memory)
+{
+    if (memory == NULL)
+    {
+        return;
+    }
+
+    memory->valid = false;
+    memory->origin = g_vecZero;
+    memory->angles = g_vecZero;
+    memory->source[0] = '\0';
+    memory->candidate[0] = '\0';
+}
+
+void StoreLabDummyTransformMemory(LabDummyTransformMemory *memory, const Vector &origin, const Vector &angles, const char *source, const char *candidate)
+{
+    if (memory == NULL)
+    {
+        return;
+    }
+
+    memory->valid = true;
+    memory->origin = origin;
+    memory->angles = angles;
+    strncpy_s(memory->source, sizeof(memory->source), source != NULL ? source : "", _TRUNCATE);
+    strncpy_s(memory->candidate, sizeof(memory->candidate), candidate != NULL ? candidate : "", _TRUNCATE);
+}
+
+void AppendLabDummyFailureAttempt(char *buffer, size_t bufferSize, const LabDummyFailureInfo &failure)
+{
+    if (buffer == NULL || bufferSize == 0 || failure.reason[0] == '\0')
+    {
+        return;
+    }
+
+    if (buffer[0] != '\0')
+    {
+        strncat_s(buffer, bufferSize, "; ", _TRUNCATE);
+    }
+
+    char attempt[768];
+    _snprintf_s(
+        attempt,
+        sizeof(attempt),
+        _TRUNCATE,
+        "%s[%s%s%s]: %s",
+        failure.source[0] != '\0' ? failure.source : "target",
+        failure.code[0] != '\0' ? failure.code : "failed",
+        failure.candidate[0] != '\0' ? "/" : "",
+        failure.candidate[0] != '\0' ? failure.candidate : "",
+        failure.reason);
+    strncat_s(buffer, bufferSize, attempt, _TRUNCATE);
 }
 
 void PrintLabDummyConsoleLine(const char *format, ...)
@@ -838,12 +995,28 @@ void ResetGlockLabDummyState()
 {
     g_glockLabDummy = NULL;
     g_glockLabDummyAnchorPlayer = NULL;
-    g_glockLabDummySpawnOrigin = g_vecZero;
-    g_glockLabDummySpawnAngles = g_vecZero;
-    g_glockLabDummyHasSpawnTransform = false;
     g_glockLabDummyRespawnPending = false;
     g_glockLabDummyRespawnTime = 0.0f;
     g_glockLabDummyRetryTime = 0.0f;
+    ClearLabDummyTransformMemory(&g_glockLabDummySavedSpot);
+    ClearLabDummyTransformMemory(&g_glockLabDummyLastGoodTransform);
+    ClearLabDummyFailureInfo(&g_glockLabDummyLastSpawnFailure);
+    g_glockLabDummyLastFailureAt[0] = '\0';
+}
+
+void ClearGlockLabDummyRuntimeState()
+{
+    g_glockLabDummy = NULL;
+    g_glockLabDummyAnchorPlayer = NULL;
+    g_glockLabDummyRespawnPending = false;
+    g_glockLabDummyRespawnTime = 0.0f;
+    g_glockLabDummyRetryTime = 0.0f;
+}
+
+void ClearGlockLabDummyFailureState()
+{
+    ClearLabDummyFailureInfo(&g_glockLabDummyLastSpawnFailure);
+    g_glockLabDummyLastFailureAt[0] = '\0';
 }
 
 void RefreshFutureHooksMapState()
@@ -917,16 +1090,14 @@ CBasePlayer *FindCurrentLiveLabDummyAnchorPlayer()
     return GetTrackedLabDummyAnchorPlayer(FindFirstLivePlayer());
 }
 
-void RememberLabDummySpawnTransform(CBaseEntity *pDummy)
+void RememberLabDummyLastGoodTransform(CBaseEntity *pDummy, const char *source, const char *candidate)
 {
     if (pDummy == NULL || pDummy->pev == NULL)
     {
         return;
     }
 
-    g_glockLabDummySpawnOrigin = pDummy->pev->origin;
-    g_glockLabDummySpawnAngles = pDummy->pev->angles;
-    g_glockLabDummyHasSpawnTransform = true;
+    StoreLabDummyTransformMemory(&g_glockLabDummyLastGoodTransform, pDummy->pev->origin, pDummy->pev->angles, source, candidate);
 }
 
 CBaseEntity *FindExistingLabDummyEntity()
@@ -976,7 +1147,7 @@ CBaseEntity *GetTrackedLabDummyEntity()
     {
         RemoveExtraLabDummyEntities(pDummy, "dedupe");
         g_glockLabDummy = pDummy;
-        RememberLabDummySpawnTransform(pDummy);
+        RememberLabDummyLastGoodTransform(pDummy, g_glockLabDummyLastGoodTransform.source, g_glockLabDummyLastGoodTransform.candidate);
         return pDummy;
     }
 
@@ -987,16 +1158,144 @@ CBaseEntity *GetTrackedLabDummyEntity()
 void ClearAllLabDummyEntities(const char *reason)
 {
     RemoveLabDummyEntities(reason);
-    ResetGlockLabDummyState();
+    ClearGlockLabDummyRuntimeState();
 }
 
-bool TryBuildLabDummySpawnTransformAtDistance(CBasePlayer *pPlayer, float spawnDistance, Vector *pOrigin, Vector *pAngles, char *failureReason, size_t failureReasonSize)
+edict_t *GetLabDummyPlacementIgnoreEdict(CBasePlayer *pAnchorPlayer)
+{
+    CBaseEntity *pDummy = (CBaseEntity *)g_glockLabDummy;
+    if (IsLabDummyEntityInternal(pDummy) && pDummy->edict() != NULL)
+    {
+        return pDummy->edict();
+    }
+
+    return pAnchorPlayer != NULL ? pAnchorPlayer->edict() : NULL;
+}
+
+bool TryValidateLabDummyExactTransform(const Vector &origin, CBasePlayer *pIgnorePlayer, char *failureCode, size_t failureCodeSize, char *failureReason, size_t failureReasonSize)
+{
+    edict_t *ignoreEdict = GetLabDummyPlacementIgnoreEdict(pIgnorePlayer);
+
+    TraceResult groundTrace;
+    UTIL_TraceLine(
+        origin + Vector(0.0f, 0.0f, 36.0f),
+        origin - Vector(0.0f, 0.0f, 72.0f),
+        ignore_monsters,
+        ignoreEdict,
+        &groundTrace);
+
+    if (groundTrace.fStartSolid || groundTrace.fAllSolid)
+    {
+        strcpy_s(failureCode, failureCodeSize, "blocked_ground");
+        strcpy_s(failureReason, failureReasonSize, "ground trace started inside solid space");
+        return false;
+    }
+
+    if (groundTrace.flFraction == 1.0f)
+    {
+        strcpy_s(failureCode, failureCodeSize, "no_floor");
+        strcpy_s(failureReason, failureReasonSize, "no floor was found below the target spot");
+        return false;
+    }
+
+    TraceResult hullTrace;
+    UTIL_TraceHull(origin, origin, dont_ignore_monsters, human_hull, ignoreEdict, &hullTrace);
+    if (hullTrace.fStartSolid || hullTrace.fAllSolid)
+    {
+        strcpy_s(failureCode, failureCodeSize, "blocked_hull");
+        strcpy_s(failureReason, failureReasonSize, "the dummy's standing hull is blocked");
+        return false;
+    }
+
+    failureCode[0] = '\0';
+    failureReason[0] = '\0';
+    return true;
+}
+
+bool TryResolveSavedLabDummySelection(CBasePlayer *pAnchorPlayer, LabDummySpawnSelection *selection, LabDummyFailureInfo *failure)
+{
+    if (!g_glockLabDummySavedSpot.valid)
+    {
+        SetLabDummyFailureInfo(failure, "saved_spot_missing", kLabDummySourceSavedSpot, "", "no saved target spot is marked for this map");
+        return false;
+    }
+
+    char failureCode[64];
+    char failureReason[192];
+    if (!TryValidateLabDummyExactTransform(g_glockLabDummySavedSpot.origin, pAnchorPlayer, failureCode, sizeof(failureCode), failureReason, sizeof(failureReason)))
+    {
+        char details[512];
+        _snprintf_s(details, sizeof(details), _TRUNCATE, "saved target spot is no longer valid: %s", failureReason);
+        SetLabDummyFailureInfo(
+            failure,
+            "saved_spot_invalid",
+            kLabDummySourceSavedSpot,
+            g_glockLabDummySavedSpot.candidate[0] != '\0' ? g_glockLabDummySavedSpot.candidate : "marked_spot",
+            details);
+        return false;
+    }
+
+    selection->origin = g_glockLabDummySavedSpot.origin;
+    selection->angles = g_glockLabDummySavedSpot.angles;
+    selection->anchorPlayer = pAnchorPlayer;
+    strncpy_s(selection->source, sizeof(selection->source), kLabDummySourceSavedSpot, _TRUNCATE);
+    strncpy_s(selection->candidate, sizeof(selection->candidate), g_glockLabDummySavedSpot.candidate[0] != '\0' ? g_glockLabDummySavedSpot.candidate : "marked_spot", _TRUNCATE);
+    return true;
+}
+
+bool TryResolveLastGoodLabDummySelection(CBasePlayer *pAnchorPlayer, LabDummySpawnSelection *selection, LabDummyFailureInfo *failure)
+{
+    if (!g_glockLabDummyLastGoodTransform.valid)
+    {
+        SetLabDummyFailureInfo(failure, "last_good_missing", kLabDummySourceLastGood, "", "no previous successful target transform is available yet");
+        return false;
+    }
+
+    char failureCode[64];
+    char failureReason[192];
+    if (!TryValidateLabDummyExactTransform(g_glockLabDummyLastGoodTransform.origin, pAnchorPlayer, failureCode, sizeof(failureCode), failureReason, sizeof(failureReason)))
+    {
+        char details[512];
+        _snprintf_s(details, sizeof(details), _TRUNCATE, "last known good target transform is no longer valid: %s", failureReason);
+        SetLabDummyFailureInfo(
+            failure,
+            "last_good_invalid",
+            kLabDummySourceLastGood,
+            g_glockLabDummyLastGoodTransform.candidate[0] != '\0' ? g_glockLabDummyLastGoodTransform.candidate : "last_good",
+            details);
+        return false;
+    }
+
+    selection->origin = g_glockLabDummyLastGoodTransform.origin;
+    selection->angles = g_glockLabDummyLastGoodTransform.angles;
+    selection->anchorPlayer = pAnchorPlayer;
+    strncpy_s(selection->source, sizeof(selection->source), kLabDummySourceLastGood, _TRUNCATE);
+    strncpy_s(selection->candidate, sizeof(selection->candidate), g_glockLabDummyLastGoodTransform.candidate[0] != '\0' ? g_glockLabDummyLastGoodTransform.candidate : "last_good", _TRUNCATE);
+    return true;
+}
+
+bool TryBuildLabDummySpawnTransformCandidate(
+    CBasePlayer *pPlayer,
+    float spawnDistance,
+    const LabDummyPlacementCandidate &candidate,
+    Vector *pOrigin,
+    Vector *pAngles,
+    char *candidateLabel,
+    size_t candidateLabelSize,
+    char *failureCode,
+    size_t failureCodeSize,
+    char *failureReason,
+    size_t failureReasonSize)
 {
     if (pPlayer == NULL || pPlayer->pev == NULL)
     {
-        strcpy_s(failureReason, failureReasonSize, "no live player is available");
+        strcpy_s(failureCode, failureCodeSize, "missing_anchor");
+        strcpy_s(failureReason, failureReasonSize, "no current live player anchor is available yet");
         return false;
     }
+
+    const float candidateDistance = spawnDistance + candidate.forwardOffset;
+    const float clampedDistance = candidateDistance >= 48.0f ? candidateDistance : 48.0f;
 
     Vector referenceAngles = pPlayer->pev->v_angle;
     referenceAngles.x = 0.0f;
@@ -1004,56 +1303,57 @@ bool TryBuildLabDummySpawnTransformAtDistance(CBasePlayer *pPlayer, float spawnD
     UTIL_MakeVectors(referenceAngles);
 
     Vector desiredOrigin = pPlayer->pev->origin +
-        (gpGlobals->v_forward * spawnDistance) +
-        (gpGlobals->v_right * ExpGlockLabDummyOffsetRight());
-    desiredOrigin.z += ExpGlockLabDummyOffsetUp();
+        (gpGlobals->v_forward * clampedDistance) +
+        (gpGlobals->v_right * (ExpGlockLabDummyOffsetRight() + candidate.rightOffset));
+    desiredOrigin.z += ExpGlockLabDummyOffsetUp() + candidate.upOffset;
+
+    _snprintf_s(candidateLabel, candidateLabelSize, _TRUNCATE, "%s@%.1f", candidate.label, clampedDistance);
+    edict_t *ignoreEdict = GetLabDummyPlacementIgnoreEdict(pPlayer);
 
     TraceResult groundTrace;
     UTIL_TraceLine(
         desiredOrigin + Vector(0.0f, 0.0f, 64.0f),
         desiredOrigin - Vector(0.0f, 0.0f, 1024.0f),
         ignore_monsters,
-        pPlayer->edict(),
+        ignoreEdict,
         &groundTrace);
 
     if (groundTrace.fStartSolid || groundTrace.fAllSolid)
     {
+        strcpy_s(failureCode, failureCodeSize, "blocked_ground");
         strcpy_s(failureReason, failureReasonSize, "ground trace started inside solid space");
         return false;
     }
 
     if (groundTrace.flFraction == 1.0f)
     {
+        strcpy_s(failureCode, failureCodeSize, "no_floor");
         strcpy_s(failureReason, failureReasonSize, "no floor was found near the requested test position");
         return false;
     }
 
-    Vector spawnOrigin = groundTrace.vecEndPos + Vector(0.0f, 0.0f, 1.0f);
+    Vector spawnOrigin = groundTrace.vecEndPos + Vector(0.0f, 0.0f, 37.0f);
 
     TraceResult frontTrace;
     UTIL_TraceLine(
         pPlayer->pev->origin + pPlayer->pev->view_ofs,
         spawnOrigin + Vector(0.0f, 0.0f, 36.0f),
         ignore_monsters,
-        pPlayer->edict(),
+        ignoreEdict,
         &frontTrace);
 
-    if (frontTrace.fStartSolid || frontTrace.fAllSolid)
+    if (frontTrace.fStartSolid || frontTrace.fAllSolid || frontTrace.flFraction < 1.0f)
     {
-        strcpy_s(failureReason, failureReasonSize, "the path from the player to the target spot starts inside solid space");
-        return false;
-    }
-
-    if (frontTrace.flFraction < 1.0f)
-    {
+        strcpy_s(failureCode, failureCodeSize, "blocked_path");
         strcpy_s(failureReason, failureReasonSize, "the path from the player to the target spot is blocked");
         return false;
     }
 
     TraceResult hullTrace;
-    UTIL_TraceHull(spawnOrigin, spawnOrigin, dont_ignore_monsters, human_hull, pPlayer->edict(), &hullTrace);
+    UTIL_TraceHull(spawnOrigin, spawnOrigin, dont_ignore_monsters, human_hull, ignoreEdict, &hullTrace);
     if (hullTrace.fStartSolid || hullTrace.fAllSolid)
     {
+        strcpy_s(failureCode, failureCodeSize, "blocked_hull");
         strcpy_s(failureReason, failureReasonSize, "the dummy's standing hull is blocked");
         return false;
     }
@@ -1075,69 +1375,202 @@ bool TryBuildLabDummySpawnTransformAtDistance(CBasePlayer *pPlayer, float spawnD
 
     *pOrigin = spawnOrigin;
     *pAngles = spawnAngles;
+    failureCode[0] = '\0';
+    failureReason[0] = '\0';
     return true;
 }
 
-bool TryBuildLabDummySpawnTransform(CBasePlayer *pPlayer, Vector *pOrigin, Vector *pAngles, char *failureReason, size_t failureReasonSize)
+bool TryBuildLabDummySpawnTransformFromAnchor(CBasePlayer *pPlayer, LabDummySpawnSelection *selection, LabDummyFailureInfo *failure)
 {
+    if (pPlayer == NULL || pPlayer->pev == NULL)
+    {
+        SetLabDummyFailureInfo(failure, "missing_anchor", kLabDummySourceCurrentAnchor, "", "no current live player anchor is available yet");
+        return false;
+    }
+
     const float requestedDistance = ExpGlockLabDummySpawnDistance();
     const float minimumDistance = requestedDistance > kGlockLabDummyPlacementMinDistance ? kGlockLabDummyPlacementMinDistance : requestedDistance;
-    char lastFailureReason[128] = "no valid standing target position was found";
+    LabDummyFailureInfo lastCandidateFailure = {};
 
-    float candidateDistance = requestedDistance;
-    while (candidateDistance > minimumDistance + 0.1f)
+    for (float candidateDistance = requestedDistance; candidateDistance > minimumDistance + 0.1f; candidateDistance -= kGlockLabDummyPlacementSearchStep)
     {
-        if (TryBuildLabDummySpawnTransformAtDistance(pPlayer, candidateDistance, pOrigin, pAngles, lastFailureReason, sizeof(lastFailureReason)))
+        for (int candidateIndex = 0; candidateIndex < ARRAYSIZE(kLabDummyPlacementCandidates); ++candidateIndex)
+        {
+            char candidateLabel[64];
+            char failureCode[64];
+            char failureReason[192];
+            if (TryBuildLabDummySpawnTransformCandidate(
+                    pPlayer,
+                    candidateDistance,
+                    kLabDummyPlacementCandidates[candidateIndex],
+                    &selection->origin,
+                    &selection->angles,
+                    candidateLabel,
+                    sizeof(candidateLabel),
+                    failureCode,
+                    sizeof(failureCode),
+                    failureReason,
+                    sizeof(failureReason)))
+            {
+                selection->anchorPlayer = pPlayer;
+                strncpy_s(selection->source, sizeof(selection->source), kLabDummySourceCurrentAnchor, _TRUNCATE);
+                strncpy_s(selection->candidate, sizeof(selection->candidate), candidateLabel, _TRUNCATE);
+                return true;
+            }
+
+            SetLabDummyFailureInfo(&lastCandidateFailure, failureCode, kLabDummySourceCurrentAnchor, candidateLabel, failureReason);
+        }
+    }
+
+    for (int candidateIndex = 0; candidateIndex < ARRAYSIZE(kLabDummyPlacementCandidates); ++candidateIndex)
+    {
+        char candidateLabel[64];
+        char failureCode[64];
+        char failureReason[192];
+        if (TryBuildLabDummySpawnTransformCandidate(
+                pPlayer,
+                minimumDistance,
+                kLabDummyPlacementCandidates[candidateIndex],
+                &selection->origin,
+                &selection->angles,
+                candidateLabel,
+                sizeof(candidateLabel),
+                failureCode,
+                sizeof(failureCode),
+                failureReason,
+                sizeof(failureReason)))
+        {
+            selection->anchorPlayer = pPlayer;
+            strncpy_s(selection->source, sizeof(selection->source), kLabDummySourceCurrentAnchor, _TRUNCATE);
+            strncpy_s(selection->candidate, sizeof(selection->candidate), candidateLabel, _TRUNCATE);
+            return true;
+        }
+
+        SetLabDummyFailureInfo(&lastCandidateFailure, failureCode, kLabDummySourceCurrentAnchor, candidateLabel, failureReason);
+    }
+
+    char details[512];
+    if (requestedDistance > minimumDistance + 0.1f)
+    {
+        _snprintf_s(
+            details,
+            sizeof(details),
+            _TRUNCATE,
+            "no valid standing target position was found between %.1f and %.1f units; last candidate %s failed with %s: %s",
+            requestedDistance,
+            minimumDistance,
+            lastCandidateFailure.candidate[0] != '\0' ? lastCandidateFailure.candidate : "unknown",
+            lastCandidateFailure.code[0] != '\0' ? lastCandidateFailure.code : "unknown",
+            lastCandidateFailure.reason[0] != '\0' ? lastCandidateFailure.reason : "unknown placement failure");
+    }
+    else
+    {
+        _snprintf_s(
+            details,
+            sizeof(details),
+            _TRUNCATE,
+            "no valid standing target position was found at %.1f units; last candidate %s failed with %s: %s",
+            minimumDistance,
+            lastCandidateFailure.candidate[0] != '\0' ? lastCandidateFailure.candidate : "unknown",
+            lastCandidateFailure.code[0] != '\0' ? lastCandidateFailure.code : "unknown",
+            lastCandidateFailure.reason[0] != '\0' ? lastCandidateFailure.reason : "unknown placement failure");
+    }
+
+    SetLabDummyFailureInfo(
+        failure,
+        "no_valid_candidate",
+        kLabDummySourceCurrentAnchor,
+        lastCandidateFailure.candidate,
+        details);
+    return false;
+}
+
+bool TrySelectPreferredLabDummySpawnTransform(CBasePlayer *pAnchorPlayer, LabDummySpawnSelection *selection, LabDummyFailureInfo *failure)
+{
+    LabDummyFailureInfo savedFailure = {};
+    LabDummyFailureInfo anchorFailure = {};
+    LabDummyFailureInfo lastGoodFailure = {};
+    char attempts[1024] = "";
+
+    if (g_glockLabDummySavedSpot.valid)
+    {
+        if (TryResolveSavedLabDummySelection(pAnchorPlayer, selection, &savedFailure))
         {
             return true;
         }
 
-        candidateDistance -= kGlockLabDummyPlacementSearchStep;
+        AppendLabDummyFailureAttempt(attempts, sizeof(attempts), savedFailure);
     }
 
-    if (TryBuildLabDummySpawnTransformAtDistance(pPlayer, minimumDistance, pOrigin, pAngles, lastFailureReason, sizeof(lastFailureReason)))
+    if (TryBuildLabDummySpawnTransformFromAnchor(pAnchorPlayer, selection, &anchorFailure))
     {
         return true;
     }
 
-    if (requestedDistance > minimumDistance + 0.1f)
+    AppendLabDummyFailureAttempt(attempts, sizeof(attempts), anchorFailure);
+
+    if (g_glockLabDummyLastGoodTransform.valid)
     {
-        _snprintf_s(
-            failureReason,
-            failureReasonSize,
-            _TRUNCATE,
-            "no valid standing target position was found between %.1f and %.1f units: %s",
-            requestedDistance,
-            minimumDistance,
-            lastFailureReason);
+        if (TryResolveLastGoodLabDummySelection(pAnchorPlayer, selection, &lastGoodFailure))
+        {
+            return true;
+        }
+
+        AppendLabDummyFailureAttempt(attempts, sizeof(attempts), lastGoodFailure);
+    }
+
+    if (attempts[0] == '\0')
+    {
+        strcpy_s(attempts, sizeof(attempts), "no saved target spot, no current live player anchor, and no last known good target transform are available yet");
+    }
+
+    LabDummyFailureInfo chosenFailure = {};
+    if (anchorFailure.code[0] != '\0' && !StringEqualsIgnoreCase(anchorFailure.code, "missing_anchor"))
+    {
+        chosenFailure = anchorFailure;
+    }
+    else if (savedFailure.code[0] != '\0')
+    {
+        chosenFailure = savedFailure;
+    }
+    else if (anchorFailure.code[0] != '\0')
+    {
+        chosenFailure = anchorFailure;
     }
     else
     {
-        strcpy_s(failureReason, failureReasonSize, lastFailureReason);
+        chosenFailure = lastGoodFailure;
     }
 
+    SetLabDummyFailureInfo(
+        failure,
+        chosenFailure.code[0] != '\0' ? chosenFailure.code : "missing_anchor",
+        chosenFailure.source[0] != '\0' ? chosenFailure.source : kLabDummySourceCurrentAnchor,
+        chosenFailure.candidate,
+        attempts);
     return false;
 }
 
-bool TryRememberLabDummySpawnTransformFromPlayer(CBasePlayer *pPlayer, char *failureReason, size_t failureReasonSize)
+void LogLabDummySpawnFailure(const LabDummyFailureInfo &failure, CBasePlayer *pAnchorPlayer)
 {
-    Vector spawnOrigin = g_vecZero;
-    Vector spawnAngles = g_vecZero;
-    if (!TryBuildLabDummySpawnTransform(pPlayer, &spawnOrigin, &spawnAngles, failureReason, failureReasonSize))
-    {
-        return false;
-    }
+    g_glockLabDummyLastSpawnFailure = failure;
+    FormatFutureGameplayTimestamp(g_glockLabDummyLastFailureAt, sizeof(g_glockLabDummyLastFailureAt));
 
-    g_glockLabDummySpawnOrigin = spawnOrigin;
-    g_glockLabDummySpawnAngles = spawnAngles;
-    g_glockLabDummyHasSpawnTransform = true;
-    g_glockLabDummyAnchorPlayer = pPlayer;
-    return true;
-}
-
-void LogLabDummySpawnFailure(const char *reason)
-{
-    ALERT(at_console, "[hl-server] target dummy spawn failed: %s\n", reason);
+    ALERT(
+        at_console,
+        "[hl-server] target dummy spawn failed [%s%s%s]: %s\n",
+        failure.code[0] != '\0' ? failure.code : "failed",
+        failure.candidate[0] != '\0' ? "/" : "",
+        failure.candidate[0] != '\0' ? failure.candidate : "",
+        failure.reason[0] != '\0' ? failure.reason : "unknown target placement failure");
+    LogGlockLabDummySpawnFailed(
+        pAnchorPlayer,
+        failure.source,
+        failure.candidate,
+        failure.code,
+        failure.reason,
+        NULL,
+        NULL);
 }
 
 void StabilizeGlockLabDummyEntity(CBaseEntity *pDummy)
@@ -1147,15 +1580,15 @@ void StabilizeGlockLabDummyEntity(CBaseEntity *pDummy)
         return;
     }
 
-    if (g_glockLabDummyHasSpawnTransform)
+    if (g_glockLabDummyLastGoodTransform.valid)
     {
-        const Vector delta = pDummy->pev->origin - g_glockLabDummySpawnOrigin;
+        const Vector delta = pDummy->pev->origin - g_glockLabDummyLastGoodTransform.origin;
         if (delta.Length2D() > 1.0f || fabs(delta.z) > 1.0f)
         {
-            UTIL_SetOrigin(pDummy->pev, g_glockLabDummySpawnOrigin);
+            UTIL_SetOrigin(pDummy->pev, g_glockLabDummyLastGoodTransform.origin);
         }
 
-        pDummy->pev->angles = g_glockLabDummySpawnAngles;
+        pDummy->pev->angles = g_glockLabDummyLastGoodTransform.angles;
     }
 
     pDummy->pev->ideal_yaw = pDummy->pev->angles.y;
@@ -1167,48 +1600,37 @@ void StabilizeGlockLabDummyEntity(CBaseEntity *pDummy)
     pDummy->pev->nextthink = 0.0f;
 }
 
-void MoveGlockLabDummyToRememberedTransform(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, const char *reason)
+void MoveGlockLabDummyToSelection(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, const LabDummySpawnSelection &selection, const char *reason)
 {
-    if (pDummy == NULL || pDummy->pev == NULL || !g_glockLabDummyHasSpawnTransform)
+    if (pDummy == NULL || pDummy->pev == NULL)
     {
         return;
     }
 
-    UTIL_SetOrigin(pDummy->pev, g_glockLabDummySpawnOrigin);
-    pDummy->pev->angles = g_glockLabDummySpawnAngles;
+    UTIL_SetOrigin(pDummy->pev, selection.origin);
+    pDummy->pev->angles = selection.angles;
     g_glockLabDummyAnchorPlayer = pAnchorPlayer;
+    StoreLabDummyTransformMemory(&g_glockLabDummyLastGoodTransform, selection.origin, selection.angles, selection.source, selection.candidate);
     StabilizeGlockLabDummyEntity(pDummy);
-    RememberLabDummySpawnTransform(pDummy);
-    LogGlockLabDummyReposition(pDummy, pAnchorPlayer, g_glockLabDummySpawnOrigin, g_glockLabDummySpawnAngles, reason);
+    ClearGlockLabDummyFailureState();
+    LogGlockLabDummyReposition(pDummy, pAnchorPlayer, selection.origin, selection.angles, reason, selection.source, selection.candidate);
 }
 
-CBaseEntity *SpawnGlockLabDummy(CBasePlayer *pAnchorPlayer, bool useRememberedTransform, bool logAsRespawn)
+CBaseEntity *SpawnGlockLabDummy(const LabDummySpawnSelection &selection, bool logAsRespawn)
 {
-    Vector spawnOrigin = g_vecZero;
-    Vector spawnAngles = g_vecZero;
-
-    if (useRememberedTransform && g_glockLabDummyHasSpawnTransform)
+    LabDummyFailureInfo preflightFailure = {};
+    if (!EnsureLabDummyMonsterSpawningEnabled(&preflightFailure, &selection))
     {
-        spawnOrigin = g_glockLabDummySpawnOrigin;
-        spawnAngles = g_glockLabDummySpawnAngles;
-    }
-    else
-    {
-        char failureReason[128];
-        if (!TryRememberLabDummySpawnTransformFromPlayer(pAnchorPlayer, failureReason, sizeof(failureReason)))
-        {
-            LogLabDummySpawnFailure(failureReason);
-            return NULL;
-        }
-
-        spawnOrigin = g_glockLabDummySpawnOrigin;
-        spawnAngles = g_glockLabDummySpawnAngles;
+        LogLabDummySpawnFailure(preflightFailure, selection.anchorPlayer);
+        return NULL;
     }
 
     edict_t *pent = CREATE_NAMED_ENTITY(MAKE_STRING("monster_generic"));
     if (FNullEnt(pent))
     {
-        LogLabDummySpawnFailure("the engine could not allocate a monster_generic entity");
+        LabDummyFailureInfo failure = {};
+        SetLabDummyFailureInfo(&failure, "entity_alloc_failed", selection.source, selection.candidate, "the engine could not allocate a monster_generic entity");
+        LogLabDummySpawnFailure(failure, selection.anchorPlayer);
         return NULL;
     }
 
@@ -1216,8 +1638,8 @@ CBaseEntity *SpawnGlockLabDummy(CBasePlayer *pAnchorPlayer, bool useRememberedTr
     const float dummyHealth = ExpGlockLabDummyHealth();
     const float dummyArmor = ExpGlockLabDummyArmor();
 
-    pevDummy->origin = spawnOrigin;
-    pevDummy->angles = spawnAngles;
+    pevDummy->origin = selection.origin;
+    pevDummy->angles = selection.angles;
     pevDummy->model = ALLOC_STRING(ExpGlockLabDummyModel());
     pevDummy->health = dummyHealth;
     pevDummy->max_health = dummyHealth;
@@ -1230,7 +1652,9 @@ CBaseEntity *SpawnGlockLabDummy(CBasePlayer *pAnchorPlayer, bool useRememberedTr
     CBaseEntity *pDummy = CBaseEntity::Instance(pent);
     if (pDummy == NULL || pDummy->pev == NULL || (pDummy->pev->flags & FL_KILLME))
     {
-        LogLabDummySpawnFailure("the dummy entity failed to finish spawning");
+        LabDummyFailureInfo failure = {};
+        SetLabDummyFailureInfo(&failure, "entity_spawn_failed", selection.source, selection.candidate, "the dummy entity failed to finish spawning");
+        LogLabDummySpawnFailure(failure, selection.anchorPlayer);
         return NULL;
     }
 
@@ -1240,16 +1664,18 @@ CBaseEntity *SpawnGlockLabDummy(CBasePlayer *pAnchorPlayer, bool useRememberedTr
     pDummy->pev->health = dummyHealth;
     pDummy->pev->max_health = dummyHealth;
     pDummy->pev->armorvalue = dummyArmor;
+
+    StoreLabDummyTransformMemory(&g_glockLabDummyLastGoodTransform, selection.origin, selection.angles, selection.source, selection.candidate);
     StabilizeGlockLabDummyEntity(pDummy);
 
     g_glockLabDummy = pDummy;
-    g_glockLabDummyAnchorPlayer = pAnchorPlayer;
+    g_glockLabDummyAnchorPlayer = selection.anchorPlayer;
     g_glockLabDummyRespawnPending = false;
     g_glockLabDummyRespawnTime = 0.0f;
     g_glockLabDummyRetryTime = 0.0f;
-    RememberLabDummySpawnTransform(pDummy);
+    ClearGlockLabDummyFailureState();
 
-    LogGlockLabDummySpawn(pDummy, pAnchorPlayer, logAsRespawn, spawnOrigin, spawnAngles);
+    LogGlockLabDummySpawn(pDummy, selection.anchorPlayer, logAsRespawn, selection.origin, selection.angles, selection.source, selection.candidate);
     return pDummy;
 }
 
@@ -1265,7 +1691,7 @@ void MaintainGlockLabDummy()
         }
         else
         {
-            ResetGlockLabDummyState();
+            ClearGlockLabDummyRuntimeState();
         }
 
         return;
@@ -1317,15 +1743,16 @@ void MaintainGlockLabDummy()
         return;
     }
 
-    if (pAnchorPlayer == NULL && !g_glockLabDummyHasSpawnTransform)
+    LabDummySpawnSelection selection = {};
+    LabDummyFailureInfo failure = {};
+    if (!TrySelectPreferredLabDummySpawnTransform(pAnchorPlayer, &selection, &failure))
     {
-        LogLabDummySpawnFailure("waiting for the first live player anchor");
+        LogLabDummySpawnFailure(failure, pAnchorPlayer);
         g_glockLabDummyRetryTime = gpGlobals->time + kGlockLabDummyRetryDelay;
         return;
     }
 
-    const bool useRememberedTransform = g_glockLabDummyRespawnPending || pAnchorPlayer == NULL;
-    if (SpawnGlockLabDummy(pAnchorPlayer, useRememberedTransform, g_glockLabDummyRespawnPending) != NULL)
+    if (SpawnGlockLabDummy(selection, g_glockLabDummyRespawnPending) != NULL)
     {
         return;
     }
@@ -1343,6 +1770,28 @@ void MaintainGlockLabDummy()
 void SetLabDummyEnabled(bool enabled)
 {
     CVAR_SET_FLOAT("sv_exp_glock_lab_dummy", enabled ? 1.0f : 0.0f);
+}
+
+bool EnsureLabDummyMonsterSpawningEnabled(LabDummyFailureInfo *failure, const LabDummySpawnSelection *selection)
+{
+    if (CVAR_GET_FLOAT("mp_allowmonsters") != 0.0f)
+    {
+        return true;
+    }
+
+    CVAR_SET_FLOAT("mp_allowmonsters", 1.0f);
+    if (CVAR_GET_FLOAT("mp_allowmonsters") != 0.0f)
+    {
+        return true;
+    }
+
+    SetLabDummyFailureInfo(
+        failure,
+        "monsters_disabled",
+        selection != NULL ? selection->source : kLabDummySourceCurrentAnchor,
+        selection != NULL ? selection->candidate : "",
+        "mp_allowmonsters must be 1 before the server can spawn a monster_generic dummy");
+    return false;
 }
 
 bool ApplyResolvedLiveCfgSelection(const char *action, const ResolvedLiveCfgSelection &selection)
@@ -1387,23 +1836,12 @@ bool TryRespawnLabDummyInternal(const char *removeReason, char *summary, size_t 
 
     CBaseEntity *pDummy = GetTrackedLabDummyEntity();
     CBasePlayer *pAnchorPlayer = FindCurrentLiveLabDummyAnchorPlayer();
-
-    if (pAnchorPlayer != NULL)
+    LabDummySpawnSelection selection = {};
+    LabDummyFailureInfo failure = {};
+    if (!TrySelectPreferredLabDummySpawnTransform(pAnchorPlayer, &selection, &failure))
     {
-        char failureReason[192];
-        if (!TryRememberLabDummySpawnTransformFromPlayer(pAnchorPlayer, failureReason, sizeof(failureReason)))
-        {
-            _snprintf_s(summary, summarySize, _TRUNCATE, "target respawn failed: %s", failureReason);
-            if (printStatusOnFailure)
-            {
-                PrintLabDummyStatus();
-            }
-            return false;
-        }
-    }
-    else if (!g_glockLabDummyHasSpawnTransform)
-    {
-        strcpy_s(summary, summarySize, "target respawn failed: no current live player anchor or saved target position is available yet.");
+        LogLabDummySpawnFailure(failure, pAnchorPlayer);
+        _snprintf_s(summary, summarySize, _TRUNCATE, "target respawn failed: %s", failure.reason);
         if (printStatusOnFailure)
         {
             PrintLabDummyStatus();
@@ -1421,9 +1859,14 @@ bool TryRespawnLabDummyInternal(const char *removeReason, char *summary, size_t 
     g_glockLabDummyRespawnTime = 0.0f;
     g_glockLabDummyRetryTime = 0.0f;
 
-    if (SpawnGlockLabDummy(pAnchorPlayer, true, true) == NULL)
+    if (SpawnGlockLabDummy(selection, true) == NULL)
     {
-        strcpy_s(summary, summarySize, "target respawn failed: the dummy could not be recreated.");
+        _snprintf_s(
+            summary,
+            summarySize,
+            _TRUNCATE,
+            "target respawn failed: %s",
+            g_glockLabDummyLastSpawnFailure.reason[0] != '\0' ? g_glockLabDummyLastSpawnFailure.reason : "the dummy could not be recreated");
         if (printStatusOnFailure)
         {
             PrintLabDummyStatus();
@@ -1431,7 +1874,15 @@ bool TryRespawnLabDummyInternal(const char *removeReason, char *summary, size_t 
         return false;
     }
 
-    _snprintf_s(summary, summarySize, _TRUNCATE, "respawned \"%s\" using profile %s.", kGlockLabDummyDisplayName, ExpGlockLabTargetProfileName());
+    _snprintf_s(
+        summary,
+        summarySize,
+        _TRUNCATE,
+        "respawned \"%s\" using profile %s via %s/%s.",
+        kGlockLabDummyDisplayName,
+        ExpGlockLabTargetProfileName(),
+        selection.source,
+        selection.candidate[0] != '\0' ? selection.candidate : "default");
     return true;
 }
 
@@ -1442,9 +1893,16 @@ void PrintLabDummyStatus()
     CBaseEntity *pDummy = GetTrackedLabDummyEntity();
     CBasePlayer *pAnchorPlayer = FindCurrentLiveLabDummyAnchorPlayer();
     const LabDummyProfileDefinition *pCurrentProfile = FindBuiltInLabDummyProfile(ExpGlockLabTargetProfileName());
+    LabDummySpawnSelection nextSelection = {};
+    LabDummyFailureInfo nextFailure = {};
+    const bool respawnPossible = TrySelectPreferredLabDummySpawnTransform(pAnchorPlayer, &nextSelection, &nextFailure);
     char savedOrigin[64];
+    char lastGoodOrigin[64];
+    char nextOrigin[64];
     char currentOrigin[64];
     strcpy_s(savedOrigin, sizeof(savedOrigin), "n/a");
+    strcpy_s(lastGoodOrigin, sizeof(lastGoodOrigin), "n/a");
+    strcpy_s(nextOrigin, sizeof(nextOrigin), "n/a");
     strcpy_s(currentOrigin, sizeof(currentOrigin), "n/a");
 
     PrintLabDummyConsoleLine("target type: server-side standing dummy using stock model assets");
@@ -1466,6 +1924,7 @@ void PrintLabDummyStatus()
         ExpGlockLabDummyOffsetRight(),
         ExpGlockLabDummyOffsetUp(),
         ExpGlockLabDummyFacePlayer() ? 1 : 0);
+    PrintLabDummyConsoleLine("target monster gate: mp_allowmonsters=%.0f", CVAR_GET_FLOAT("mp_allowmonsters"));
 
     if (pAnchorPlayer != NULL)
     {
@@ -1480,14 +1939,63 @@ void PrintLabDummyStatus()
         PrintLabDummyConsoleLine("current live anchor: none");
     }
 
-    if (g_glockLabDummyHasSpawnTransform)
+    if (g_glockLabDummySavedSpot.valid)
     {
-        FormatVector3(savedOrigin, sizeof(savedOrigin), g_glockLabDummySpawnOrigin);
-        PrintLabDummyConsoleLine("saved target spot: origin=%s yaw=%.1f", savedOrigin, g_glockLabDummySpawnAngles.y);
+        FormatVector3(savedOrigin, sizeof(savedOrigin), g_glockLabDummySavedSpot.origin);
+        PrintLabDummyConsoleLine(
+            "saved target spot: present origin=%s yaw=%.1f candidate=%s",
+            savedOrigin,
+            g_glockLabDummySavedSpot.angles.y,
+            g_glockLabDummySavedSpot.candidate[0] != '\0' ? g_glockLabDummySavedSpot.candidate : "marked_spot");
     }
     else
     {
         PrintLabDummyConsoleLine("saved target spot: none");
+    }
+
+    if (g_glockLabDummyLastGoodTransform.valid)
+    {
+        FormatVector3(lastGoodOrigin, sizeof(lastGoodOrigin), g_glockLabDummyLastGoodTransform.origin);
+        PrintLabDummyConsoleLine(
+            "last known good target transform: origin=%s yaw=%.1f source=%s candidate=%s",
+            lastGoodOrigin,
+            g_glockLabDummyLastGoodTransform.angles.y,
+            g_glockLabDummyLastGoodTransform.source[0] != '\0' ? g_glockLabDummyLastGoodTransform.source : "unknown",
+            g_glockLabDummyLastGoodTransform.candidate[0] != '\0' ? g_glockLabDummyLastGoodTransform.candidate : "last_good");
+    }
+    else
+    {
+        PrintLabDummyConsoleLine("last known good target transform: none");
+    }
+
+    if (g_glockLabDummyLastSpawnFailure.code[0] != '\0')
+    {
+        PrintLabDummyConsoleLine(
+            "last spawn failure: at=%s code=%s source=%s candidate=%s reason=%s",
+            g_glockLabDummyLastFailureAt[0] != '\0' ? g_glockLabDummyLastFailureAt : "unknown",
+            g_glockLabDummyLastSpawnFailure.code,
+            g_glockLabDummyLastSpawnFailure.source[0] != '\0' ? g_glockLabDummyLastSpawnFailure.source : "unknown",
+            g_glockLabDummyLastSpawnFailure.candidate[0] != '\0' ? g_glockLabDummyLastSpawnFailure.candidate : "n/a",
+            g_glockLabDummyLastSpawnFailure.reason);
+    }
+    else
+    {
+        PrintLabDummyConsoleLine("last spawn failure: none");
+    }
+
+    if (respawnPossible)
+    {
+        FormatVector3(nextOrigin, sizeof(nextOrigin), nextSelection.origin);
+        PrintLabDummyConsoleLine(
+            "target respawn possible: yes source=%s candidate=%s origin=%s yaw=%.1f",
+            nextSelection.source,
+            nextSelection.candidate[0] != '\0' ? nextSelection.candidate : "default",
+            nextOrigin,
+            nextSelection.angles.y);
+    }
+    else
+    {
+        PrintLabDummyConsoleLine("target respawn possible: no reason=%s", nextFailure.reason[0] != '\0' ? nextFailure.reason : "no valid placement source is available");
     }
 
     if (pDummy != NULL && pDummy->pev != NULL)
@@ -1515,7 +2023,7 @@ void PrintLabDummyStatus()
     }
 
     PrintLabDummyConsoleLine("built-in target profiles: %s", GetLabDummyProfileNames());
-    PrintLabDummyConsoleLine("commands: exp_target_spawn | exp_target_clear | exp_target_respawn | exp_target_status | exp_target_tp_front | exp_target_profile <name>");
+    PrintLabDummyConsoleLine("commands: exp_target_spawn | exp_target_clear | exp_target_mark | exp_target_unmark | exp_target_use_saved | exp_target_respawn | exp_target_status | exp_target_tp_front | exp_target_profile <name>");
 }
 
 void ExpCfgApplyCommand()
@@ -1627,18 +2135,12 @@ void ExpTargetSpawnCommand()
     }
 
     CBasePlayer *pAnchorPlayer = FindCurrentLiveLabDummyAnchorPlayer();
-    if (pAnchorPlayer != NULL)
+    LabDummySpawnSelection targetSelection = {};
+    LabDummyFailureInfo failure = {};
+    if (!TrySelectPreferredLabDummySpawnTransform(pAnchorPlayer, &targetSelection, &failure))
     {
-        char failureReason[192];
-        if (!TryRememberLabDummySpawnTransformFromPlayer(pAnchorPlayer, failureReason, sizeof(failureReason)))
-        {
-            PrintLabDummyConsoleLine("target spawn failed: %s", failureReason);
-            return;
-        }
-    }
-    else if (!g_glockLabDummyHasSpawnTransform)
-    {
-        PrintLabDummyConsoleLine("target spawn failed: no current live player anchor or saved target position is available yet.");
+        LogLabDummySpawnFailure(failure, pAnchorPlayer);
+        PrintLabDummyConsoleLine("target spawn failed: %s", failure.reason);
         return;
     }
 
@@ -1646,13 +2148,18 @@ void ExpTargetSpawnCommand()
     g_glockLabDummyRespawnTime = 0.0f;
     g_glockLabDummyRetryTime = 0.0f;
 
-    if (SpawnGlockLabDummy(pAnchorPlayer, true, false) == NULL)
+    if (SpawnGlockLabDummy(targetSelection, false) == NULL)
     {
         PrintLabDummyStatus();
         return;
     }
 
-    PrintLabDummyConsoleLine("spawned \"%s\" using profile %s.", kGlockLabDummyDisplayName, ExpGlockLabTargetProfileName());
+    PrintLabDummyConsoleLine(
+        "spawned \"%s\" using profile %s via %s/%s.",
+        kGlockLabDummyDisplayName,
+        ExpGlockLabTargetProfileName(),
+        targetSelection.source,
+        targetSelection.candidate[0] != '\0' ? targetSelection.candidate : "default");
 }
 
 void ExpTargetClearCommand()
@@ -1663,7 +2170,7 @@ void ExpTargetClearCommand()
     CBaseEntity *pDummy = GetTrackedLabDummyEntity();
     if (pDummy == NULL)
     {
-        ResetGlockLabDummyState();
+        ClearGlockLabDummyRuntimeState();
         PrintLabDummyConsoleLine("target is already clear. Automatic target spawning is now disabled.");
         return;
     }
@@ -1688,30 +2195,137 @@ void ExpTargetStatusCommand()
     PrintLabDummyStatus();
 }
 
-void ExpTargetTpFrontCommand()
+void ExpTargetMarkCommand()
+{
+    RefreshFutureHooksMapState();
+
+    CBaseEntity *pDummy = GetTrackedLabDummyEntity();
+    CBasePlayer *pAnchorPlayer = FindCurrentLiveLabDummyAnchorPlayer();
+
+    if (pDummy != NULL && pDummy->pev != NULL && pDummy->IsAlive())
+    {
+        StoreLabDummyTransformMemory(&g_glockLabDummySavedSpot, pDummy->pev->origin, pDummy->pev->angles, kLabDummySourceSavedSpot, "current_dummy");
+        LogGlockLabDummyMark("target_mark", pAnchorPlayer, pDummy->pev->origin, pDummy->pev->angles, "current_dummy");
+
+        char origin[64];
+        FormatVector3(origin, sizeof(origin), pDummy->pev->origin);
+        PrintLabDummyConsoleLine("saved current dummy position for this map: origin=%s yaw=%.1f", origin, pDummy->pev->angles.y);
+        return;
+    }
+
+    LabDummySpawnSelection selection = {};
+    LabDummyFailureInfo failure = {};
+    if (!TryBuildLabDummySpawnTransformFromAnchor(pAnchorPlayer, &selection, &failure))
+    {
+        LogLabDummySpawnFailure(failure, pAnchorPlayer);
+        PrintLabDummyConsoleLine("target mark failed: %s", failure.reason);
+        return;
+    }
+
+    StoreLabDummyTransformMemory(&g_glockLabDummySavedSpot, selection.origin, selection.angles, kLabDummySourceSavedSpot, selection.candidate);
+    LogGlockLabDummyMark("target_mark", pAnchorPlayer, selection.origin, selection.angles, selection.candidate);
+
+    char origin[64];
+    FormatVector3(origin, sizeof(origin), selection.origin);
+    PrintLabDummyConsoleLine(
+        "saved target spot for this map: origin=%s yaw=%.1f source=%s/%s",
+        origin,
+        selection.angles.y,
+        selection.source,
+        selection.candidate);
+}
+
+void ExpTargetUnmarkCommand()
+{
+    RefreshFutureHooksMapState();
+
+    if (!g_glockLabDummySavedSpot.valid)
+    {
+        PrintLabDummyConsoleLine("saved target spot is already clear for this map.");
+        return;
+    }
+
+    LogGlockLabDummyMark("target_unmark", FindCurrentLiveLabDummyAnchorPlayer(), g_glockLabDummySavedSpot.origin, g_glockLabDummySavedSpot.angles, g_glockLabDummySavedSpot.candidate);
+    ClearLabDummyTransformMemory(&g_glockLabDummySavedSpot);
+    PrintLabDummyConsoleLine("cleared the saved target spot for this map.");
+}
+
+void ExpTargetUseSavedCommand()
 {
     RefreshFutureHooksMapState();
     SetLabDummyEnabled(true);
 
     CBasePlayer *pAnchorPlayer = FindCurrentLiveLabDummyAnchorPlayer();
-    if (pAnchorPlayer == NULL)
+    LabDummySpawnSelection selection = {};
+    LabDummyFailureInfo failure = {};
+    if (!TryResolveSavedLabDummySelection(pAnchorPlayer, &selection, &failure))
     {
-        PrintLabDummyConsoleLine("target move failed: no current live player anchor is available yet.");
-        return;
-    }
-
-    char failureReason[192];
-    if (!TryRememberLabDummySpawnTransformFromPlayer(pAnchorPlayer, failureReason, sizeof(failureReason)))
-    {
-        PrintLabDummyConsoleLine("target move failed: %s", failureReason);
+        LogLabDummySpawnFailure(failure, pAnchorPlayer);
+        PrintLabDummyConsoleLine("target use_saved failed: %s", failure.reason);
+        PrintLabDummyStatus();
         return;
     }
 
     CBaseEntity *pDummy = GetTrackedLabDummyEntity();
     if (pDummy != NULL && pDummy->IsAlive())
     {
-        MoveGlockLabDummyToRememberedTransform(pDummy, pAnchorPlayer, "command_tp_front");
-        PrintLabDummyConsoleLine("moved \"%s\" in front of %s.", kGlockLabDummyDisplayName, GetSafePlayerName(pAnchorPlayer));
+        MoveGlockLabDummyToSelection(pDummy, pAnchorPlayer, selection, "command_use_saved");
+        PrintLabDummyConsoleLine(
+            "moved \"%s\" to the saved target spot via %s/%s.",
+            kGlockLabDummyDisplayName,
+            selection.source,
+            selection.candidate[0] != '\0' ? selection.candidate : "marked_spot");
+        return;
+    }
+
+    if (pDummy != NULL)
+    {
+        RemoveLabDummyEntities("command_use_saved");
+        g_glockLabDummy = NULL;
+    }
+
+    g_glockLabDummyRespawnPending = false;
+    g_glockLabDummyRespawnTime = 0.0f;
+    g_glockLabDummyRetryTime = 0.0f;
+
+    if (SpawnGlockLabDummy(selection, pDummy != NULL) == NULL)
+    {
+        PrintLabDummyStatus();
+        return;
+    }
+
+    PrintLabDummyConsoleLine(
+        "spawned \"%s\" at the saved target spot via %s/%s.",
+        kGlockLabDummyDisplayName,
+        selection.source,
+        selection.candidate[0] != '\0' ? selection.candidate : "marked_spot");
+}
+
+void ExpTargetTpFrontCommand()
+{
+    RefreshFutureHooksMapState();
+    SetLabDummyEnabled(true);
+
+    CBasePlayer *pAnchorPlayer = FindCurrentLiveLabDummyAnchorPlayer();
+    LabDummySpawnSelection selection = {};
+    LabDummyFailureInfo failure = {};
+    if (!TryBuildLabDummySpawnTransformFromAnchor(pAnchorPlayer, &selection, &failure))
+    {
+        LogLabDummySpawnFailure(failure, pAnchorPlayer);
+        PrintLabDummyConsoleLine("target move failed: %s", failure.reason);
+        return;
+    }
+
+    CBaseEntity *pDummy = GetTrackedLabDummyEntity();
+    if (pDummy != NULL && pDummy->IsAlive())
+    {
+        MoveGlockLabDummyToSelection(pDummy, pAnchorPlayer, selection, "command_tp_front");
+        PrintLabDummyConsoleLine(
+            "moved \"%s\" in front of %s using %s/%s.",
+            kGlockLabDummyDisplayName,
+            GetSafePlayerName(pAnchorPlayer),
+            selection.source,
+            selection.candidate[0] != '\0' ? selection.candidate : "default");
         return;
     }
 
@@ -1725,13 +2339,18 @@ void ExpTargetTpFrontCommand()
     g_glockLabDummyRespawnTime = 0.0f;
     g_glockLabDummyRetryTime = 0.0f;
 
-    if (SpawnGlockLabDummy(pAnchorPlayer, true, pDummy != NULL) == NULL)
+    if (SpawnGlockLabDummy(selection, pDummy != NULL) == NULL)
     {
         PrintLabDummyStatus();
         return;
     }
 
-    PrintLabDummyConsoleLine("spawned \"%s\" in front of %s.", kGlockLabDummyDisplayName, GetSafePlayerName(pAnchorPlayer));
+    PrintLabDummyConsoleLine(
+        "spawned \"%s\" in front of %s using %s/%s.",
+        kGlockLabDummyDisplayName,
+        GetSafePlayerName(pAnchorPlayer),
+        selection.source,
+        selection.candidate[0] != '\0' ? selection.candidate : "default");
 }
 
 void ExpTargetProfileCommand()
@@ -1764,18 +2383,12 @@ void ExpTargetProfileCommand()
     }
 
     CBasePlayer *pAnchorPlayer = FindCurrentLiveLabDummyAnchorPlayer();
-    if (pAnchorPlayer != NULL)
+    LabDummySpawnSelection selection = {};
+    LabDummyFailureInfo failure = {};
+    if (!TrySelectPreferredLabDummySpawnTransform(pAnchorPlayer, &selection, &failure))
     {
-        char failureReason[192];
-        if (!TryRememberLabDummySpawnTransformFromPlayer(pAnchorPlayer, failureReason, sizeof(failureReason)))
-        {
-            PrintLabDummyConsoleLine("target profile \"%s\" was stored, but the target could not be refreshed: %s", pProfile->name, failureReason);
-            return;
-        }
-    }
-    else if (!g_glockLabDummyHasSpawnTransform)
-    {
-        PrintLabDummyConsoleLine("target profile \"%s\" is stored. A live player anchor is required before the target can be refreshed.", pProfile->name);
+        LogLabDummySpawnFailure(failure, pAnchorPlayer);
+        PrintLabDummyConsoleLine("target profile \"%s\" was stored, but the target could not be refreshed: %s", pProfile->name, failure.reason);
         return;
     }
 
@@ -1789,13 +2402,18 @@ void ExpTargetProfileCommand()
     g_glockLabDummyRespawnTime = 0.0f;
     g_glockLabDummyRetryTime = 0.0f;
 
-    if (SpawnGlockLabDummy(pAnchorPlayer, true, pDummy != NULL) == NULL)
+    if (SpawnGlockLabDummy(selection, pDummy != NULL) == NULL)
     {
         PrintLabDummyConsoleLine("target profile \"%s\" was stored, but the target could not be refreshed immediately.", pProfile->name);
         return;
     }
 
-    PrintLabDummyConsoleLine("refreshed \"%s\" with profile %s.", kGlockLabDummyDisplayName, pProfile->name);
+    PrintLabDummyConsoleLine(
+        "refreshed \"%s\" with profile %s via %s/%s.",
+        kGlockLabDummyDisplayName,
+        pProfile->name,
+        selection.source,
+        selection.candidate[0] != '\0' ? selection.candidate : "default");
 }
 
 void RegisterFutureGameplayCommands()
@@ -1818,6 +2436,9 @@ void RegisterFutureGameplayCommands()
     g_engfuncs.pfnAddServerCommand((char *)"exp_lab_apply", ExpLabApplyCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_target_spawn", ExpTargetSpawnCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_target_clear", ExpTargetClearCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_target_mark", ExpTargetMarkCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_target_unmark", ExpTargetUnmarkCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_target_use_saved", ExpTargetUseSavedCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_target_respawn", ExpTargetRespawnCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_target_status", ExpTargetStatusCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_target_tp_front", ExpTargetTpFrontCommand);
