@@ -947,7 +947,7 @@ void LogLiveLabConsoleMessage(const char *line)
     fflush(g_weaponDebugLogFile);
 }
 
-void LogGlockLabDummySpawn(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, bool respawn, const Vector &origin, const Vector &angles, const char *source, const char *candidate)
+void LogGlockLabDummySpawn(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, bool respawn, const Vector &origin, const Vector &angles, const char *source, const char *candidate, const char *spotName, const char *spotStorage)
 {
     if (!ExpDebugWeaponLogEnabled())
     {
@@ -995,10 +995,12 @@ void LogGlockLabDummySpawn(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, bool
 
     std::string telemetryLine = line;
     AppendOptionalQuotedTelemetryField(&telemetryLine, "weapon_under_test", ExpWeaponUnderTest());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "spot_name", spotName);
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "spot_storage", spotStorage);
     WriteTelemetryLine(telemetryLine.c_str());
 }
 
-void LogGlockLabDummySpawnFailed(CBasePlayer *pAnchorPlayer, const char *source, const char *candidate, const char *code, const char *reason, const Vector *pOrigin, const Vector *pAngles)
+void LogGlockLabDummySpawnFailed(CBasePlayer *pAnchorPlayer, const char *source, const char *candidate, const char *code, const char *reason, const Vector *pOrigin, const Vector *pAngles, const char *spotName, const char *spotStorage)
 {
     if (!ExpDebugWeaponLogEnabled())
     {
@@ -1034,10 +1036,12 @@ void LogGlockLabDummySpawnFailed(CBasePlayer *pAnchorPlayer, const char *source,
 
     std::string telemetryLine = line;
     AppendOptionalQuotedTelemetryField(&telemetryLine, "weapon_under_test", ExpWeaponUnderTest());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "spot_name", spotName);
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "spot_storage", spotStorage);
     WriteTelemetryLine(telemetryLine.c_str());
 }
 
-void LogGlockLabDummyMark(const char *action, CBasePlayer *pAnchorPlayer, const Vector &origin, const Vector &angles, const char *details)
+void LogGlockLabDummyMark(const char *action, CBasePlayer *pAnchorPlayer, const Vector &origin, const Vector &angles, const char *details, const char *spotName, const char *spotStorage)
 {
     if (!ExpDebugWeaponLogEnabled())
     {
@@ -1071,10 +1075,12 @@ void LogGlockLabDummyMark(const char *action, CBasePlayer *pAnchorPlayer, const 
 
     std::string telemetryLine = line;
     AppendOptionalQuotedTelemetryField(&telemetryLine, "weapon_under_test", ExpWeaponUnderTest());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "spot_name", spotName);
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "spot_storage", spotStorage);
     WriteTelemetryLine(telemetryLine.c_str());
 }
 
-void LogGlockLabDummyReposition(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, const Vector &origin, const Vector &angles, const char *reason, const char *source, const char *candidate)
+void LogGlockLabDummyReposition(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, const Vector &origin, const Vector &angles, const char *reason, const char *source, const char *candidate, const char *spotName, const char *spotStorage)
 {
     if (!ExpDebugWeaponLogEnabled())
     {
@@ -1116,6 +1122,8 @@ void LogGlockLabDummyReposition(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer,
 
     std::string telemetryLine = line;
     AppendOptionalQuotedTelemetryField(&telemetryLine, "weapon_under_test", ExpWeaponUnderTest());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "spot_name", spotName);
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "spot_storage", spotStorage);
     WriteTelemetryLine(telemetryLine.c_str());
 }
 

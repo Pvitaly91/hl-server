@@ -9,11 +9,15 @@
 #include "weapon_debug_logger.h"
 
 #include <io.h>
+#include <ctype.h>
+#include <errno.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>
 #include <string.h>
 #include <string>
+#include <vector>
 #include <windows.h>
 
 namespace
@@ -36,6 +40,14 @@ const size_t kMaxLiveCfgRequestLength = 512;
 const size_t kMaxLiveCfgExecPathLength = 512;
 const size_t kMaxLiveCfgPathLength = 1024;
 const size_t kMaxLiveCfgFailureLength = 512;
+const size_t kMaxLabDummySpotNameLength = 64;
+const size_t kMaxLabDummySpotStorageLength = 16;
+const size_t kMaxLabDummySpotTimestampLength = 64;
+const size_t kMaxLabDummySpotNoteLength = 128;
+const size_t kMaxLabDummySpotFileFailureLength = 512;
+const size_t kMaxLabDummySpotListLength = 512;
+const size_t kMaxLabDummySpotsPerMap = 32;
+const size_t kMaxLabDummySpotFileSize = 64 * 1024;
 const char *kAllowedGlockLabDummyModels[] = {
     "models/barney.mdl",
     "models/scientist.mdl"};
@@ -44,6 +56,10 @@ const char *kGlockLabDummyTargetname = "exp_glock_lab_dummy";
 const char *kLabDummySourceSavedSpot = "saved_spot";
 const char *kLabDummySourceCurrentAnchor = "current_anchor";
 const char *kLabDummySourceLastGood = "last_known_good";
+const char *kDefaultLabDummySpotName = "default";
+const char *kLabDummySpotStorageDisk = "disk";
+const char *kLabDummySpotStorageSession = "session";
+const char *kLabDummyTargetSpotsDirectoryName = "target_spots";
 
 struct LiveCfgState
 {
@@ -89,6 +105,19 @@ struct LabDummyTransformMemory
     char candidate[64];
 };
 
+struct LabDummySavedSpotRecord
+{
+    bool valid;
+    bool loadedFromDisk;
+    Vector origin;
+    Vector angles;
+    char name[kMaxLabDummySpotNameLength];
+    char candidate[64];
+    char createdAt[kMaxLabDummySpotTimestampLength];
+    char updatedAt[kMaxLabDummySpotTimestampLength];
+    char note[kMaxLabDummySpotNoteLength];
+};
+
 struct LabDummySpawnSelection
 {
     Vector origin;
@@ -96,6 +125,8 @@ struct LabDummySpawnSelection
     CBasePlayer *anchorPlayer;
     char source[32];
     char candidate[64];
+    char spotName[kMaxLabDummySpotNameLength];
+    char spotStorage[kMaxLabDummySpotStorageLength];
 };
 
 struct LabDummyFailureInfo
@@ -104,6 +135,8 @@ struct LabDummyFailureInfo
     char source[32];
     char candidate[64];
     char reason[512];
+    char spotName[kMaxLabDummySpotNameLength];
+    char spotStorage[kMaxLabDummySpotStorageLength];
 };
 
 struct LabDummyPlacementCandidate
@@ -209,7 +242,11 @@ bool g_futureGameplayCvarsRegistered = false;
 bool g_futureGameplayCommandsRegistered = false;
 EHANDLE g_glockLabDummy;
 EHANDLE g_glockLabDummyAnchorPlayer;
-LabDummyTransformMemory g_glockLabDummySavedSpot = {};
+LabDummySavedSpotRecord g_glockLabDummySavedSpots[kMaxLabDummySpotsPerMap] = {};
+int g_glockLabDummySavedSpotCount = 0;
+char g_glockLabDummyActiveSpotName[kMaxLabDummySpotNameLength] = "";
+char g_glockLabDummyTargetSpotsPath[kMaxLiveCfgPathLength] = "";
+char g_glockLabDummyTargetSpotsLoadFailure[kMaxLabDummySpotFileFailureLength] = "";
 LabDummyTransformMemory g_glockLabDummyLastGoodTransform = {};
 LabDummyFailureInfo g_glockLabDummyLastSpawnFailure = {};
 char g_glockLabDummyLastFailureAt[64] = "";
@@ -221,6 +258,8 @@ LiveCfgState g_liveCfgState = {};
 
 void PrintLabDummyStatus();
 bool EnsureLabDummyMonsterSpawningEnabled(LabDummyFailureInfo *failure, const LabDummySpawnSelection *selection);
+bool SaveLabDummySpotsForCurrentMap(char *failureReason, size_t failureReasonSize);
+void LoadLabDummySpotsForCurrentMap();
 
 float GetNonNegativeCvarValue(const cvar_t &cvar)
 {
@@ -329,9 +368,18 @@ void ClearLabDummyFailureInfo(LabDummyFailureInfo *failure)
     failure->source[0] = '\0';
     failure->candidate[0] = '\0';
     failure->reason[0] = '\0';
+    failure->spotName[0] = '\0';
+    failure->spotStorage[0] = '\0';
 }
 
-void SetLabDummyFailureInfo(LabDummyFailureInfo *failure, const char *code, const char *source, const char *candidate, const char *reason)
+void SetLabDummyFailureInfo(
+    LabDummyFailureInfo *failure,
+    const char *code,
+    const char *source,
+    const char *candidate,
+    const char *reason,
+    const char *spotName = NULL,
+    const char *spotStorage = NULL)
 {
     if (failure == NULL)
     {
@@ -342,6 +390,8 @@ void SetLabDummyFailureInfo(LabDummyFailureInfo *failure, const char *code, cons
     strncpy_s(failure->source, sizeof(failure->source), source != NULL ? source : "", _TRUNCATE);
     strncpy_s(failure->candidate, sizeof(failure->candidate), candidate != NULL ? candidate : "", _TRUNCATE);
     strncpy_s(failure->reason, sizeof(failure->reason), reason != NULL ? reason : "", _TRUNCATE);
+    strncpy_s(failure->spotName, sizeof(failure->spotName), spotName != NULL ? spotName : "", _TRUNCATE);
+    strncpy_s(failure->spotStorage, sizeof(failure->spotStorage), spotStorage != NULL ? spotStorage : "", _TRUNCATE);
 }
 
 void ClearLabDummyTransformMemory(LabDummyTransformMemory *memory)
@@ -372,6 +422,64 @@ void StoreLabDummyTransformMemory(LabDummyTransformMemory *memory, const Vector 
     strncpy_s(memory->candidate, sizeof(memory->candidate), candidate != NULL ? candidate : "", _TRUNCATE);
 }
 
+void ClearLabDummySavedSpotRecord(LabDummySavedSpotRecord *spot)
+{
+    if (spot == NULL)
+    {
+        return;
+    }
+
+    spot->valid = false;
+    spot->loadedFromDisk = false;
+    spot->origin = g_vecZero;
+    spot->angles = g_vecZero;
+    spot->name[0] = '\0';
+    spot->candidate[0] = '\0';
+    spot->createdAt[0] = '\0';
+    spot->updatedAt[0] = '\0';
+    spot->note[0] = '\0';
+}
+
+void StoreLabDummySavedSpotRecord(
+    LabDummySavedSpotRecord *spot,
+    const char *name,
+    const Vector &origin,
+    const Vector &angles,
+    const char *candidate,
+    const char *createdAt,
+    const char *updatedAt,
+    const char *note,
+    bool loadedFromDisk)
+{
+    if (spot == NULL)
+    {
+        return;
+    }
+
+    spot->valid = true;
+    spot->loadedFromDisk = loadedFromDisk;
+    spot->origin = origin;
+    spot->angles = angles;
+    strncpy_s(spot->name, sizeof(spot->name), name != NULL ? name : "", _TRUNCATE);
+    strncpy_s(spot->candidate, sizeof(spot->candidate), candidate != NULL ? candidate : "", _TRUNCATE);
+    strncpy_s(spot->createdAt, sizeof(spot->createdAt), createdAt != NULL ? createdAt : "", _TRUNCATE);
+    strncpy_s(spot->updatedAt, sizeof(spot->updatedAt), updatedAt != NULL ? updatedAt : "", _TRUNCATE);
+    strncpy_s(spot->note, sizeof(spot->note), note != NULL ? note : "", _TRUNCATE);
+}
+
+void ClearAllLabDummySavedSpots()
+{
+    for (int spotIndex = 0; spotIndex < ARRAYSIZE(g_glockLabDummySavedSpots); ++spotIndex)
+    {
+        ClearLabDummySavedSpotRecord(&g_glockLabDummySavedSpots[spotIndex]);
+    }
+
+    g_glockLabDummySavedSpotCount = 0;
+    g_glockLabDummyActiveSpotName[0] = '\0';
+    g_glockLabDummyTargetSpotsPath[0] = '\0';
+    g_glockLabDummyTargetSpotsLoadFailure[0] = '\0';
+}
+
 void AppendLabDummyFailureAttempt(char *buffer, size_t bufferSize, const LabDummyFailureInfo &failure)
 {
     if (buffer == NULL || bufferSize == 0 || failure.reason[0] == '\0')
@@ -389,11 +497,13 @@ void AppendLabDummyFailureAttempt(char *buffer, size_t bufferSize, const LabDumm
         attempt,
         sizeof(attempt),
         _TRUNCATE,
-        "%s[%s%s%s]: %s",
+        "%s[%s%s%s%s%s]: %s",
         failure.source[0] != '\0' ? failure.source : "target",
         failure.code[0] != '\0' ? failure.code : "failed",
         failure.candidate[0] != '\0' ? "/" : "",
         failure.candidate[0] != '\0' ? failure.candidate : "",
+        failure.spotName[0] != '\0' ? " spot=" : "",
+        failure.spotName[0] != '\0' ? failure.spotName : "",
         failure.reason);
     strncat_s(buffer, bufferSize, attempt, _TRUNCATE);
 }
@@ -487,6 +597,78 @@ void TrimCfgRequestString(const char *input, char *buffer, size_t bufferSize)
 
     const size_t length = (size_t)(end - start);
     strncpy_s(buffer, bufferSize, start, length);
+}
+
+bool TryResolveLabDummySpotName(
+    const char *requestedName,
+    char *buffer,
+    size_t bufferSize,
+    bool useDefaultIfEmpty,
+    char *failureReason,
+    size_t failureReasonSize)
+{
+    if (buffer == NULL || bufferSize == 0)
+    {
+        return false;
+    }
+
+    buffer[0] = '\0';
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    char trimmedName[kMaxLabDummySpotNameLength];
+    TrimCfgRequestString(requestedName, trimmedName, sizeof(trimmedName));
+    if (trimmedName[0] == '\0' && useDefaultIfEmpty)
+    {
+        strncpy_s(trimmedName, sizeof(trimmedName), kDefaultLabDummySpotName, _TRUNCATE);
+    }
+
+    if (trimmedName[0] == '\0')
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "target spot name cannot be empty");
+        }
+        return false;
+    }
+
+    if (strlen(trimmedName) >= bufferSize)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "target spot name \"%s\" is too long (max %u characters)",
+                trimmedName,
+                (unsigned int)(bufferSize - 1));
+        }
+        return false;
+    }
+
+    for (const char *cursor = trimmedName; *cursor != '\0'; ++cursor)
+    {
+        const unsigned char ch = (unsigned char)(*cursor);
+        if (ch < 32 || *cursor == '"' || *cursor == '\\' || *cursor == '/')
+        {
+            if (failureReason != NULL && failureReasonSize > 0)
+            {
+                _snprintf_s(
+                    failureReason,
+                    failureReasonSize,
+                    _TRUNCATE,
+                    "target spot name \"%s\" contains unsupported characters",
+                    trimmedName);
+            }
+            return false;
+        }
+    }
+
+    strncpy_s(buffer, bufferSize, trimmedName, _TRUNCATE);
+    return true;
 }
 
 void NormalizeSlashes(char *path, char separator)
@@ -647,6 +829,1371 @@ bool TryGetLiveModRootPath(char *buffer, size_t bufferSize)
     *dllsDirectory = '\0';
     strncpy_s(buffer, bufferSize, modulePath, _TRUNCATE);
     return true;
+}
+
+bool IsSafeLabDummyMapFileName(const char *mapName)
+{
+    if (mapName == NULL || mapName[0] == '\0')
+    {
+        return false;
+    }
+
+    for (const char *cursor = mapName; *cursor != '\0'; ++cursor)
+    {
+        const unsigned char ch = (unsigned char)(*cursor);
+        if (ch < 32 || *cursor == ':' || *cursor == '\\' || *cursor == '/' || *cursor == '"' || *cursor == '*' || *cursor == '?' || *cursor == '<' || *cursor == '>' || *cursor == '|')
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool TryBuildLabDummyTargetSpotsDirectoryPath(char *buffer, size_t bufferSize, char *failureReason, size_t failureReasonSize)
+{
+    if (buffer == NULL || bufferSize == 0)
+    {
+        return false;
+    }
+
+    buffer[0] = '\0';
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    char modRoot[kMaxLiveCfgPathLength];
+    if (!TryGetLiveModRootPath(modRoot, sizeof(modRoot)))
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "could not resolve the active hlserver_testbed mod root from hl.dll");
+        }
+        return false;
+    }
+
+    _snprintf_s(buffer, bufferSize, _TRUNCATE, "%s\\%s", modRoot, kLabDummyTargetSpotsDirectoryName);
+    return buffer[0] != '\0';
+}
+
+bool TryBuildCurrentLabDummyTargetSpotsPath(char *buffer, size_t bufferSize, char *failureReason, size_t failureReasonSize)
+{
+    if (buffer == NULL || bufferSize == 0)
+    {
+        return false;
+    }
+
+    buffer[0] = '\0';
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    const char *mapName = GetCurrentMapName();
+    if (!IsSafeLabDummyMapFileName(mapName))
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "could not resolve a safe target-spot file name for map \"%s\"",
+                GetValueOrFallback(mapName, ""));
+        }
+        return false;
+    }
+
+    char directoryPath[kMaxLiveCfgPathLength];
+    if (!TryBuildLabDummyTargetSpotsDirectoryPath(directoryPath, sizeof(directoryPath), failureReason, failureReasonSize))
+    {
+        return false;
+    }
+
+    _snprintf_s(buffer, bufferSize, _TRUNCATE, "%s\\%s.json", directoryPath, mapName);
+    return buffer[0] != '\0';
+}
+
+bool TryEnsureLabDummyDirectoryExists(const char *path, char *failureReason, size_t failureReasonSize)
+{
+    if (path == NULL || path[0] == '\0')
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "target spots directory path is empty");
+        }
+        return false;
+    }
+
+    if (CreateDirectoryA(path, NULL))
+    {
+        return true;
+    }
+
+    const DWORD error = GetLastError();
+    if (error == ERROR_ALREADY_EXISTS)
+    {
+        return true;
+    }
+
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        _snprintf_s(
+            failureReason,
+            failureReasonSize,
+            _TRUNCATE,
+            "could not create target spots directory %s (win32=%lu)",
+            path,
+            (unsigned long)error);
+    }
+    return false;
+}
+
+int FindLabDummySavedSpotIndex(const char *spotName)
+{
+    if (spotName == NULL || spotName[0] == '\0')
+    {
+        return -1;
+    }
+
+    for (int spotIndex = 0; spotIndex < g_glockLabDummySavedSpotCount; ++spotIndex)
+    {
+        if (g_glockLabDummySavedSpots[spotIndex].valid && StringEqualsIgnoreCase(g_glockLabDummySavedSpots[spotIndex].name, spotName))
+        {
+            return spotIndex;
+        }
+    }
+
+    return -1;
+}
+
+LabDummySavedSpotRecord *FindLabDummySavedSpot(const char *spotName)
+{
+    const int spotIndex = FindLabDummySavedSpotIndex(spotName);
+    return spotIndex >= 0 ? &g_glockLabDummySavedSpots[spotIndex] : NULL;
+}
+
+const LabDummySavedSpotRecord *FindLabDummySavedSpotConst(const char *spotName)
+{
+    const int spotIndex = FindLabDummySavedSpotIndex(spotName);
+    return spotIndex >= 0 ? &g_glockLabDummySavedSpots[spotIndex] : NULL;
+}
+
+const LabDummySavedSpotRecord *GetLabDummyActiveSavedSpot()
+{
+    return g_glockLabDummyActiveSpotName[0] != '\0' ? FindLabDummySavedSpotConst(g_glockLabDummyActiveSpotName) : NULL;
+}
+
+const LabDummySavedSpotRecord *GetLabDummyDefaultSavedSpot()
+{
+    return FindLabDummySavedSpotConst(kDefaultLabDummySpotName);
+}
+
+const LabDummySavedSpotRecord *GetPreferredLabDummySavedSpot(bool *usedDefaultFallback)
+{
+    if (usedDefaultFallback != NULL)
+    {
+        *usedDefaultFallback = false;
+    }
+
+    const LabDummySavedSpotRecord *activeSpot = GetLabDummyActiveSavedSpot();
+    if (activeSpot != NULL)
+    {
+        return activeSpot;
+    }
+
+    if (g_glockLabDummyActiveSpotName[0] != '\0')
+    {
+        return NULL;
+    }
+
+    const LabDummySavedSpotRecord *defaultSpot = GetLabDummyDefaultSavedSpot();
+    if (defaultSpot != NULL && usedDefaultFallback != NULL)
+    {
+        *usedDefaultFallback = true;
+    }
+
+    return defaultSpot;
+}
+
+const char *GetLabDummySpotStorageLabel(const LabDummySavedSpotRecord *spot)
+{
+    if (spot == NULL || !spot->valid)
+    {
+        return "";
+    }
+
+    return spot->loadedFromDisk ? kLabDummySpotStorageDisk : kLabDummySpotStorageSession;
+}
+
+void CopyLabDummySavedSpotToSelection(const LabDummySavedSpotRecord &spot, CBasePlayer *pAnchorPlayer, LabDummySpawnSelection *selection)
+{
+    if (selection == NULL)
+    {
+        return;
+    }
+
+    selection->origin = spot.origin;
+    selection->angles = spot.angles;
+    selection->anchorPlayer = pAnchorPlayer;
+    strncpy_s(selection->source, sizeof(selection->source), kLabDummySourceSavedSpot, _TRUNCATE);
+    strncpy_s(selection->candidate, sizeof(selection->candidate), spot.candidate[0] != '\0' ? spot.candidate : "marked_spot", _TRUNCATE);
+    strncpy_s(selection->spotName, sizeof(selection->spotName), spot.name, _TRUNCATE);
+    strncpy_s(selection->spotStorage, sizeof(selection->spotStorage), GetLabDummySpotStorageLabel(&spot), _TRUNCATE);
+}
+
+void BuildLabDummySpotNamesSummary(char *buffer, size_t bufferSize)
+{
+    if (buffer == NULL || bufferSize == 0)
+    {
+        return;
+    }
+
+    buffer[0] = '\0';
+    for (int spotIndex = 0; spotIndex < g_glockLabDummySavedSpotCount; ++spotIndex)
+    {
+        const LabDummySavedSpotRecord &spot = g_glockLabDummySavedSpots[spotIndex];
+        if (!spot.valid)
+        {
+            continue;
+        }
+
+        if (buffer[0] != '\0')
+        {
+            strncat_s(buffer, bufferSize, ", ", _TRUNCATE);
+        }
+
+        strncat_s(buffer, bufferSize, spot.name, _TRUNCATE);
+        if (StringEqualsIgnoreCase(g_glockLabDummyActiveSpotName, spot.name))
+        {
+            strncat_s(buffer, bufferSize, " [active]", _TRUNCATE);
+        }
+    }
+
+    if (buffer[0] == '\0')
+    {
+        strcpy_s(buffer, bufferSize, "none");
+    }
+}
+
+std::string EscapeLabDummyJsonString(const char *value)
+{
+    std::string escaped;
+    const char *source = value != NULL ? value : "";
+    for (const char *cursor = source; *cursor != '\0'; ++cursor)
+    {
+        switch (*cursor)
+        {
+        case '\\':
+            escaped += "\\\\";
+            break;
+        case '"':
+            escaped += "\\\"";
+            break;
+        case '\r':
+            escaped += "\\r";
+            break;
+        case '\n':
+            escaped += "\\n";
+            break;
+        case '\t':
+            escaped += "\\t";
+            break;
+        default:
+            escaped += *cursor;
+            break;
+        }
+    }
+
+    return escaped;
+}
+
+struct LabDummyJsonCursor
+{
+    const char *text;
+    size_t length;
+    size_t position;
+};
+
+bool SetLabDummyJsonParseFailure(std::string *failureReason, size_t position, const char *message)
+{
+    if (failureReason != NULL)
+    {
+        char buffer[256];
+        _snprintf_s(buffer, sizeof(buffer), _TRUNCATE, "json parse error at byte %u: %s", (unsigned int)position, GetValueOrFallback(message, "invalid value"));
+        *failureReason = buffer;
+    }
+
+    return false;
+}
+
+void SkipLabDummyJsonWhitespace(LabDummyJsonCursor *cursor)
+{
+    if (cursor == NULL || cursor->text == NULL)
+    {
+        return;
+    }
+
+    while (cursor->position < cursor->length && isspace((unsigned char)cursor->text[cursor->position]))
+    {
+        ++cursor->position;
+    }
+}
+
+bool TryConsumeLabDummyJsonChar(LabDummyJsonCursor *cursor, char expected)
+{
+    SkipLabDummyJsonWhitespace(cursor);
+    if (cursor == NULL || cursor->text == NULL || cursor->position >= cursor->length || cursor->text[cursor->position] != expected)
+    {
+        return false;
+    }
+
+    ++cursor->position;
+    return true;
+}
+
+int GetLabDummyJsonHexValue(char ch)
+{
+    if (ch >= '0' && ch <= '9')
+    {
+        return ch - '0';
+    }
+
+    if (ch >= 'a' && ch <= 'f')
+    {
+        return 10 + (ch - 'a');
+    }
+
+    if (ch >= 'A' && ch <= 'F')
+    {
+        return 10 + (ch - 'A');
+    }
+
+    return -1;
+}
+
+bool TryParseLabDummyJsonString(LabDummyJsonCursor *cursor, std::string *value, std::string *failureReason)
+{
+    SkipLabDummyJsonWhitespace(cursor);
+    if (cursor == NULL || cursor->text == NULL || cursor->position >= cursor->length || cursor->text[cursor->position] != '"')
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor != NULL ? cursor->position : 0, "expected a JSON string");
+    }
+
+    ++cursor->position;
+    std::string parsedValue;
+    while (cursor->position < cursor->length)
+    {
+        char ch = cursor->text[cursor->position++];
+        if (ch == '"')
+        {
+            if (value != NULL)
+            {
+                *value = parsedValue;
+            }
+            return true;
+        }
+
+        if (ch != '\\')
+        {
+            parsedValue += ch;
+            continue;
+        }
+
+        if (cursor->position >= cursor->length)
+        {
+            return SetLabDummyJsonParseFailure(failureReason, cursor->position, "unterminated JSON escape sequence");
+        }
+
+        const char escape = cursor->text[cursor->position++];
+        switch (escape)
+        {
+        case '"':
+        case '\\':
+        case '/':
+            parsedValue += escape;
+            break;
+        case 'b':
+            parsedValue += '\b';
+            break;
+        case 'f':
+            parsedValue += '\f';
+            break;
+        case 'n':
+            parsedValue += '\n';
+            break;
+        case 'r':
+            parsedValue += '\r';
+            break;
+        case 't':
+            parsedValue += '\t';
+            break;
+        case 'u':
+        {
+            if (cursor->position + 4 > cursor->length)
+            {
+                return SetLabDummyJsonParseFailure(failureReason, cursor->position, "incomplete \\u escape sequence");
+            }
+
+            int codePoint = 0;
+            for (int digitIndex = 0; digitIndex < 4; ++digitIndex)
+            {
+                const int digitValue = GetLabDummyJsonHexValue(cursor->text[cursor->position++]);
+                if (digitValue < 0)
+                {
+                    return SetLabDummyJsonParseFailure(failureReason, cursor->position, "invalid hex digit in \\u escape sequence");
+                }
+
+                codePoint = (codePoint << 4) | digitValue;
+            }
+
+            parsedValue += codePoint >= 32 && codePoint <= 126 ? (char)codePoint : '?';
+            break;
+        }
+        default:
+            return SetLabDummyJsonParseFailure(failureReason, cursor->position, "unsupported JSON escape sequence");
+        }
+    }
+
+    return SetLabDummyJsonParseFailure(failureReason, cursor->position, "unterminated JSON string");
+}
+
+bool TryParseLabDummyJsonNumber(LabDummyJsonCursor *cursor, double *value, std::string *failureReason)
+{
+    SkipLabDummyJsonWhitespace(cursor);
+    if (cursor == NULL || cursor->text == NULL || cursor->position >= cursor->length)
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor != NULL ? cursor->position : 0, "expected a JSON number");
+    }
+
+    errno = 0;
+    char *endPointer = NULL;
+    const char *startPointer = cursor->text + cursor->position;
+    const double parsedValue = strtod(startPointer, &endPointer);
+    if (endPointer == startPointer)
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor->position, "expected a JSON number");
+    }
+
+    if (errno == ERANGE)
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor->position, "numeric value is out of range");
+    }
+
+    cursor->position += (size_t)(endPointer - startPointer);
+    if (value != NULL)
+    {
+        *value = parsedValue;
+    }
+    return true;
+}
+
+bool TryParseLabDummyJsonLiteral(LabDummyJsonCursor *cursor, const char *literal, std::string *failureReason)
+{
+    SkipLabDummyJsonWhitespace(cursor);
+    if (cursor == NULL || cursor->text == NULL || literal == NULL)
+    {
+        return false;
+    }
+
+    const size_t literalLength = strlen(literal);
+    if (cursor->position + literalLength > cursor->length || strncmp(cursor->text + cursor->position, literal, literalLength) != 0)
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor->position, "unexpected JSON literal");
+    }
+
+    cursor->position += literalLength;
+    return true;
+}
+
+bool TrySkipLabDummyJsonValue(LabDummyJsonCursor *cursor, std::string *failureReason);
+
+bool TrySkipLabDummyJsonObject(LabDummyJsonCursor *cursor, std::string *failureReason)
+{
+    if (!TryConsumeLabDummyJsonChar(cursor, '{'))
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor != NULL ? cursor->position : 0, "expected '{'");
+    }
+
+    SkipLabDummyJsonWhitespace(cursor);
+    if (TryConsumeLabDummyJsonChar(cursor, '}'))
+    {
+        return true;
+    }
+
+    while (true)
+    {
+        std::string key;
+        if (!TryParseLabDummyJsonString(cursor, &key, failureReason))
+        {
+            return false;
+        }
+
+        if (!TryConsumeLabDummyJsonChar(cursor, ':'))
+        {
+            return SetLabDummyJsonParseFailure(failureReason, cursor->position, "expected ':' after object key");
+        }
+
+        if (!TrySkipLabDummyJsonValue(cursor, failureReason))
+        {
+            return false;
+        }
+
+        if (TryConsumeLabDummyJsonChar(cursor, '}'))
+        {
+            return true;
+        }
+
+        if (!TryConsumeLabDummyJsonChar(cursor, ','))
+        {
+            return SetLabDummyJsonParseFailure(failureReason, cursor->position, "expected ',' or '}' in object");
+        }
+    }
+}
+
+bool TrySkipLabDummyJsonArray(LabDummyJsonCursor *cursor, std::string *failureReason)
+{
+    if (!TryConsumeLabDummyJsonChar(cursor, '['))
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor != NULL ? cursor->position : 0, "expected '['");
+    }
+
+    SkipLabDummyJsonWhitespace(cursor);
+    if (TryConsumeLabDummyJsonChar(cursor, ']'))
+    {
+        return true;
+    }
+
+    while (true)
+    {
+        if (!TrySkipLabDummyJsonValue(cursor, failureReason))
+        {
+            return false;
+        }
+
+        if (TryConsumeLabDummyJsonChar(cursor, ']'))
+        {
+            return true;
+        }
+
+        if (!TryConsumeLabDummyJsonChar(cursor, ','))
+        {
+            return SetLabDummyJsonParseFailure(failureReason, cursor->position, "expected ',' or ']' in array");
+        }
+    }
+}
+
+bool TrySkipLabDummyJsonValue(LabDummyJsonCursor *cursor, std::string *failureReason)
+{
+    SkipLabDummyJsonWhitespace(cursor);
+    if (cursor == NULL || cursor->text == NULL || cursor->position >= cursor->length)
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor != NULL ? cursor->position : 0, "expected a JSON value");
+    }
+
+    const char ch = cursor->text[cursor->position];
+    if (ch == '"')
+    {
+        std::string ignored;
+        return TryParseLabDummyJsonString(cursor, &ignored, failureReason);
+    }
+
+    if (ch == '{')
+    {
+        return TrySkipLabDummyJsonObject(cursor, failureReason);
+    }
+
+    if (ch == '[')
+    {
+        return TrySkipLabDummyJsonArray(cursor, failureReason);
+    }
+
+    if (ch == '-' || (ch >= '0' && ch <= '9'))
+    {
+        double ignored = 0.0;
+        return TryParseLabDummyJsonNumber(cursor, &ignored, failureReason);
+    }
+
+    if (ch == 't')
+    {
+        return TryParseLabDummyJsonLiteral(cursor, "true", failureReason);
+    }
+
+    if (ch == 'f')
+    {
+        return TryParseLabDummyJsonLiteral(cursor, "false", failureReason);
+    }
+
+    if (ch == 'n')
+    {
+        return TryParseLabDummyJsonLiteral(cursor, "null", failureReason);
+    }
+
+    return SetLabDummyJsonParseFailure(failureReason, cursor->position, "unexpected JSON token");
+}
+
+bool TryParseLabDummyJsonVector3(LabDummyJsonCursor *cursor, Vector *value, std::string *failureReason)
+{
+    if (!TryConsumeLabDummyJsonChar(cursor, '['))
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor != NULL ? cursor->position : 0, "expected '[' for origin");
+    }
+
+    double coordinates[3] = {};
+    for (int coordinateIndex = 0; coordinateIndex < 3; ++coordinateIndex)
+    {
+        if (!TryParseLabDummyJsonNumber(cursor, &coordinates[coordinateIndex], failureReason))
+        {
+            return false;
+        }
+
+        if (coordinateIndex < 2)
+        {
+            if (!TryConsumeLabDummyJsonChar(cursor, ','))
+            {
+                return SetLabDummyJsonParseFailure(failureReason, cursor->position, "expected ',' between origin coordinates");
+            }
+        }
+    }
+
+    if (!TryConsumeLabDummyJsonChar(cursor, ']'))
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor->position, "expected ']'");
+    }
+
+    if (value != NULL)
+    {
+        *value = Vector((float)coordinates[0], (float)coordinates[1], (float)coordinates[2]);
+    }
+
+    return true;
+}
+
+bool TryParseLabDummySpotObject(LabDummyJsonCursor *cursor, LabDummySavedSpotRecord *spot, std::string *failureReason)
+{
+    if (spot == NULL)
+    {
+        return false;
+    }
+
+    ClearLabDummySavedSpotRecord(spot);
+    if (!TryConsumeLabDummyJsonChar(cursor, '{'))
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor != NULL ? cursor->position : 0, "expected '{' for target spot");
+    }
+
+    bool hasName = false;
+    bool hasOrigin = false;
+    bool hasYaw = false;
+
+    SkipLabDummyJsonWhitespace(cursor);
+    if (TryConsumeLabDummyJsonChar(cursor, '}'))
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor->position, "target spot object is missing required fields");
+    }
+
+    while (true)
+    {
+        std::string key;
+        if (!TryParseLabDummyJsonString(cursor, &key, failureReason))
+        {
+            return false;
+        }
+
+        if (!TryConsumeLabDummyJsonChar(cursor, ':'))
+        {
+            return SetLabDummyJsonParseFailure(failureReason, cursor->position, "expected ':' after target spot key");
+        }
+
+        if (key == "name")
+        {
+            std::string name;
+            if (!TryParseLabDummyJsonString(cursor, &name, failureReason))
+            {
+                return false;
+            }
+
+            strncpy_s(spot->name, sizeof(spot->name), name.c_str(), _TRUNCATE);
+            hasName = true;
+        }
+        else if (key == "origin")
+        {
+            if (!TryParseLabDummyJsonVector3(cursor, &spot->origin, failureReason))
+            {
+                return false;
+            }
+
+            hasOrigin = true;
+        }
+        else if (key == "yaw")
+        {
+            double yawValue = 0.0;
+            if (!TryParseLabDummyJsonNumber(cursor, &yawValue, failureReason))
+            {
+                return false;
+            }
+
+            spot->angles = Vector(0.0f, (float)yawValue, 0.0f);
+            hasYaw = true;
+        }
+        else if (key == "candidate")
+        {
+            std::string candidate;
+            if (!TryParseLabDummyJsonString(cursor, &candidate, failureReason))
+            {
+                return false;
+            }
+
+            strncpy_s(spot->candidate, sizeof(spot->candidate), candidate.c_str(), _TRUNCATE);
+        }
+        else if (key == "created_at")
+        {
+            std::string createdAt;
+            if (!TryParseLabDummyJsonString(cursor, &createdAt, failureReason))
+            {
+                return false;
+            }
+
+            strncpy_s(spot->createdAt, sizeof(spot->createdAt), createdAt.c_str(), _TRUNCATE);
+        }
+        else if (key == "updated_at")
+        {
+            std::string updatedAt;
+            if (!TryParseLabDummyJsonString(cursor, &updatedAt, failureReason))
+            {
+                return false;
+            }
+
+            strncpy_s(spot->updatedAt, sizeof(spot->updatedAt), updatedAt.c_str(), _TRUNCATE);
+        }
+        else if (key == "note")
+        {
+            std::string note;
+            if (!TryParseLabDummyJsonString(cursor, &note, failureReason))
+            {
+                return false;
+            }
+
+            strncpy_s(spot->note, sizeof(spot->note), note.c_str(), _TRUNCATE);
+        }
+        else
+        {
+            if (!TrySkipLabDummyJsonValue(cursor, failureReason))
+            {
+                return false;
+            }
+        }
+
+        if (TryConsumeLabDummyJsonChar(cursor, '}'))
+        {
+            break;
+        }
+
+        if (!TryConsumeLabDummyJsonChar(cursor, ','))
+        {
+            return SetLabDummyJsonParseFailure(failureReason, cursor->position, "expected ',' or '}' in target spot object");
+        }
+    }
+
+    if (!hasName || !hasOrigin || !hasYaw)
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor->position, "target spot object is missing name, origin, or yaw");
+    }
+
+    spot->valid = true;
+    spot->loadedFromDisk = true;
+    if (spot->updatedAt[0] == '\0' && spot->createdAt[0] != '\0')
+    {
+        strncpy_s(spot->updatedAt, sizeof(spot->updatedAt), spot->createdAt, _TRUNCATE);
+    }
+    if (spot->createdAt[0] == '\0' && spot->updatedAt[0] != '\0')
+    {
+        strncpy_s(spot->createdAt, sizeof(spot->createdAt), spot->updatedAt, _TRUNCATE);
+    }
+    return true;
+}
+
+bool TryParseLabDummySpotsFileText(const std::string &jsonText, std::vector<LabDummySavedSpotRecord> *spots, std::string *activeSpotName, std::string *failureReason)
+{
+    if (spots == NULL)
+    {
+        return false;
+    }
+
+    spots->clear();
+    if (activeSpotName != NULL)
+    {
+        activeSpotName->clear();
+    }
+
+    LabDummyJsonCursor cursor = {jsonText.c_str(), jsonText.length(), 0};
+    if (!TryConsumeLabDummyJsonChar(&cursor, '{'))
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor.position, "expected a JSON object at the root");
+    }
+
+    SkipLabDummyJsonWhitespace(&cursor);
+    if (TryConsumeLabDummyJsonChar(&cursor, '}'))
+    {
+        return true;
+    }
+
+    while (true)
+    {
+        std::string key;
+        if (!TryParseLabDummyJsonString(&cursor, &key, failureReason))
+        {
+            return false;
+        }
+
+        if (!TryConsumeLabDummyJsonChar(&cursor, ':'))
+        {
+            return SetLabDummyJsonParseFailure(failureReason, cursor.position, "expected ':' after root key");
+        }
+
+        if (key == "active_spot")
+        {
+            std::string name;
+            if (!TryParseLabDummyJsonString(&cursor, &name, failureReason))
+            {
+                return false;
+            }
+
+            if (activeSpotName != NULL)
+            {
+                *activeSpotName = name;
+            }
+        }
+        else if (key == "spots")
+        {
+            if (!TryConsumeLabDummyJsonChar(&cursor, '['))
+            {
+                return SetLabDummyJsonParseFailure(failureReason, cursor.position, "expected '[' for spots array");
+            }
+
+            SkipLabDummyJsonWhitespace(&cursor);
+            if (!TryConsumeLabDummyJsonChar(&cursor, ']'))
+            {
+                while (true)
+                {
+                    LabDummySavedSpotRecord spot = {};
+                    if (!TryParseLabDummySpotObject(&cursor, &spot, failureReason))
+                    {
+                        return false;
+                    }
+
+                    for (size_t existingIndex = 0; existingIndex < spots->size(); ++existingIndex)
+                    {
+                        if (StringEqualsIgnoreCase((*spots)[existingIndex].name, spot.name))
+                        {
+                            char duplicateMessage[256];
+                            _snprintf_s(duplicateMessage, sizeof(duplicateMessage), _TRUNCATE, "duplicate target spot name \"%s\"", spot.name);
+                            return SetLabDummyJsonParseFailure(failureReason, cursor.position, duplicateMessage);
+                        }
+                    }
+
+                    spots->push_back(spot);
+                    if (TryConsumeLabDummyJsonChar(&cursor, ']'))
+                    {
+                        break;
+                    }
+
+                    if (!TryConsumeLabDummyJsonChar(&cursor, ','))
+                    {
+                        return SetLabDummyJsonParseFailure(failureReason, cursor.position, "expected ',' or ']' in spots array");
+                    }
+                }
+            }
+        }
+        else
+        {
+            if (!TrySkipLabDummyJsonValue(&cursor, failureReason))
+            {
+                return false;
+            }
+        }
+
+        if (TryConsumeLabDummyJsonChar(&cursor, '}'))
+        {
+            break;
+        }
+
+        if (!TryConsumeLabDummyJsonChar(&cursor, ','))
+        {
+            return SetLabDummyJsonParseFailure(failureReason, cursor.position, "expected ',' or '}' in root object");
+        }
+    }
+
+    SkipLabDummyJsonWhitespace(&cursor);
+    if (cursor.position != cursor.length)
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor.position, "unexpected trailing content after JSON object");
+    }
+
+    return true;
+}
+
+bool TryReadLabDummySpotsFile(const char *path, std::string *fileContents, char *failureReason, size_t failureReasonSize)
+{
+    if (fileContents == NULL)
+    {
+        return false;
+    }
+
+    fileContents->clear();
+    if (path == NULL || path[0] == '\0')
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "target spots file path is empty");
+        }
+        return false;
+    }
+
+    FILE *file = NULL;
+    if (fopen_s(&file, path, "rb") != 0 || file == NULL)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(failureReason, failureReasonSize, _TRUNCATE, "could not open target spots file %s", path);
+        }
+        return false;
+    }
+
+    if (fseek(file, 0, SEEK_END) != 0)
+    {
+        fclose(file);
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(failureReason, failureReasonSize, _TRUNCATE, "could not read the size of target spots file %s", path);
+        }
+        return false;
+    }
+
+    const long fileSize = ftell(file);
+    if (fileSize < 0)
+    {
+        fclose(file);
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(failureReason, failureReasonSize, _TRUNCATE, "could not determine the size of target spots file %s", path);
+        }
+        return false;
+    }
+
+    if ((size_t)fileSize > kMaxLabDummySpotFileSize)
+    {
+        fclose(file);
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "target spots file %s is too large (%ld bytes, max %u)",
+                path,
+                fileSize,
+                (unsigned int)kMaxLabDummySpotFileSize);
+        }
+        return false;
+    }
+
+    if (fseek(file, 0, SEEK_SET) != 0)
+    {
+        fclose(file);
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(failureReason, failureReasonSize, _TRUNCATE, "could not rewind target spots file %s", path);
+        }
+        return false;
+    }
+
+    fileContents->assign((size_t)fileSize, '\0');
+    const size_t bytesRead = fileSize > 0 ? fread(&(*fileContents)[0], 1, (size_t)fileSize, file) : 0;
+    fclose(file);
+
+    if ((size_t)fileSize != bytesRead)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "could not read target spots file %s (expected %ld bytes, got %u)",
+                path,
+                fileSize,
+                (unsigned int)bytesRead);
+        }
+        fileContents->clear();
+        return false;
+    }
+
+    return true;
+}
+
+bool SaveLabDummySpotsForCurrentMap(char *failureReason, size_t failureReasonSize)
+{
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    char filePath[kMaxLiveCfgPathLength];
+    if (!TryBuildCurrentLabDummyTargetSpotsPath(filePath, sizeof(filePath), failureReason, failureReasonSize))
+    {
+        return false;
+    }
+
+    strncpy_s(g_glockLabDummyTargetSpotsPath, sizeof(g_glockLabDummyTargetSpotsPath), filePath, _TRUNCATE);
+
+    if (g_glockLabDummyActiveSpotName[0] != '\0' && FindLabDummySavedSpotIndex(g_glockLabDummyActiveSpotName) < 0)
+    {
+        g_glockLabDummyActiveSpotName[0] = '\0';
+    }
+
+    if (g_glockLabDummySavedSpotCount <= 0)
+    {
+        if (DeleteFileA(filePath) || GetLastError() == ERROR_FILE_NOT_FOUND)
+        {
+            return true;
+        }
+
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "could not remove empty target-spots file %s (win32=%lu)",
+                filePath,
+                (unsigned long)GetLastError());
+        }
+        return false;
+    }
+
+    char directoryPath[kMaxLiveCfgPathLength];
+    if (!TryBuildLabDummyTargetSpotsDirectoryPath(directoryPath, sizeof(directoryPath), failureReason, failureReasonSize))
+    {
+        return false;
+    }
+
+    if (!TryEnsureLabDummyDirectoryExists(directoryPath, failureReason, failureReasonSize))
+    {
+        return false;
+    }
+
+    std::string jsonText;
+    jsonText += "{\n";
+    jsonText += "  \"map\": \"";
+    jsonText += EscapeLabDummyJsonString(GetCurrentMapName());
+    jsonText += "\",\n";
+    jsonText += "  \"active_spot\": \"";
+    jsonText += EscapeLabDummyJsonString(g_glockLabDummyActiveSpotName);
+    jsonText += "\",\n";
+    jsonText += "  \"spots\": [\n";
+
+    for (int spotIndex = 0; spotIndex < g_glockLabDummySavedSpotCount; ++spotIndex)
+    {
+        const LabDummySavedSpotRecord &spot = g_glockLabDummySavedSpots[spotIndex];
+        if (!spot.valid)
+        {
+            continue;
+        }
+
+        char numberBuffer[96];
+        _snprintf_s(
+            numberBuffer,
+            sizeof(numberBuffer),
+            _TRUNCATE,
+            "      \"origin\": [%.3f, %.3f, %.3f],\n      \"yaw\": %.3f,\n",
+            spot.origin.x,
+            spot.origin.y,
+            spot.origin.z,
+            spot.angles.y);
+
+        jsonText += "    {\n";
+        jsonText += "      \"name\": \"";
+        jsonText += EscapeLabDummyJsonString(spot.name);
+        jsonText += "\",\n";
+        jsonText += numberBuffer;
+        jsonText += "      \"candidate\": \"";
+        jsonText += EscapeLabDummyJsonString(spot.candidate);
+        jsonText += "\",\n";
+        jsonText += "      \"created_at\": \"";
+        jsonText += EscapeLabDummyJsonString(spot.createdAt);
+        jsonText += "\",\n";
+        jsonText += "      \"updated_at\": \"";
+        jsonText += EscapeLabDummyJsonString(spot.updatedAt);
+        jsonText += "\"";
+        if (spot.note[0] != '\0')
+        {
+            jsonText += ",\n      \"note\": \"";
+            jsonText += EscapeLabDummyJsonString(spot.note);
+            jsonText += "\"";
+        }
+        jsonText += "\n    }";
+        if (spotIndex + 1 < g_glockLabDummySavedSpotCount)
+        {
+            jsonText += ",";
+        }
+        jsonText += "\n";
+    }
+
+    jsonText += "  ]\n";
+    jsonText += "}\n";
+
+    char tempPath[kMaxLiveCfgPathLength];
+    _snprintf_s(tempPath, sizeof(tempPath), _TRUNCATE, "%s.tmp", filePath);
+
+    FILE *file = NULL;
+    if (fopen_s(&file, tempPath, "wb") != 0 || file == NULL)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(failureReason, failureReasonSize, _TRUNCATE, "could not write temporary target-spots file %s", tempPath);
+        }
+        return false;
+    }
+
+    const size_t bytesWritten = fwrite(jsonText.data(), 1, jsonText.length(), file);
+    fclose(file);
+    if (bytesWritten != jsonText.length())
+    {
+        DeleteFileA(tempPath);
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "could not fully write target-spots file %s (expected %u bytes, wrote %u)",
+                tempPath,
+                (unsigned int)jsonText.length(),
+                (unsigned int)bytesWritten);
+        }
+        return false;
+    }
+
+    if (!MoveFileExA(tempPath, filePath, MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED))
+    {
+        const DWORD error = GetLastError();
+        DeleteFileA(tempPath);
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "could not finalize target-spots file %s (win32=%lu)",
+                filePath,
+                (unsigned long)error);
+        }
+        return false;
+    }
+
+    return true;
+}
+
+void LoadLabDummySpotsForCurrentMap()
+{
+    ClearAllLabDummySavedSpots();
+
+    char filePath[kMaxLiveCfgPathLength];
+    char failureReason[kMaxLabDummySpotFileFailureLength];
+    if (!TryBuildCurrentLabDummyTargetSpotsPath(filePath, sizeof(filePath), failureReason, sizeof(failureReason)))
+    {
+        strncpy_s(g_glockLabDummyTargetSpotsLoadFailure, sizeof(g_glockLabDummyTargetSpotsLoadFailure), failureReason, _TRUNCATE);
+        PrintLabDummyConsoleLine("target spots load failed: %s", failureReason);
+        return;
+    }
+
+    strncpy_s(g_glockLabDummyTargetSpotsPath, sizeof(g_glockLabDummyTargetSpotsPath), filePath, _TRUNCATE);
+    if (!FileExists(filePath))
+    {
+        return;
+    }
+
+    std::string fileContents;
+    if (!TryReadLabDummySpotsFile(filePath, &fileContents, failureReason, sizeof(failureReason)))
+    {
+        strncpy_s(g_glockLabDummyTargetSpotsLoadFailure, sizeof(g_glockLabDummyTargetSpotsLoadFailure), failureReason, _TRUNCATE);
+        PrintLabDummyConsoleLine("target spots load failed for map %s: %s", GetCurrentMapName(), failureReason);
+        return;
+    }
+
+    std::vector<LabDummySavedSpotRecord> loadedSpots;
+    std::string activeSpotName;
+    std::string parseFailure;
+    if (!TryParseLabDummySpotsFileText(fileContents, &loadedSpots, &activeSpotName, &parseFailure))
+    {
+        strncpy_s(g_glockLabDummyTargetSpotsLoadFailure, sizeof(g_glockLabDummyTargetSpotsLoadFailure), parseFailure.c_str(), _TRUNCATE);
+        PrintLabDummyConsoleLine("target spots load failed for map %s: %s", GetCurrentMapName(), parseFailure.c_str());
+        return;
+    }
+
+    if (loadedSpots.size() > kMaxLabDummySpotsPerMap)
+    {
+        _snprintf_s(
+            g_glockLabDummyTargetSpotsLoadFailure,
+            sizeof(g_glockLabDummyTargetSpotsLoadFailure),
+            _TRUNCATE,
+            "target spots file has %u entries, but only %u are supported",
+            (unsigned int)loadedSpots.size(),
+            (unsigned int)kMaxLabDummySpotsPerMap);
+        PrintLabDummyConsoleLine("target spots load failed for map %s: %s", GetCurrentMapName(), g_glockLabDummyTargetSpotsLoadFailure);
+        return;
+    }
+
+    for (size_t spotIndex = 0; spotIndex < loadedSpots.size(); ++spotIndex)
+    {
+        g_glockLabDummySavedSpots[spotIndex] = loadedSpots[spotIndex];
+    }
+
+    g_glockLabDummySavedSpotCount = (int)loadedSpots.size();
+    g_glockLabDummyTargetSpotsLoadFailure[0] = '\0';
+
+    if (!activeSpotName.empty())
+    {
+        if (FindLabDummySavedSpotIndex(activeSpotName.c_str()) >= 0)
+        {
+            strncpy_s(g_glockLabDummyActiveSpotName, sizeof(g_glockLabDummyActiveSpotName), activeSpotName.c_str(), _TRUNCATE);
+        }
+        else
+        {
+            _snprintf_s(
+                g_glockLabDummyTargetSpotsLoadFailure,
+                sizeof(g_glockLabDummyTargetSpotsLoadFailure),
+                _TRUNCATE,
+                "active target spot \"%s\" was not found in %s; cleared active selection",
+                activeSpotName.c_str(),
+                filePath);
+            PrintLabDummyConsoleLine("target spots load warning: %s", g_glockLabDummyTargetSpotsLoadFailure);
+        }
+    }
+
+    if (g_glockLabDummySavedSpotCount > 0)
+    {
+        PrintLabDummyConsoleLine(
+            "loaded %d persisted target spot(s) for map %s from %s%s%s",
+            g_glockLabDummySavedSpotCount,
+            GetCurrentMapName(),
+            filePath,
+            g_glockLabDummyActiveSpotName[0] != '\0' ? " active=" : "",
+            g_glockLabDummyActiveSpotName[0] != '\0' ? g_glockLabDummyActiveSpotName : "");
+    }
+}
+
+LabDummySavedSpotRecord *UpsertLabDummySavedSpot(
+    const char *spotName,
+    const Vector &origin,
+    const Vector &angles,
+    const char *candidate,
+    char *failureReason,
+    size_t failureReasonSize)
+{
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    int spotIndex = FindLabDummySavedSpotIndex(spotName);
+    if (spotIndex < 0)
+    {
+        if (g_glockLabDummySavedSpotCount >= ARRAYSIZE(g_glockLabDummySavedSpots))
+        {
+            if (failureReason != NULL && failureReasonSize > 0)
+            {
+                _snprintf_s(
+                    failureReason,
+                    failureReasonSize,
+                    _TRUNCATE,
+                    "cannot store target spot \"%s\": this map already has %u saved spots",
+                    GetValueOrFallback(spotName, ""),
+                    (unsigned int)ARRAYSIZE(g_glockLabDummySavedSpots));
+            }
+            return NULL;
+        }
+
+        spotIndex = g_glockLabDummySavedSpotCount++;
+        ClearLabDummySavedSpotRecord(&g_glockLabDummySavedSpots[spotIndex]);
+    }
+
+    LabDummySavedSpotRecord *spot = &g_glockLabDummySavedSpots[spotIndex];
+    char timestamp[kMaxLabDummySpotTimestampLength];
+    FormatFutureGameplayTimestamp(timestamp, sizeof(timestamp));
+
+    char createdAt[kMaxLabDummySpotTimestampLength];
+    strncpy_s(createdAt, sizeof(createdAt), spot->createdAt[0] != '\0' ? spot->createdAt : timestamp, _TRUNCATE);
+    char note[kMaxLabDummySpotNoteLength];
+    strncpy_s(note, sizeof(note), spot->note, _TRUNCATE);
+
+    StoreLabDummySavedSpotRecord(
+        spot,
+        spotName,
+        origin,
+        angles,
+        candidate,
+        createdAt,
+        timestamp,
+        note,
+        false);
+    return spot;
+}
+
+bool RemoveLabDummySavedSpot(const char *spotName, LabDummySavedSpotRecord *removedSpot, char *failureReason, size_t failureReasonSize)
+{
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    const int spotIndex = FindLabDummySavedSpotIndex(spotName);
+    if (spotIndex < 0)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "target spot \"%s\" does not exist for map %s",
+                GetValueOrFallback(spotName, ""),
+                GetCurrentMapName());
+        }
+        return false;
+    }
+
+    if (removedSpot != NULL)
+    {
+        *removedSpot = g_glockLabDummySavedSpots[spotIndex];
+    }
+
+    for (int index = spotIndex; index + 1 < g_glockLabDummySavedSpotCount; ++index)
+    {
+        g_glockLabDummySavedSpots[index] = g_glockLabDummySavedSpots[index + 1];
+    }
+
+    if (g_glockLabDummySavedSpotCount > 0)
+    {
+        --g_glockLabDummySavedSpotCount;
+        ClearLabDummySavedSpotRecord(&g_glockLabDummySavedSpots[g_glockLabDummySavedSpotCount]);
+    }
+
+    if (StringEqualsIgnoreCase(g_glockLabDummyActiveSpotName, spotName))
+    {
+        g_glockLabDummyActiveSpotName[0] = '\0';
+    }
+
+    return true;
+}
+
+bool TryGetLabDummySpotCommandName(int firstArgIndex, char *spotName, size_t spotNameSize, bool useDefaultIfEmpty, char *failureReason, size_t failureReasonSize)
+{
+    char requestedName[kMaxLabDummySpotNameLength];
+    BuildCommandArgumentString(firstArgIndex, requestedName, sizeof(requestedName));
+    return TryResolveLabDummySpotName(requestedName, spotName, spotNameSize, useDefaultIfEmpty, failureReason, failureReasonSize);
 }
 
 bool TryResolveLiveCfgSelection(const char *requestedPath, ResolvedLiveCfgSelection *pSelection, char *failureReason, size_t failureReasonSize)
@@ -998,7 +2545,7 @@ void ResetGlockLabDummyState()
     g_glockLabDummyRespawnPending = false;
     g_glockLabDummyRespawnTime = 0.0f;
     g_glockLabDummyRetryTime = 0.0f;
-    ClearLabDummyTransformMemory(&g_glockLabDummySavedSpot);
+    ClearAllLabDummySavedSpots();
     ClearLabDummyTransformMemory(&g_glockLabDummyLastGoodTransform);
     ClearLabDummyFailureInfo(&g_glockLabDummyLastSpawnFailure);
     g_glockLabDummyLastFailureAt[0] = '\0';
@@ -1029,6 +2576,7 @@ void RefreshFutureHooksMapState()
 
     strncpy_s(g_futureHooksMapName, sizeof(g_futureHooksMapName), currentMapName, _TRUNCATE);
     ResetGlockLabDummyState();
+    LoadLabDummySpotsForCurrentMap();
 }
 
 bool IsLabDummyClassname(const char *classname)
@@ -1212,35 +2760,93 @@ bool TryValidateLabDummyExactTransform(const Vector &origin, CBasePlayer *pIgnor
     return true;
 }
 
-bool TryResolveSavedLabDummySelection(CBasePlayer *pAnchorPlayer, LabDummySpawnSelection *selection, LabDummyFailureInfo *failure)
+bool TryResolveNamedSavedLabDummySelection(
+    const LabDummySavedSpotRecord *spot,
+    CBasePlayer *pAnchorPlayer,
+    LabDummySpawnSelection *selection,
+    LabDummyFailureInfo *failure)
 {
-    if (!g_glockLabDummySavedSpot.valid)
+    if (spot == NULL || !spot->valid)
     {
-        SetLabDummyFailureInfo(failure, "saved_spot_missing", kLabDummySourceSavedSpot, "", "no saved target spot is marked for this map");
+        SetLabDummyFailureInfo(failure, "saved_spot_missing", kLabDummySourceSavedSpot, "", "the requested saved target spot is missing");
         return false;
     }
 
     char failureCode[64];
     char failureReason[192];
-    if (!TryValidateLabDummyExactTransform(g_glockLabDummySavedSpot.origin, pAnchorPlayer, failureCode, sizeof(failureCode), failureReason, sizeof(failureReason)))
+    if (!TryValidateLabDummyExactTransform(spot->origin, pAnchorPlayer, failureCode, sizeof(failureCode), failureReason, sizeof(failureReason)))
     {
         char details[512];
-        _snprintf_s(details, sizeof(details), _TRUNCATE, "saved target spot is no longer valid: %s", failureReason);
+        _snprintf_s(
+            details,
+            sizeof(details),
+            _TRUNCATE,
+            "saved target spot \"%s\" is no longer valid: %s",
+            spot->name,
+            failureReason);
         SetLabDummyFailureInfo(
             failure,
             "saved_spot_invalid",
             kLabDummySourceSavedSpot,
-            g_glockLabDummySavedSpot.candidate[0] != '\0' ? g_glockLabDummySavedSpot.candidate : "marked_spot",
-            details);
+            spot->candidate[0] != '\0' ? spot->candidate : "marked_spot",
+            details,
+            spot->name,
+            GetLabDummySpotStorageLabel(spot));
         return false;
     }
 
-    selection->origin = g_glockLabDummySavedSpot.origin;
-    selection->angles = g_glockLabDummySavedSpot.angles;
-    selection->anchorPlayer = pAnchorPlayer;
-    strncpy_s(selection->source, sizeof(selection->source), kLabDummySourceSavedSpot, _TRUNCATE);
-    strncpy_s(selection->candidate, sizeof(selection->candidate), g_glockLabDummySavedSpot.candidate[0] != '\0' ? g_glockLabDummySavedSpot.candidate : "marked_spot", _TRUNCATE);
+    CopyLabDummySavedSpotToSelection(*spot, pAnchorPlayer, selection);
     return true;
+}
+
+bool TryResolveSavedLabDummySelection(CBasePlayer *pAnchorPlayer, LabDummySpawnSelection *selection, LabDummyFailureInfo *failure)
+{
+    const LabDummySavedSpotRecord *activeSpot = GetLabDummyActiveSavedSpot();
+    if (g_glockLabDummyActiveSpotName[0] != '\0' && activeSpot == NULL)
+    {
+        char details[512];
+        _snprintf_s(
+            details,
+            sizeof(details),
+            _TRUNCATE,
+            "active target spot \"%s\" is selected for map %s but is not available",
+            g_glockLabDummyActiveSpotName,
+            GetCurrentMapName());
+        SetLabDummyFailureInfo(
+            failure,
+            "saved_spot_missing",
+            kLabDummySourceSavedSpot,
+            "",
+            details,
+            g_glockLabDummyActiveSpotName,
+            "");
+        return false;
+    }
+
+    const LabDummySavedSpotRecord *spot = GetPreferredLabDummySavedSpot(NULL);
+    if (spot == NULL)
+    {
+        char details[512];
+        if (g_glockLabDummySavedSpotCount > 0)
+        {
+            _snprintf_s(
+                details,
+                sizeof(details),
+                _TRUNCATE,
+                "no active target spot is selected for map %s and no \"%s\" fallback spot is available",
+                GetCurrentMapName(),
+                kDefaultLabDummySpotName);
+        }
+        else
+        {
+            strcpy_s(details, sizeof(details), "no saved target spot is marked for this map");
+        }
+
+        SetLabDummyFailureInfo(failure, "saved_spot_missing", kLabDummySourceSavedSpot, "", details);
+        return false;
+    }
+
+    return TryResolveNamedSavedLabDummySelection(spot, pAnchorPlayer, selection, failure);
 }
 
 bool TryResolveLastGoodLabDummySelection(CBasePlayer *pAnchorPlayer, LabDummySpawnSelection *selection, LabDummyFailureInfo *failure)
@@ -1492,15 +3098,12 @@ bool TrySelectPreferredLabDummySpawnTransform(CBasePlayer *pAnchorPlayer, LabDum
     LabDummyFailureInfo lastGoodFailure = {};
     char attempts[1024] = "";
 
-    if (g_glockLabDummySavedSpot.valid)
+    if (TryResolveSavedLabDummySelection(pAnchorPlayer, selection, &savedFailure))
     {
-        if (TryResolveSavedLabDummySelection(pAnchorPlayer, selection, &savedFailure))
-        {
-            return true;
-        }
-
-        AppendLabDummyFailureAttempt(attempts, sizeof(attempts), savedFailure);
+        return true;
     }
+
+    AppendLabDummyFailureAttempt(attempts, sizeof(attempts), savedFailure);
 
     if (TryBuildLabDummySpawnTransformFromAnchor(pAnchorPlayer, selection, &anchorFailure))
     {
@@ -1525,9 +3128,17 @@ bool TrySelectPreferredLabDummySpawnTransform(CBasePlayer *pAnchorPlayer, LabDum
     }
 
     LabDummyFailureInfo chosenFailure = {};
-    if (anchorFailure.code[0] != '\0' && !StringEqualsIgnoreCase(anchorFailure.code, "missing_anchor"))
+    if (savedFailure.code[0] != '\0' && !StringEqualsIgnoreCase(savedFailure.code, "saved_spot_missing"))
+    {
+        chosenFailure = savedFailure;
+    }
+    else if (anchorFailure.code[0] != '\0' && !StringEqualsIgnoreCase(anchorFailure.code, "missing_anchor"))
     {
         chosenFailure = anchorFailure;
+    }
+    else if (lastGoodFailure.code[0] != '\0' && !StringEqualsIgnoreCase(lastGoodFailure.code, "last_good_missing"))
+    {
+        chosenFailure = lastGoodFailure;
     }
     else if (savedFailure.code[0] != '\0')
     {
@@ -1547,7 +3158,9 @@ bool TrySelectPreferredLabDummySpawnTransform(CBasePlayer *pAnchorPlayer, LabDum
         chosenFailure.code[0] != '\0' ? chosenFailure.code : "missing_anchor",
         chosenFailure.source[0] != '\0' ? chosenFailure.source : kLabDummySourceCurrentAnchor,
         chosenFailure.candidate,
-        attempts);
+        attempts,
+        chosenFailure.spotName,
+        chosenFailure.spotStorage);
     return false;
 }
 
@@ -1570,7 +3183,9 @@ void LogLabDummySpawnFailure(const LabDummyFailureInfo &failure, CBasePlayer *pA
         failure.code,
         failure.reason,
         NULL,
-        NULL);
+        NULL,
+        failure.spotName,
+        failure.spotStorage);
 }
 
 void StabilizeGlockLabDummyEntity(CBaseEntity *pDummy)
@@ -1613,7 +3228,16 @@ void MoveGlockLabDummyToSelection(CBaseEntity *pDummy, CBasePlayer *pAnchorPlaye
     StoreLabDummyTransformMemory(&g_glockLabDummyLastGoodTransform, selection.origin, selection.angles, selection.source, selection.candidate);
     StabilizeGlockLabDummyEntity(pDummy);
     ClearGlockLabDummyFailureState();
-    LogGlockLabDummyReposition(pDummy, pAnchorPlayer, selection.origin, selection.angles, reason, selection.source, selection.candidate);
+    LogGlockLabDummyReposition(
+        pDummy,
+        pAnchorPlayer,
+        selection.origin,
+        selection.angles,
+        reason,
+        selection.source,
+        selection.candidate,
+        selection.spotName,
+        selection.spotStorage);
 }
 
 CBaseEntity *SpawnGlockLabDummy(const LabDummySpawnSelection &selection, bool logAsRespawn)
@@ -1675,7 +3299,16 @@ CBaseEntity *SpawnGlockLabDummy(const LabDummySpawnSelection &selection, bool lo
     g_glockLabDummyRetryTime = 0.0f;
     ClearGlockLabDummyFailureState();
 
-    LogGlockLabDummySpawn(pDummy, selection.anchorPlayer, logAsRespawn, selection.origin, selection.angles, selection.source, selection.candidate);
+    LogGlockLabDummySpawn(
+        pDummy,
+        selection.anchorPlayer,
+        logAsRespawn,
+        selection.origin,
+        selection.angles,
+        selection.source,
+        selection.candidate,
+        selection.spotName,
+        selection.spotStorage);
     return pDummy;
 }
 
@@ -1878,11 +3511,13 @@ bool TryRespawnLabDummyInternal(const char *removeReason, char *summary, size_t 
         summary,
         summarySize,
         _TRUNCATE,
-        "respawned \"%s\" using profile %s via %s/%s.",
+        "respawned \"%s\" using profile %s via %s/%s%s%s.",
         kGlockLabDummyDisplayName,
         ExpGlockLabTargetProfileName(),
         selection.source,
-        selection.candidate[0] != '\0' ? selection.candidate : "default");
+        selection.candidate[0] != '\0' ? selection.candidate : "default",
+        selection.spotName[0] != '\0' ? " spot=" : "",
+        selection.spotName[0] != '\0' ? selection.spotName : "");
     return true;
 }
 
@@ -1893,13 +3528,18 @@ void PrintLabDummyStatus()
     CBaseEntity *pDummy = GetTrackedLabDummyEntity();
     CBasePlayer *pAnchorPlayer = FindCurrentLiveLabDummyAnchorPlayer();
     const LabDummyProfileDefinition *pCurrentProfile = FindBuiltInLabDummyProfile(ExpGlockLabTargetProfileName());
+    const LabDummySavedSpotRecord *activeSavedSpot = GetLabDummyActiveSavedSpot();
+    bool usingDefaultSavedSpot = false;
+    const LabDummySavedSpotRecord *effectiveSavedSpot = GetPreferredLabDummySavedSpot(&usingDefaultSavedSpot);
     LabDummySpawnSelection nextSelection = {};
     LabDummyFailureInfo nextFailure = {};
     const bool respawnPossible = TrySelectPreferredLabDummySpawnTransform(pAnchorPlayer, &nextSelection, &nextFailure);
+    char savedSpotNames[kMaxLabDummySpotListLength];
     char savedOrigin[64];
     char lastGoodOrigin[64];
     char nextOrigin[64];
     char currentOrigin[64];
+    BuildLabDummySpotNamesSummary(savedSpotNames, sizeof(savedSpotNames));
     strcpy_s(savedOrigin, sizeof(savedOrigin), "n/a");
     strcpy_s(lastGoodOrigin, sizeof(lastGoodOrigin), "n/a");
     strcpy_s(nextOrigin, sizeof(nextOrigin), "n/a");
@@ -1939,18 +3579,66 @@ void PrintLabDummyStatus()
         PrintLabDummyConsoleLine("current live anchor: none");
     }
 
-    if (g_glockLabDummySavedSpot.valid)
+    if (g_glockLabDummySavedSpotCount > 0)
     {
-        FormatVector3(savedOrigin, sizeof(savedOrigin), g_glockLabDummySavedSpot.origin);
         PrintLabDummyConsoleLine(
-            "saved target spot: present origin=%s yaw=%.1f candidate=%s",
-            savedOrigin,
-            g_glockLabDummySavedSpot.angles.y,
-            g_glockLabDummySavedSpot.candidate[0] != '\0' ? g_glockLabDummySavedSpot.candidate : "marked_spot");
+            "saved target spots: count=%d active=%s names=%s",
+            g_glockLabDummySavedSpotCount,
+            g_glockLabDummyActiveSpotName[0] != '\0' ? g_glockLabDummyActiveSpotName : "none",
+            savedSpotNames);
+
+        if (activeSavedSpot != NULL)
+        {
+            FormatVector3(savedOrigin, sizeof(savedOrigin), activeSavedSpot->origin);
+            PrintLabDummyConsoleLine(
+                "active saved spot: name=%s storage=%s origin=%s yaw=%.1f candidate=%s created_at=%s updated_at=%s",
+                activeSavedSpot->name,
+                GetLabDummySpotStorageLabel(activeSavedSpot),
+                savedOrigin,
+                activeSavedSpot->angles.y,
+                activeSavedSpot->candidate[0] != '\0' ? activeSavedSpot->candidate : "marked_spot",
+                activeSavedSpot->createdAt[0] != '\0' ? activeSavedSpot->createdAt : "n/a",
+                activeSavedSpot->updatedAt[0] != '\0' ? activeSavedSpot->updatedAt : "n/a");
+        }
+        else if (g_glockLabDummyActiveSpotName[0] != '\0')
+        {
+            PrintLabDummyConsoleLine("active saved spot: name=%s state=missing", g_glockLabDummyActiveSpotName);
+        }
+        else if (usingDefaultSavedSpot && effectiveSavedSpot != NULL)
+        {
+            FormatVector3(savedOrigin, sizeof(savedOrigin), effectiveSavedSpot->origin);
+            PrintLabDummyConsoleLine(
+                "active saved spot: none selected, fallback=%s storage=%s origin=%s yaw=%.1f candidate=%s",
+                effectiveSavedSpot->name,
+                GetLabDummySpotStorageLabel(effectiveSavedSpot),
+                savedOrigin,
+                effectiveSavedSpot->angles.y,
+                effectiveSavedSpot->candidate[0] != '\0' ? effectiveSavedSpot->candidate : "marked_spot");
+        }
+        else
+        {
+            PrintLabDummyConsoleLine("active saved spot: none selected");
+        }
+
+        if (g_glockLabDummyTargetSpotsPath[0] != '\0')
+        {
+            PrintLabDummyConsoleLine("target spots file: %s", g_glockLabDummyTargetSpotsPath);
+        }
     }
     else
     {
-        PrintLabDummyConsoleLine("saved target spot: none");
+        PrintLabDummyConsoleLine("saved target spots: none");
+        if (g_glockLabDummyTargetSpotsPath[0] != '\0')
+        {
+            PrintLabDummyConsoleLine("target spots file: %s", g_glockLabDummyTargetSpotsPath);
+        }
+    }
+
+    if (g_glockLabDummyTargetSpotsLoadFailure[0] != '\0')
+    {
+        PrintLabDummyConsoleLine(
+            "target spots load state: problem=%s",
+            g_glockLabDummyTargetSpotsLoadFailure);
     }
 
     if (g_glockLabDummyLastGoodTransform.valid)
@@ -1971,11 +3659,15 @@ void PrintLabDummyStatus()
     if (g_glockLabDummyLastSpawnFailure.code[0] != '\0')
     {
         PrintLabDummyConsoleLine(
-            "last spawn failure: at=%s code=%s source=%s candidate=%s reason=%s",
+            "last spawn failure: at=%s code=%s source=%s candidate=%s%s%s%s%s reason=%s",
             g_glockLabDummyLastFailureAt[0] != '\0' ? g_glockLabDummyLastFailureAt : "unknown",
             g_glockLabDummyLastSpawnFailure.code,
             g_glockLabDummyLastSpawnFailure.source[0] != '\0' ? g_glockLabDummyLastSpawnFailure.source : "unknown",
             g_glockLabDummyLastSpawnFailure.candidate[0] != '\0' ? g_glockLabDummyLastSpawnFailure.candidate : "n/a",
+            g_glockLabDummyLastSpawnFailure.spotName[0] != '\0' ? " spot=" : "",
+            g_glockLabDummyLastSpawnFailure.spotName[0] != '\0' ? g_glockLabDummyLastSpawnFailure.spotName : "",
+            g_glockLabDummyLastSpawnFailure.spotStorage[0] != '\0' ? " storage=" : "",
+            g_glockLabDummyLastSpawnFailure.spotStorage[0] != '\0' ? g_glockLabDummyLastSpawnFailure.spotStorage : "",
             g_glockLabDummyLastSpawnFailure.reason);
     }
     else
@@ -1987,11 +3679,15 @@ void PrintLabDummyStatus()
     {
         FormatVector3(nextOrigin, sizeof(nextOrigin), nextSelection.origin);
         PrintLabDummyConsoleLine(
-            "target respawn possible: yes source=%s candidate=%s origin=%s yaw=%.1f",
+            "target respawn possible: yes source=%s candidate=%s origin=%s yaw=%.1f%s%s%s%s",
             nextSelection.source,
             nextSelection.candidate[0] != '\0' ? nextSelection.candidate : "default",
             nextOrigin,
-            nextSelection.angles.y);
+            nextSelection.angles.y,
+            nextSelection.spotName[0] != '\0' ? " spot=" : "",
+            nextSelection.spotName[0] != '\0' ? nextSelection.spotName : "",
+            nextSelection.spotStorage[0] != '\0' ? " storage=" : "",
+            nextSelection.spotStorage[0] != '\0' ? nextSelection.spotStorage : "");
     }
     else
     {
@@ -2023,7 +3719,7 @@ void PrintLabDummyStatus()
     }
 
     PrintLabDummyConsoleLine("built-in target profiles: %s", GetLabDummyProfileNames());
-    PrintLabDummyConsoleLine("commands: exp_target_spawn | exp_target_clear | exp_target_mark | exp_target_unmark | exp_target_use_saved | exp_target_respawn | exp_target_status | exp_target_tp_front | exp_target_profile <name>");
+    PrintLabDummyConsoleLine("commands: exp_target_spawn | exp_target_clear | exp_target_mark [name] | exp_target_unmark [name] | exp_target_list | exp_target_use_saved <name> | exp_target_respawn | exp_target_status | exp_target_tp_front | exp_target_profile <name>");
 }
 
 void ExpCfgApplyCommand()
@@ -2155,11 +3851,13 @@ void ExpTargetSpawnCommand()
     }
 
     PrintLabDummyConsoleLine(
-        "spawned \"%s\" using profile %s via %s/%s.",
+        "spawned \"%s\" using profile %s via %s/%s%s%s.",
         kGlockLabDummyDisplayName,
         ExpGlockLabTargetProfileName(),
         targetSelection.source,
-        targetSelection.candidate[0] != '\0' ? targetSelection.candidate : "default");
+        targetSelection.candidate[0] != '\0' ? targetSelection.candidate : "default",
+        targetSelection.spotName[0] != '\0' ? " spot=" : "",
+        targetSelection.spotName[0] != '\0' ? targetSelection.spotName : "");
 }
 
 void ExpTargetClearCommand()
@@ -2195,110 +3893,171 @@ void ExpTargetStatusCommand()
     PrintLabDummyStatus();
 }
 
+void ExpTargetListCommand()
+{
+    RefreshFutureHooksMapState();
+
+    PrintLabDummyConsoleLine(
+        "saved target spots for map %s: count=%d active=%s file=%s",
+        GetCurrentMapName(),
+        g_glockLabDummySavedSpotCount,
+        g_glockLabDummyActiveSpotName[0] != '\0' ? g_glockLabDummyActiveSpotName : "none",
+        g_glockLabDummyTargetSpotsPath[0] != '\0' ? g_glockLabDummyTargetSpotsPath : "n/a");
+
+    if (g_glockLabDummySavedSpotCount <= 0)
+    {
+        if (g_glockLabDummyTargetSpotsLoadFailure[0] != '\0')
+        {
+            PrintLabDummyConsoleLine("target spots load state: problem=%s", g_glockLabDummyTargetSpotsLoadFailure);
+        }
+        return;
+    }
+
+    for (int spotIndex = 0; spotIndex < g_glockLabDummySavedSpotCount; ++spotIndex)
+    {
+        const LabDummySavedSpotRecord &spot = g_glockLabDummySavedSpots[spotIndex];
+        char origin[64];
+        FormatVector3(origin, sizeof(origin), spot.origin);
+        PrintLabDummyConsoleLine(
+            "spot[%d]: name=%s%s storage=%s origin=%s yaw=%.1f candidate=%s updated_at=%s",
+            spotIndex,
+            spot.name,
+            StringEqualsIgnoreCase(g_glockLabDummyActiveSpotName, spot.name) ? " [active]" : "",
+            GetLabDummySpotStorageLabel(&spot),
+            origin,
+            spot.angles.y,
+            spot.candidate[0] != '\0' ? spot.candidate : "marked_spot",
+            spot.updatedAt[0] != '\0' ? spot.updatedAt : "n/a");
+    }
+}
+
 void ExpTargetMarkCommand()
 {
     RefreshFutureHooksMapState();
 
+    char spotName[kMaxLabDummySpotNameLength];
+    char failureReason[kMaxLabDummySpotFileFailureLength];
+    if (!TryGetLabDummySpotCommandName(1, spotName, sizeof(spotName), true, failureReason, sizeof(failureReason)))
+    {
+        PrintLabDummyConsoleLine("target mark failed: %s", failureReason);
+        return;
+    }
+
     CBaseEntity *pDummy = GetTrackedLabDummyEntity();
     CBasePlayer *pAnchorPlayer = FindCurrentLiveLabDummyAnchorPlayer();
+    Vector markedOrigin = g_vecZero;
+    Vector markedAngles = g_vecZero;
+    char markCandidate[64] = "";
 
     if (pDummy != NULL && pDummy->pev != NULL && pDummy->IsAlive())
     {
-        StoreLabDummyTransformMemory(&g_glockLabDummySavedSpot, pDummy->pev->origin, pDummy->pev->angles, kLabDummySourceSavedSpot, "current_dummy");
-        LogGlockLabDummyMark("target_mark", pAnchorPlayer, pDummy->pev->origin, pDummy->pev->angles, "current_dummy");
-
-        char origin[64];
-        FormatVector3(origin, sizeof(origin), pDummy->pev->origin);
-        PrintLabDummyConsoleLine("saved current dummy position for this map: origin=%s yaw=%.1f", origin, pDummy->pev->angles.y);
-        return;
+        markedOrigin = pDummy->pev->origin;
+        markedAngles = pDummy->pev->angles;
+        strncpy_s(markCandidate, sizeof(markCandidate), "current_dummy", _TRUNCATE);
     }
-
-    LabDummySpawnSelection selection = {};
-    LabDummyFailureInfo failure = {};
-    if (!TryBuildLabDummySpawnTransformFromAnchor(pAnchorPlayer, &selection, &failure))
+    else
     {
-        LogLabDummySpawnFailure(failure, pAnchorPlayer);
-        PrintLabDummyConsoleLine("target mark failed: %s", failure.reason);
+        LabDummySpawnSelection selection = {};
+        LabDummyFailureInfo failure = {};
+        if (!TryBuildLabDummySpawnTransformFromAnchor(pAnchorPlayer, &selection, &failure))
+        {
+            LogLabDummySpawnFailure(failure, pAnchorPlayer);
+            PrintLabDummyConsoleLine("target mark failed: %s", failure.reason);
+            return;
+        }
+
+        markedOrigin = selection.origin;
+        markedAngles = selection.angles;
+        strncpy_s(markCandidate, sizeof(markCandidate), selection.candidate, _TRUNCATE);
+    }
+
+    LabDummySavedSpotRecord *spot = UpsertLabDummySavedSpot(spotName, markedOrigin, markedAngles, markCandidate, failureReason, sizeof(failureReason));
+    if (spot == NULL)
+    {
+        PrintLabDummyConsoleLine("target mark failed: %s", failureReason);
         return;
     }
 
-    StoreLabDummyTransformMemory(&g_glockLabDummySavedSpot, selection.origin, selection.angles, kLabDummySourceSavedSpot, selection.candidate);
-    LogGlockLabDummyMark("target_mark", pAnchorPlayer, selection.origin, selection.angles, selection.candidate);
+    strncpy_s(g_glockLabDummyActiveSpotName, sizeof(g_glockLabDummyActiveSpotName), spot->name, _TRUNCATE);
+    const bool savedToDisk = SaveLabDummySpotsForCurrentMap(failureReason, sizeof(failureReason));
+    LogGlockLabDummyMark("target_mark", pAnchorPlayer, markedOrigin, markedAngles, markCandidate, spot->name, kLabDummySpotStorageSession);
 
     char origin[64];
-    FormatVector3(origin, sizeof(origin), selection.origin);
+    FormatVector3(origin, sizeof(origin), markedOrigin);
     PrintLabDummyConsoleLine(
-        "saved target spot for this map: origin=%s yaw=%.1f source=%s/%s",
+        "saved target spot \"%s\" for map %s: origin=%s yaw=%.1f active=%s disk=%s",
+        spot->name,
+        GetCurrentMapName(),
         origin,
-        selection.angles.y,
-        selection.source,
-        selection.candidate);
+        markedAngles.y,
+        g_glockLabDummyActiveSpotName,
+        savedToDisk ? g_glockLabDummyTargetSpotsPath : failureReason);
 }
 
 void ExpTargetUnmarkCommand()
 {
     RefreshFutureHooksMapState();
 
-    if (!g_glockLabDummySavedSpot.valid)
+    char spotName[kMaxLabDummySpotNameLength];
+    char failureReason[kMaxLabDummySpotFileFailureLength];
+    if (!TryGetLabDummySpotCommandName(1, spotName, sizeof(spotName), true, failureReason, sizeof(failureReason)))
     {
-        PrintLabDummyConsoleLine("saved target spot is already clear for this map.");
+        PrintLabDummyConsoleLine("target unmark failed: %s", failureReason);
         return;
     }
 
-    LogGlockLabDummyMark("target_unmark", FindCurrentLiveLabDummyAnchorPlayer(), g_glockLabDummySavedSpot.origin, g_glockLabDummySavedSpot.angles, g_glockLabDummySavedSpot.candidate);
-    ClearLabDummyTransformMemory(&g_glockLabDummySavedSpot);
-    PrintLabDummyConsoleLine("cleared the saved target spot for this map.");
+    LabDummySavedSpotRecord removedSpot = {};
+    if (!RemoveLabDummySavedSpot(spotName, &removedSpot, failureReason, sizeof(failureReason)))
+    {
+        PrintLabDummyConsoleLine("target unmark failed: %s", failureReason);
+        return;
+    }
+
+    const bool savedToDisk = SaveLabDummySpotsForCurrentMap(failureReason, sizeof(failureReason));
+    LogGlockLabDummyMark(
+        "target_unmark",
+        FindCurrentLiveLabDummyAnchorPlayer(),
+        removedSpot.origin,
+        removedSpot.angles,
+        removedSpot.candidate,
+        removedSpot.name,
+        GetLabDummySpotStorageLabel(&removedSpot));
+    PrintLabDummyConsoleLine(
+        "cleared target spot \"%s\" for map %s. active=%s disk=%s",
+        removedSpot.name,
+        GetCurrentMapName(),
+        g_glockLabDummyActiveSpotName[0] != '\0' ? g_glockLabDummyActiveSpotName : "none",
+        savedToDisk ? g_glockLabDummyTargetSpotsPath : failureReason);
 }
 
 void ExpTargetUseSavedCommand()
 {
     RefreshFutureHooksMapState();
-    SetLabDummyEnabled(true);
 
-    CBasePlayer *pAnchorPlayer = FindCurrentLiveLabDummyAnchorPlayer();
-    LabDummySpawnSelection selection = {};
-    LabDummyFailureInfo failure = {};
-    if (!TryResolveSavedLabDummySelection(pAnchorPlayer, &selection, &failure))
+    char spotName[kMaxLabDummySpotNameLength];
+    char failureReason[kMaxLabDummySpotFileFailureLength];
+    if (!TryGetLabDummySpotCommandName(1, spotName, sizeof(spotName), true, failureReason, sizeof(failureReason)))
     {
-        LogLabDummySpawnFailure(failure, pAnchorPlayer);
-        PrintLabDummyConsoleLine("target use_saved failed: %s", failure.reason);
+        PrintLabDummyConsoleLine("target use_saved failed: %s", failureReason);
+        return;
+    }
+
+    const LabDummySavedSpotRecord *spot = FindLabDummySavedSpotConst(spotName);
+    if (spot == NULL)
+    {
+        PrintLabDummyConsoleLine("target use_saved failed: target spot \"%s\" was not found for map %s", spotName, GetCurrentMapName());
         PrintLabDummyStatus();
         return;
     }
 
-    CBaseEntity *pDummy = GetTrackedLabDummyEntity();
-    if (pDummy != NULL && pDummy->IsAlive())
-    {
-        MoveGlockLabDummyToSelection(pDummy, pAnchorPlayer, selection, "command_use_saved");
-        PrintLabDummyConsoleLine(
-            "moved \"%s\" to the saved target spot via %s/%s.",
-            kGlockLabDummyDisplayName,
-            selection.source,
-            selection.candidate[0] != '\0' ? selection.candidate : "marked_spot");
-        return;
-    }
-
-    if (pDummy != NULL)
-    {
-        RemoveLabDummyEntities("command_use_saved");
-        g_glockLabDummy = NULL;
-    }
-
-    g_glockLabDummyRespawnPending = false;
-    g_glockLabDummyRespawnTime = 0.0f;
-    g_glockLabDummyRetryTime = 0.0f;
-
-    if (SpawnGlockLabDummy(selection, pDummy != NULL) == NULL)
-    {
-        PrintLabDummyStatus();
-        return;
-    }
-
+    strncpy_s(g_glockLabDummyActiveSpotName, sizeof(g_glockLabDummyActiveSpotName), spot->name, _TRUNCATE);
+    const bool savedToDisk = SaveLabDummySpotsForCurrentMap(failureReason, sizeof(failureReason));
+    LogGlockLabDummyMark("target_use_saved", FindCurrentLiveLabDummyAnchorPlayer(), spot->origin, spot->angles, "selected_active_spot", spot->name, GetLabDummySpotStorageLabel(spot));
     PrintLabDummyConsoleLine(
-        "spawned \"%s\" at the saved target spot via %s/%s.",
-        kGlockLabDummyDisplayName,
-        selection.source,
-        selection.candidate[0] != '\0' ? selection.candidate : "marked_spot");
+        "active target spot is now \"%s\" for map %s. Use exp_target_respawn to rebuild the dummy there. disk=%s",
+        spot->name,
+        GetCurrentMapName(),
+        savedToDisk ? g_glockLabDummyTargetSpotsPath : failureReason);
 }
 
 void ExpTargetTpFrontCommand()
@@ -2438,6 +4197,7 @@ void RegisterFutureGameplayCommands()
     g_engfuncs.pfnAddServerCommand((char *)"exp_target_clear", ExpTargetClearCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_target_mark", ExpTargetMarkCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_target_unmark", ExpTargetUnmarkCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_target_list", ExpTargetListCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_target_use_saved", ExpTargetUseSavedCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_target_respawn", ExpTargetRespawnCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_target_status", ExpTargetStatusCommand);

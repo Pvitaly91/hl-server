@@ -53,10 +53,10 @@ void LogAcceptedGlockPrimaryShot(CBasePlayer *pPlayer, const GlockAcceptedShotTe
 void LogAcceptedMp5PrimaryShot(CBasePlayer *pPlayer, const Mp5AcceptedShotTelemetry &telemetry);
 void LogRejectedGlockPrimaryHold(CBasePlayer *pPlayer, const GlockRejectedShotTelemetry &telemetry);
 void LogLiveLabConsoleMessage(const char *line);
-void LogGlockLabDummySpawn(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, bool respawn, const Vector &origin, const Vector &angles, const char *source, const char *candidate);
-void LogGlockLabDummySpawnFailed(CBasePlayer *pAnchorPlayer, const char *source, const char *candidate, const char *code, const char *reason, const Vector *pOrigin, const Vector *pAngles);
-void LogGlockLabDummyMark(const char *action, CBasePlayer *pAnchorPlayer, const Vector &origin, const Vector &angles, const char *details);
-void LogGlockLabDummyReposition(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, const Vector &origin, const Vector &angles, const char *reason, const char *source, const char *candidate);
+void LogGlockLabDummySpawn(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, bool respawn, const Vector &origin, const Vector &angles, const char *source, const char *candidate, const char *spotName, const char *spotStorage);
+void LogGlockLabDummySpawnFailed(CBasePlayer *pAnchorPlayer, const char *source, const char *candidate, const char *code, const char *reason, const Vector *pOrigin, const Vector *pAngles, const char *spotName, const char *spotStorage);
+void LogGlockLabDummyMark(const char *action, CBasePlayer *pAnchorPlayer, const Vector &origin, const Vector &angles, const char *details, const char *spotName, const char *spotStorage);
+void LogGlockLabDummyReposition(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, const Vector &origin, const Vector &angles, const char *reason, const char *source, const char *candidate, const char *spotName, const char *spotStorage);
 void LogGlockLabDummyClear(CBaseEntity *pDummy, const char *reason);
 void BeginGlockPrimaryShotContext(CBasePlayer *pPlayer);
 void BeginMp5PrimaryShotContext(CBasePlayer *pPlayer);

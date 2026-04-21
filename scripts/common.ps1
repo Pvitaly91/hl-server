@@ -1328,6 +1328,13 @@ function Backup-TestbedLiveModCfgProfiles {
         $preservedContent = $true
     }
 
+    $sourcePath = Join-Path $modRootPath "target_spots"
+    if (Test-Path -LiteralPath $sourcePath) {
+        Ensure-Directory -Path $backupRoot
+        Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $backupRoot "target_spots") -Recurse -Force
+        $preservedContent = $true
+    }
+
     foreach ($pattern in @("*.cfg", "*.hlcfg.json", "HlConfigEditorCpp.exe", "HlConfigEditorCpp.pdb")) {
         $matchingFiles = Get-ChildItem -LiteralPath $modRootPath -Filter $pattern -File -Force -ErrorAction SilentlyContinue
         foreach ($matchingFile in $matchingFiles) {
@@ -1364,6 +1371,12 @@ function Restore-TestbedLiveModCfgProfiles {
     $sourcePath = Join-Path $resolvedBackupRoot "cfg_profiles"
     if (Test-Path -LiteralPath $sourcePath) {
         $destinationPath = Join-Path $destinationRoot "cfg_profiles"
+        Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Recurse -Force
+    }
+
+    $sourcePath = Join-Path $resolvedBackupRoot "target_spots"
+    if (Test-Path -LiteralPath $sourcePath) {
+        $destinationPath = Join-Path $destinationRoot "target_spots"
         Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Recurse -Force
     }
 

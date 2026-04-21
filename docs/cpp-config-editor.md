@@ -134,11 +134,11 @@ Use this as the preferred integrated path. Legacy demo and backward-compatible e
 1. Edit the values in `HlConfigEditorCpp`.
 2. Quick-export the cfg directly into `<HalfLifeRoot>\hlserver_testbed\`.
 3. Join the live server and stand in the firing lane you want to reuse.
-4. Run `exp_target_mark` once to save a reliable target spot for the current map and session.
+4. Run `exp_target_mark default` once to save a persistent named spot for the current map.
 5. In HLDS, run `exp_cfg_apply editor_glock_simple.cfg`, or use `exp_lab_apply editor_glock_simple.cfg` to apply the cfg and rebuild the dummy in one command.
-6. Rebuild the dummy with `exp_target_respawn`, move it back to the saved spot with `exp_target_use_saved`, or force a fresh anchor-front placement with `exp_target_tp_front`.
+6. For later sessions, run `exp_target_use_saved default`, then `exp_target_respawn`. Use `exp_target_tp_front` only when you want a temporary anchor-front placement instead of the persisted spot.
 7. Switch target presets with `exp_target_profile unarmored`, `exp_target_profile vest`, or `exp_target_profile vest_headprotected`.
-8. Inspect the current live state with `exp_cfg_status` and `exp_target_status`.
+8. Inspect the current live state with `exp_cfg_status`, `exp_target_list`, and `exp_target_status`.
 9. Test in-game and then review the weapon log or analyzer output.
 
 Subsystem provenance for this recommended path is recorded in [docs/stable-live-lab-state.md](/D:/DEV/CPP/HL-Server/docs/stable-live-lab-state.md).
@@ -151,15 +151,18 @@ Live lab console commands:
 - `exp_lab_apply <cfg_name_or_path>` applies the cfg and respawns the current dummy with one summary.
 - `exp_target_spawn` enables and spawns the standing dummy.
 - `exp_target_clear` removes the standing dummy and disables automatic respawn.
-- `exp_target_mark` stores a session-local saved target spot for the current map.
-- `exp_target_unmark` clears the saved target spot for the current map.
-- `exp_target_use_saved` immediately moves or respawns the dummy onto the saved target spot.
-- `exp_target_respawn` rebuilds the dummy using saved spot, current anchor search, and last known good transform fallback.
-- `exp_target_status` prints the current dummy profile, saved spot, last known good transform, anchor, last failure, and respawn viability.
+- `exp_target_mark [name]` stores a persistent named target spot for the current map. Omitting the name writes `default`.
+- `exp_target_unmark [name]` removes a named target spot for the current map. Omitting the name removes `default`.
+- `exp_target_list` prints all named target spots for the current map, the active selection, and the on-disk file path.
+- `exp_target_use_saved <name>` selects the active named target spot that `exp_target_respawn` should use next.
+- `exp_target_respawn` rebuilds the dummy using the active saved spot first, then the `default` spot when no active spot is selected, then current anchor search, then last known good transform fallback.
+- `exp_target_status` prints the current dummy profile, target-spots file/load state, active saved spot, saved spot names, last known good transform, anchor, last failure, and respawn viability.
 - `exp_target_tp_front` moves or respawns the dummy in front of the current live player anchor.
 - `exp_target_profile <name>` switches between `unarmored`, `vest`, and `vest_headprotected`, then refreshes the dummy when possible.
 
 The live dummy now forces `mp_allowmonsters 1` before spawning, because the backing `monster_generic` entity is removed immediately on deathmatch maps when monster spawning is disabled.
+
+Persistent target spots are stored under `<HalfLifeRoot>\hlserver_testbed\target_spots\<map>.json`. Each file is human-readable JSON and persists both the active spot name and the saved spot transforms for that map. See [docs/target-spots.md](/D:/DEV/CPP/HL-Server/docs/target-spots.md) for the exact command flow and file format.
 
 ## JSON vs CFG
 
