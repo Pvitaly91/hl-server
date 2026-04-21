@@ -182,10 +182,54 @@ Live lab console commands:
 - `exp_target_status` prints the current dummy profile, anchor state, saved-spot file/load status, active saved spot, all saved spot names, last known good transform, last spawn failure, and whether respawn is currently possible.
 - `exp_target_tp_front` moves or respawns the dummy in front of the current live player anchor.
 - `exp_target_profile <name>` switches between `unarmored`, `vest`, and `vest_headprotected`, then refreshes the target when possible.
+- `exp_round_start` enables round mode and starts the freeze-time to live loop when at least one player is present.
+- `exp_round_restart` forces a clean round reset, respawns players, reapplies the configured loadout, and starts freeze time again.
+- `exp_round_status` prints current round state, player counts, timers, loadout mode, start health/armor, and the last winner/reason.
+- `exp_round_stop` disables round mode and restores normal deathmatch respawn flow.
+- `exp_round_slay [all]` is a small server-side round test helper that eliminates one live player, or every live player with `all`, without relying on client console input.
 
 The live dummy now forces `mp_allowmonsters 1` before spawning, because the underlying server-side `monster_generic` entity is otherwise removed immediately on deathmatch maps.
 
 Persistent named target spots are stored under `<HalfLifeRoot>\hlserver_testbed\target_spots\<map>.json`. Each map file is human-readable JSON with an `active_spot` field and one or more named saved spots. See [docs/target-spots.md](/D:/DEV/CPP/HL-Server/docs/target-spots.md) for the exact file layout and command flow.
+
+## Round-Based Duel Mode
+
+The repo now has a first server-side round loop for live duel testing. It is intentionally narrow:
+
+- round start with freeze time
+- deterministic health, armor, and loadout reset
+- no respawn during the live round
+- elimination-based round end
+- automatic next-round restart after a short delay
+
+It is not a full Counter-Strike ruleset yet. There is no economy, buy menu, team assignment, or join-in-progress polish in this pass.
+
+Main round cvars:
+
+- `sv_exp_round_mode 0|1`
+- `sv_exp_round_freeze_time`
+- `sv_exp_round_restart_delay`
+- `sv_exp_round_start_health`
+- `sv_exp_round_start_armor`
+- `sv_exp_round_no_respawn`
+- `sv_exp_round_friendlyfire`
+- `sv_exp_round_weapon_profile`
+- `sv_exp_round_loadout_mode none|glock|mp5|357|shotgun`
+
+Recommended duel loop:
+
+1. Export and apply the weapon cfg you want to test, for example `exp_cfg_apply editor_357_test.cfg`.
+2. Configure round mode in the cfg or console, for example:
+   `sv_exp_round_mode 1`
+   `sv_exp_round_loadout_mode 357`
+   `sv_exp_round_start_health 100`
+   `sv_exp_round_start_armor 0`
+3. Run `exp_round_start`.
+4. Use `exp_round_status` to inspect the current state.
+5. Play the round. Dead players stay out until the automatic restart.
+6. Use `exp_round_restart` for a forced clean reset or `exp_round_stop` to go back to normal deathmatch respawn behavior.
+
+For the full state model, command reference, and current limitations, see [docs/round-mode.md](/D:/DEV/CPP/HL-Server/docs/round-mode.md).
 
 ## Shared Weapon Tuning Core
 

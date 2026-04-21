@@ -928,6 +928,47 @@ void LogLiveCfgCommand(const char *action, const char *requestedPath, const char
     WriteTelemetryLine(telemetryLine.c_str());
 }
 
+void LogRoundEvent(const char *event, const char *state, int roundNumber, int connectedPlayers, int alivePlayers, CBasePlayer *pWinner, const char *reason)
+{
+    if (!ExpDebugWeaponLogEnabled())
+    {
+        return;
+    }
+
+    EnsureWeaponDebugLogOpen();
+
+    char timestamp[64];
+    char line[2048];
+    FormatTimestamp(timestamp, sizeof(timestamp));
+
+    _snprintf_s(
+        line,
+        sizeof(line),
+        _TRUNCATE,
+        "[weaponlog] type=round ts=%s map=%s event=%s state=%s round=%d connected_players=%d alive_players=%d winner=\"%s\" winner_entindex=%d winner_userid=%d no_respawn=%d friendlyfire=%d loadout_mode=\"%s\" weapon_profile=\"%s\"",
+        timestamp,
+        SanitizeLogValue(GetSafeMapName()).c_str(),
+        SanitizeLogValue(event).c_str(),
+        SanitizeLogValue(state).c_str(),
+        roundNumber,
+        connectedPlayers,
+        alivePlayers,
+        GetSafePlayerName(pWinner).c_str(),
+        GetPlayerEntityIndex(pWinner),
+        GetPlayerUserId(pWinner),
+        ExpRoundNoRespawn() ? 1 : 0,
+        ExpRoundFriendlyFireEnabled() ? 1 : 0,
+        SanitizeLogValue(ExpRoundLoadoutMode()).c_str(),
+        SanitizeLogValue(ExpRoundWeaponProfile()[0] != '\0' ? ExpRoundWeaponProfile() : "none").c_str());
+
+    std::string telemetryLine = line;
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "reason", reason);
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "weapon_under_test", ExpWeaponUnderTest());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "session_tag", ExpSessionTag());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "cfg_active_profile", ExpActiveCfgProfile());
+    WriteTelemetryLine(telemetryLine.c_str());
+}
+
 void LogLiveLabConsoleMessage(const char *line)
 {
     if (!ExpDebugWeaponLogEnabled() || line == NULL || line[0] == '\0')

@@ -41,6 +41,7 @@ The user-facing tuning surface was kept stable:
 - existing `sv_exp_glock_*`, `sv_exp_mp5_*`, `sv_exp_357_*`, `sv_exp_shotgun_*`, and general `sv_exp_*` cvars remain valid
 - existing editor-exported cfg files still load without format changes
 - the C++ config editor still exports the same GoldSrc cfg surface
+- the first round-mode loadout selector can now reuse the same supported weapon set with `sv_exp_round_loadout_mode glock|mp5|357|shotgun`
 
 That keeps the live-lab workflow unchanged:
 
@@ -77,6 +78,17 @@ exp_target_respawn
 357 preset JSON files now live under `configs/357-presets/` with checked-in `default`, `precision_test`, and `headshot_test` examples for live-lab iteration.
 
 Shotgun preset JSON files now live under `configs/shotgun-presets/` with checked-in `default`, `close_quickkill`, and `precision_test` examples for live-lab iteration.
+
+Round-mode cfgs can layer on top of the same weapon configs. A typical live test can now combine:
+
+```text
+exp_cfg_apply editor_357_test.cfg
+sv_exp_round_mode 1
+sv_exp_round_loadout_mode 357
+exp_round_start
+```
+
+That keeps weapon tuning, deterministic loadout grant, and the no-respawn duel loop on the same server-side surface.
 
 ## Why this helps future weapons
 

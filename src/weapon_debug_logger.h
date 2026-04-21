@@ -82,6 +82,7 @@ struct ShotgunAcceptedShotTelemetry
 
 void EnsureWeaponDebugLogReady();
 void LogLiveCfgCommand(const char *action, const char *requestedPath, const char *execPath, const char *resolvedPath, bool success, const char *details);
+void LogRoundEvent(const char *event, const char *state, int roundNumber, int connectedPlayers, int alivePlayers, CBasePlayer *pWinner, const char *reason);
 void LogAcceptedGlockPrimaryShot(CBasePlayer *pPlayer, const GlockAcceptedShotTelemetry &telemetry);
 void LogAcceptedMp5PrimaryShot(CBasePlayer *pPlayer, const Mp5AcceptedShotTelemetry &telemetry);
 void LogAccepted357PrimaryShot(CBasePlayer *pPlayer, const Weapon357AcceptedShotTelemetry &telemetry);

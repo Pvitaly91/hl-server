@@ -28,6 +28,7 @@
 #include	"voice_gamemgr.h"
 #include	"hltv.h"
 #include	"trains.h"
+#include    "future_gameplay_hooks.h"
 
 #if !defined ( _WIN32 )
 #include <ctype.h>
@@ -529,13 +530,14 @@ void CHalfLifeMultiplay :: PlayerSpawn( CBasePlayer *pPlayer )
 	}
 
 	pPlayer->m_iAutoWepSwitch = iAutoWepSwitch;
+	FutureGameplayOnPlayerSpawn( pPlayer );
 }
 
 //=========================================================
 //=========================================================
 BOOL CHalfLifeMultiplay :: FPlayerCanRespawn( CBasePlayer *pPlayer )
 {
-	return TRUE;
+	return FutureGameplayPlayerCanRespawn( pPlayer ) ? TRUE : FALSE;
 }
 
 //=========================================================
@@ -636,6 +638,8 @@ void CHalfLifeMultiplay :: PlayerKilled( CBasePlayer *pVictim, entvars_t *pKille
 		DeactivateSatchels( pVictim );
 	}
 #endif
+
+	FutureGameplayOnPlayerKilled( pVictim, peKiller );
 }
 
 //=========================================================

@@ -4,6 +4,7 @@
 #include "monsters.h"
 #include "player.h"
 #include "weapons.h"
+#include "client.h"
 
 #include "future_gameplay_hooks.h"
 #include "weapon_debug_logger.h"
@@ -60,6 +61,10 @@ const char *kDefaultLabDummySpotName = "default";
 const char *kLabDummySpotStorageDisk = "disk";
 const char *kLabDummySpotStorageSession = "session";
 const char *kLabDummyTargetSpotsDirectoryName = "target_spots";
+const float kRoundEndHoldSeconds = 0.25f;
+const float kDefaultRoundFreezeTime = 3.0f;
+const float kDefaultRoundRestartDelay = 3.0f;
+const float kDefaultRoundStartHealth = 100.0f;
 
 struct LiveCfgState
 {
@@ -145,6 +150,38 @@ struct LabDummyPlacementCandidate
     float forwardOffset;
     float rightOffset;
     float upOffset;
+};
+
+enum ExpRoundStateType
+{
+    kExpRoundStateDisabled = 0,
+    kExpRoundStateWaitingForPlayers,
+    kExpRoundStateFreezeTime,
+    kExpRoundStateLive,
+    kExpRoundStateRoundEnd,
+    kExpRoundStateRestartPending
+};
+
+struct ExpRoundRuntimeState
+{
+    ExpRoundStateType state;
+    int roundNumber;
+    int connectedPlayers;
+    int alivePlayers;
+    float stateEnteredAt;
+    float nextTransitionAt;
+    bool applyingRoundReset;
+    char lastWinnerName[64];
+    int lastWinnerEntIndex;
+    int lastWinnerUserId;
+    char lastEndReason[64];
+};
+
+struct ExpRoundPlayerSnapshot
+{
+    int connectedPlayers;
+    int alivePlayers;
+    CBasePlayer *lastAlivePlayer;
 };
 
 const LabDummyProfileDefinition kBuiltInLabDummyProfiles[] = {
@@ -254,6 +291,15 @@ cvar_t sv_exp_shotgun_primary_headshot_lethal = {"sv_exp_shotgun_primary_headsho
 cvar_t sv_exp_shotgun_lab_loadout = {"sv_exp_shotgun_lab_loadout", "0", FCVAR_SERVER};
 cvar_t sv_exp_shotgun_lab_ammo = {"sv_exp_shotgun_lab_ammo", "48", FCVAR_SERVER};
 cvar_t sv_exp_shotgun_lab_autoswitch = {"sv_exp_shotgun_lab_autoswitch", "1", FCVAR_SERVER};
+cvar_t sv_exp_round_mode = {"sv_exp_round_mode", "0", FCVAR_SERVER};
+cvar_t sv_exp_round_freeze_time = {"sv_exp_round_freeze_time", "3.0", FCVAR_SERVER};
+cvar_t sv_exp_round_restart_delay = {"sv_exp_round_restart_delay", "3.0", FCVAR_SERVER};
+cvar_t sv_exp_round_start_health = {"sv_exp_round_start_health", "100.0", FCVAR_SERVER};
+cvar_t sv_exp_round_start_armor = {"sv_exp_round_start_armor", "0.0", FCVAR_SERVER};
+cvar_t sv_exp_round_no_respawn = {"sv_exp_round_no_respawn", "1", FCVAR_SERVER};
+cvar_t sv_exp_round_friendlyfire = {"sv_exp_round_friendlyfire", "0", FCVAR_SERVER};
+cvar_t sv_exp_round_weapon_profile = {"sv_exp_round_weapon_profile", "", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
+cvar_t sv_exp_round_loadout_mode = {"sv_exp_round_loadout_mode", "none", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
 cvar_t sv_exp_debug_weaponlog = {"sv_exp_debug_weaponlog", "0", FCVAR_SERVER};
 cvar_t sv_exp_debug_weaponlog_rejections = {"sv_exp_debug_weaponlog_rejections", "0", FCVAR_SERVER};
 cvar_t sv_exp_glock_lab_dummy = {"sv_exp_glock_lab_dummy", "0", FCVAR_SERVER};
@@ -288,8 +334,10 @@ float g_glockLabDummyRespawnTime = 0.0f;
 float g_glockLabDummyRetryTime = 0.0f;
 char g_futureHooksMapName[64] = "";
 LiveCfgState g_liveCfgState = {};
+ExpRoundRuntimeState g_expRoundState = {};
 
 void PrintLabDummyStatus();
+void PrintRoundStatus();
 bool EnsureLabDummyMonsterSpawningEnabled(LabDummyFailureInfo *failure, const LabDummySpawnSelection *selection);
 bool SaveLabDummySpotsForCurrentMap(char *failureReason, size_t failureReasonSize);
 void LoadLabDummySpotsForCurrentMap();
@@ -600,6 +648,707 @@ void BuildCommandArgumentString(int firstArgIndex, char *buffer, size_t bufferSi
 
         strncat_s(buffer, bufferSize, CMD_ARGV(argIndex), _TRUNCATE);
     }
+}
+
+const char *GetRoundStateName(ExpRoundStateType state)
+{
+    switch (state)
+    {
+    case kExpRoundStateWaitingForPlayers:
+        return "waiting_for_players";
+    case kExpRoundStateFreezeTime:
+        return "freeze_time";
+    case kExpRoundStateLive:
+        return "live";
+    case kExpRoundStateRoundEnd:
+        return "round_end";
+    case kExpRoundStateRestartPending:
+        return "restart_pending";
+    case kExpRoundStateDisabled:
+    default:
+        return "disabled";
+    }
+}
+
+void ClearRoundRuntimeState()
+{
+    memset(&g_expRoundState, 0, sizeof(g_expRoundState));
+    g_expRoundState.state = kExpRoundStateDisabled;
+}
+
+bool IsRoundManagedPlayer(CBasePlayer *pPlayer)
+{
+    return pPlayer != NULL &&
+        pPlayer->pev != NULL &&
+        pPlayer->edict() != NULL &&
+        pPlayer->IsObserver() == 0 &&
+        pPlayer->pev->netname != 0 &&
+        STRING(pPlayer->pev->netname)[0] != '\0';
+}
+
+ExpRoundPlayerSnapshot CollectRoundPlayerSnapshot()
+{
+    ExpRoundPlayerSnapshot snapshot = {};
+    if (gpGlobals == NULL)
+    {
+        return snapshot;
+    }
+
+    for (int playerIndex = 1; playerIndex <= gpGlobals->maxClients; ++playerIndex)
+    {
+        CBaseEntity *pEntity = UTIL_PlayerByIndex(playerIndex);
+        if (pEntity == NULL || !pEntity->IsPlayer() || pEntity->pev == NULL)
+        {
+            continue;
+        }
+
+        CBasePlayer *pPlayer = (CBasePlayer *)pEntity;
+        if (!IsRoundManagedPlayer(pPlayer))
+        {
+            continue;
+        }
+
+        ++snapshot.connectedPlayers;
+        if (pPlayer->IsAlive() && pPlayer->pev->deadflag == DEAD_NO)
+        {
+            ++snapshot.alivePlayers;
+            snapshot.lastAlivePlayer = pPlayer;
+        }
+    }
+
+    return snapshot;
+}
+
+void UpdateRoundPopulationSnapshot()
+{
+    const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
+    g_expRoundState.connectedPlayers = snapshot.connectedPlayers;
+    g_expRoundState.alivePlayers = snapshot.alivePlayers;
+}
+
+void SetRoundState(ExpRoundStateType state, float transitionDelaySeconds)
+{
+    g_expRoundState.state = state;
+    g_expRoundState.stateEnteredAt = gpGlobals != NULL ? gpGlobals->time : 0.0f;
+    g_expRoundState.nextTransitionAt = transitionDelaySeconds > 0.0f ? g_expRoundState.stateEnteredAt + transitionDelaySeconds : 0.0f;
+    UpdateRoundPopulationSnapshot();
+}
+
+void StoreRoundWinner(CBasePlayer *pWinner, const char *reason)
+{
+    g_expRoundState.lastWinnerName[0] = '\0';
+    g_expRoundState.lastWinnerEntIndex = 0;
+    g_expRoundState.lastWinnerUserId = 0;
+    g_expRoundState.lastEndReason[0] = '\0';
+
+    if (pWinner != NULL)
+    {
+        strncpy_s(g_expRoundState.lastWinnerName, sizeof(g_expRoundState.lastWinnerName), GetSafePlayerName(pWinner), _TRUNCATE);
+        g_expRoundState.lastWinnerEntIndex = pWinner->edict() != NULL ? ENTINDEX(pWinner->edict()) : 0;
+        g_expRoundState.lastWinnerUserId = GetPlayerUserId(pWinner);
+    }
+
+    if (reason != NULL)
+    {
+        strncpy_s(g_expRoundState.lastEndReason, sizeof(g_expRoundState.lastEndReason), reason, _TRUNCATE);
+    }
+}
+
+const char *GetConfiguredRoundLoadoutMode()
+{
+    return GetNonEmptyCvarString(sv_exp_round_loadout_mode, "none");
+}
+
+bool IsSupportedRoundLoadoutMode(const char *mode)
+{
+    return StringEqualsIgnoreCase(mode, "none") ||
+        StringEqualsIgnoreCase(mode, "glock") ||
+        StringEqualsIgnoreCase(mode, "mp5") ||
+        StringEqualsIgnoreCase(mode, "357") ||
+        StringEqualsIgnoreCase(mode, "shotgun");
+}
+
+const char *GetResolvedRoundLoadoutMode()
+{
+    const char *configuredMode = GetConfiguredRoundLoadoutMode();
+    if (StringEqualsIgnoreCase(configuredMode, "glock"))
+    {
+        return "glock";
+    }
+
+    if (StringEqualsIgnoreCase(configuredMode, "mp5"))
+    {
+        return "mp5";
+    }
+
+    if (StringEqualsIgnoreCase(configuredMode, "357"))
+    {
+        return "357";
+    }
+
+    if (StringEqualsIgnoreCase(configuredMode, "shotgun"))
+    {
+        return "shotgun";
+    }
+
+    return "none";
+}
+
+void GiveRoundAmmo(CBasePlayer *pPlayer, const char *ammoName, int amount, int maxCarry)
+{
+    if (pPlayer == NULL || amount <= 0)
+    {
+        return;
+    }
+
+    pPlayer->GiveAmmo(amount, (char *)ammoName, maxCarry);
+}
+
+void ApplyRoundResetToPlayer(CBasePlayer *pPlayer)
+{
+    if (!IsRoundManagedPlayer(pPlayer))
+    {
+        return;
+    }
+
+    const char *loadoutMode = GetResolvedRoundLoadoutMode();
+    const bool customLoadout = !StringEqualsIgnoreCase(loadoutMode, "none");
+    const int savedAutoSwitch = pPlayer->m_iAutoWepSwitch;
+    pPlayer->m_iAutoWepSwitch = 1;
+
+    if (customLoadout)
+    {
+        pPlayer->RemoveAllItems(FALSE);
+        pPlayer->pev->weapons |= (1 << WEAPON_SUIT);
+        pPlayer->GiveNamedItem("weapon_crowbar");
+
+        if (StringEqualsIgnoreCase(loadoutMode, "glock"))
+        {
+            pPlayer->GiveNamedItem("weapon_9mmhandgun");
+            GiveRoundAmmo(pPlayer, "9mm", 68, _9MM_MAX_CARRY);
+            pPlayer->SelectItem("weapon_9mmhandgun");
+        }
+        else if (StringEqualsIgnoreCase(loadoutMode, "mp5"))
+        {
+            pPlayer->GiveNamedItem("weapon_9mmAR");
+            GiveRoundAmmo(pPlayer, "9mm", (int)ClampFloat(ExpMP5LabAmmo(), 0.0f, (float)_9MM_MAX_CARRY), _9MM_MAX_CARRY);
+            pPlayer->SelectItem("weapon_9mmAR");
+        }
+        else if (StringEqualsIgnoreCase(loadoutMode, "357"))
+        {
+            pPlayer->GiveNamedItem("weapon_357");
+            GiveRoundAmmo(pPlayer, "357", (int)ClampFloat(Exp357LabAmmo(), 0.0f, (float)_357_MAX_CARRY), _357_MAX_CARRY);
+            pPlayer->SelectItem("weapon_357");
+        }
+        else if (StringEqualsIgnoreCase(loadoutMode, "shotgun"))
+        {
+            pPlayer->GiveNamedItem("weapon_shotgun");
+            GiveRoundAmmo(pPlayer, "buckshot", (int)ClampFloat(ExpShotgunLabAmmo(), 0.0f, (float)BUCKSHOT_MAX_CARRY), BUCKSHOT_MAX_CARRY);
+            pPlayer->SelectItem("weapon_shotgun");
+        }
+    }
+
+    pPlayer->pev->health = ExpRoundStartHealth();
+    pPlayer->pev->max_health = ExpRoundStartHealth();
+    pPlayer->pev->armorvalue = ExpRoundStartArmor();
+    pPlayer->m_iAutoWepSwitch = savedAutoSwitch;
+}
+
+void RespawnPlayerForRound(CBasePlayer *pPlayer)
+{
+    if (!IsRoundManagedPlayer(pPlayer))
+    {
+        return;
+    }
+
+    if (pPlayer->IsAlive() && pPlayer->pev->deadflag == DEAD_NO)
+    {
+        pPlayer->Spawn();
+        return;
+    }
+
+    respawn(pPlayer->pev, FALSE);
+}
+
+void RespawnAllPlayersForRound()
+{
+    if (gpGlobals == NULL)
+    {
+        return;
+    }
+
+    g_expRoundState.applyingRoundReset = true;
+    for (int playerIndex = 1; playerIndex <= gpGlobals->maxClients; ++playerIndex)
+    {
+        CBaseEntity *pEntity = UTIL_PlayerByIndex(playerIndex);
+        if (pEntity == NULL || !pEntity->IsPlayer())
+        {
+            continue;
+        }
+
+        RespawnPlayerForRound((CBasePlayer *)pEntity);
+    }
+    g_expRoundState.applyingRoundReset = false;
+    UpdateRoundPopulationSnapshot();
+}
+
+void RespawnDeadPlayersForDeathmatch()
+{
+    if (gpGlobals == NULL)
+    {
+        return;
+    }
+
+    for (int playerIndex = 1; playerIndex <= gpGlobals->maxClients; ++playerIndex)
+    {
+        CBaseEntity *pEntity = UTIL_PlayerByIndex(playerIndex);
+        if (pEntity == NULL || !pEntity->IsPlayer() || pEntity->pev == NULL)
+        {
+            continue;
+        }
+
+        CBasePlayer *pPlayer = (CBasePlayer *)pEntity;
+        if (!IsRoundManagedPlayer(pPlayer))
+        {
+            continue;
+        }
+
+        if (!pPlayer->IsAlive() || pPlayer->pev->deadflag != DEAD_NO)
+        {
+            respawn(pPlayer->pev, FALSE);
+        }
+    }
+}
+
+int SlayRoundPlayers(bool slayAllPlayers)
+{
+    if (gpGlobals == NULL)
+    {
+        return 0;
+    }
+
+    int killedPlayers = 0;
+    for (int playerIndex = 1; playerIndex <= gpGlobals->maxClients; ++playerIndex)
+    {
+        CBaseEntity *pEntity = UTIL_PlayerByIndex(playerIndex);
+        if (pEntity == NULL || !pEntity->IsPlayer() || pEntity->pev == NULL)
+        {
+            continue;
+        }
+
+        CBasePlayer *pPlayer = (CBasePlayer *)pEntity;
+        if (!IsRoundManagedPlayer(pPlayer) || !pPlayer->IsAlive() || pPlayer->pev->deadflag != DEAD_NO)
+        {
+            continue;
+        }
+
+        const float forcedDamage = pPlayer->pev->health + pPlayer->pev->armorvalue + 50.0f;
+        pPlayer->TakeDamage(pPlayer->pev, pPlayer->pev, forcedDamage, DMG_GENERIC);
+        ++killedPlayers;
+
+        if (!slayAllPlayers)
+        {
+            break;
+        }
+    }
+
+    return killedPlayers;
+}
+
+void ApplyRoundFriendlyFireSetting()
+{
+    CVAR_SET_FLOAT("mp_friendlyfire", ExpRoundFriendlyFireEnabled() ? 1.0f : 0.0f);
+}
+
+void BeginRoundWaiting(const char *reason, bool printMessage)
+{
+    SetRoundState(kExpRoundStateWaitingForPlayers, 0.0f);
+    if (!printMessage)
+    {
+        return;
+    }
+
+    PrintLabDummyConsoleLine(
+        "round mode waiting_for_players: connected=%d alive=%d reason=%s loadout=%s profile=%s",
+        g_expRoundState.connectedPlayers,
+        g_expRoundState.alivePlayers,
+        GetValueOrFallback(reason, "waiting_for_players"),
+        GetConfiguredRoundLoadoutMode(),
+        ExpRoundWeaponProfile()[0] != '\0' ? ExpRoundWeaponProfile() : "none");
+}
+
+void BeginRoundFreeze(bool emitRestartEvent, const char *reason)
+{
+    const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
+    if (snapshot.connectedPlayers <= 0)
+    {
+        BeginRoundWaiting(reason, true);
+        return;
+    }
+
+    if (emitRestartEvent)
+    {
+        LogRoundEvent("round_restart", GetRoundStateName(g_expRoundState.state), g_expRoundState.roundNumber, snapshot.connectedPlayers, snapshot.alivePlayers, NULL, reason);
+    }
+
+    ApplyRoundFriendlyFireSetting();
+    ++g_expRoundState.roundNumber;
+    RespawnAllPlayersForRound();
+    SetRoundState(kExpRoundStateFreezeTime, ExpRoundFreezeTimeSeconds());
+    PrintLabDummyConsoleLine(
+        "round %d freeze time: connected=%d alive=%d loadout=%s profile=%s health=%.1f armor=%.1f live_in=%.1fs",
+        g_expRoundState.roundNumber,
+        g_expRoundState.connectedPlayers,
+        g_expRoundState.alivePlayers,
+        GetConfiguredRoundLoadoutMode(),
+        ExpRoundWeaponProfile()[0] != '\0' ? ExpRoundWeaponProfile() : "none",
+        ExpRoundStartHealth(),
+        ExpRoundStartArmor(),
+        ExpRoundFreezeTimeSeconds());
+    LogRoundEvent("round_start", GetRoundStateName(g_expRoundState.state), g_expRoundState.roundNumber, g_expRoundState.connectedPlayers, g_expRoundState.alivePlayers, NULL, reason);
+}
+
+void BeginRoundLive(const char *reason)
+{
+    SetRoundState(kExpRoundStateLive, 0.0f);
+    PrintLabDummyConsoleLine(
+        "round %d is now live: connected=%d alive=%d loadout=%s no_respawn=%s",
+        g_expRoundState.roundNumber,
+        g_expRoundState.connectedPlayers,
+        g_expRoundState.alivePlayers,
+        GetConfiguredRoundLoadoutMode(),
+        ExpRoundNoRespawn() ? "yes" : "no");
+    if (g_expRoundState.connectedPlayers <= 1)
+    {
+        PrintLabDummyConsoleLine("round note: single-player live round; it ends after the only player is eliminated.");
+    }
+    LogRoundEvent("round_live", GetRoundStateName(g_expRoundState.state), g_expRoundState.roundNumber, g_expRoundState.connectedPlayers, g_expRoundState.alivePlayers, NULL, reason);
+}
+
+void EndRound(CBasePlayer *pWinner, const char *reason)
+{
+    StoreRoundWinner(pWinner, reason);
+    SetRoundState(kExpRoundStateRoundEnd, kRoundEndHoldSeconds);
+    PrintLabDummyConsoleLine(
+        "round %d ended: winner=%s reason=%s connected=%d alive=%d restart_in=%.1fs",
+        g_expRoundState.roundNumber,
+        g_expRoundState.lastWinnerName[0] != '\0' ? g_expRoundState.lastWinnerName : "none",
+        g_expRoundState.lastEndReason[0] != '\0' ? g_expRoundState.lastEndReason : "unknown",
+        g_expRoundState.connectedPlayers,
+        g_expRoundState.alivePlayers,
+        ExpRoundRestartDelaySeconds());
+    LogRoundEvent("round_end", GetRoundStateName(g_expRoundState.state), g_expRoundState.roundNumber, g_expRoundState.connectedPlayers, g_expRoundState.alivePlayers, pWinner, reason);
+}
+
+void BeginRoundRestartPending(const char *reason)
+{
+    SetRoundState(kExpRoundStateRestartPending, ExpRoundRestartDelaySeconds());
+    PrintLabDummyConsoleLine(
+        "round %d restart pending: next_round_in=%.1fs reason=%s",
+        g_expRoundState.roundNumber,
+        ExpRoundRestartDelaySeconds(),
+        GetValueOrFallback(reason, g_expRoundState.lastEndReason));
+    LogRoundEvent("round_restart", GetRoundStateName(g_expRoundState.state), g_expRoundState.roundNumber, g_expRoundState.connectedPlayers, g_expRoundState.alivePlayers, NULL, reason);
+}
+
+void EvaluateRoundOutcome()
+{
+    const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
+    g_expRoundState.connectedPlayers = snapshot.connectedPlayers;
+    g_expRoundState.alivePlayers = snapshot.alivePlayers;
+
+    if (snapshot.connectedPlayers <= 0)
+    {
+        BeginRoundWaiting("no_players", false);
+        return;
+    }
+
+    if (snapshot.connectedPlayers == 1)
+    {
+        if (snapshot.alivePlayers <= 0)
+        {
+            EndRound(NULL, "solo_eliminated");
+        }
+        return;
+    }
+
+    if (snapshot.alivePlayers == 1)
+    {
+        EndRound(snapshot.lastAlivePlayer, "last_alive");
+        return;
+    }
+
+    if (snapshot.alivePlayers <= 0)
+    {
+        EndRound(NULL, "all_eliminated");
+    }
+}
+
+void StopRoundMode(bool respawnDeadPlayers, const char *reason, bool printMessage)
+{
+    if (respawnDeadPlayers)
+    {
+        RespawnDeadPlayersForDeathmatch();
+    }
+
+    ClearRoundRuntimeState();
+    if (printMessage)
+    {
+        PrintLabDummyConsoleLine(
+            "round mode disabled: deathmatch respawn flow restored. reason=%s",
+            GetValueOrFallback(reason, "round_mode_off"));
+    }
+}
+
+void EnsureRoundModeState()
+{
+    if (!ExpRoundModeEnabled())
+    {
+        if (g_expRoundState.state != kExpRoundStateDisabled)
+        {
+            StopRoundMode(true, "cvar_disabled", false);
+        }
+        return;
+    }
+
+    if (g_expRoundState.state == kExpRoundStateDisabled)
+    {
+        const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
+        if (snapshot.connectedPlayers > 0)
+        {
+            BeginRoundFreeze(false, "mode_enabled");
+        }
+        else
+        {
+            BeginRoundWaiting("mode_enabled", false);
+        }
+    }
+}
+
+void UpdateRoundModeFrame()
+{
+    EnsureRoundModeState();
+    if (g_expRoundState.state == kExpRoundStateDisabled)
+    {
+        return;
+    }
+
+    if (g_expRoundState.state == kExpRoundStateWaitingForPlayers)
+    {
+        const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
+        g_expRoundState.connectedPlayers = snapshot.connectedPlayers;
+        g_expRoundState.alivePlayers = snapshot.alivePlayers;
+        if (snapshot.connectedPlayers > 0)
+        {
+            BeginRoundFreeze(false, "players_ready");
+        }
+        return;
+    }
+
+    if (g_expRoundState.state == kExpRoundStateFreezeTime)
+    {
+        const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
+        g_expRoundState.connectedPlayers = snapshot.connectedPlayers;
+        g_expRoundState.alivePlayers = snapshot.alivePlayers;
+        if (snapshot.connectedPlayers <= 0)
+        {
+            BeginRoundWaiting("no_players", false);
+            return;
+        }
+
+        if (g_expRoundState.nextTransitionAt > 0.0f && gpGlobals->time >= g_expRoundState.nextTransitionAt)
+        {
+            BeginRoundLive("freeze_complete");
+        }
+        return;
+    }
+
+    if (g_expRoundState.state == kExpRoundStateLive)
+    {
+        EvaluateRoundOutcome();
+        return;
+    }
+
+    if (g_expRoundState.state == kExpRoundStateRoundEnd)
+    {
+        const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
+        g_expRoundState.connectedPlayers = snapshot.connectedPlayers;
+        g_expRoundState.alivePlayers = snapshot.alivePlayers;
+        if (snapshot.connectedPlayers <= 0)
+        {
+            BeginRoundWaiting("no_players", false);
+            return;
+        }
+
+        if (g_expRoundState.nextTransitionAt > 0.0f && gpGlobals->time >= g_expRoundState.nextTransitionAt)
+        {
+            BeginRoundRestartPending(g_expRoundState.lastEndReason);
+        }
+        return;
+    }
+
+    if (g_expRoundState.state == kExpRoundStateRestartPending)
+    {
+        const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
+        g_expRoundState.connectedPlayers = snapshot.connectedPlayers;
+        g_expRoundState.alivePlayers = snapshot.alivePlayers;
+        if (snapshot.connectedPlayers <= 0)
+        {
+            BeginRoundWaiting("no_players", false);
+            return;
+        }
+
+        if (g_expRoundState.nextTransitionAt > 0.0f && gpGlobals->time >= g_expRoundState.nextTransitionAt)
+        {
+            BeginRoundFreeze(true, "auto_restart");
+        }
+    }
+}
+
+void PrintRoundStatus()
+{
+    UpdateRoundPopulationSnapshot();
+
+    const bool modeEnabled = ExpRoundModeEnabled();
+    const char *configuredLoadout = GetConfiguredRoundLoadoutMode();
+    const char *resolvedLoadout = GetResolvedRoundLoadoutMode();
+    const bool validLoadout = IsSupportedRoundLoadoutMode(configuredLoadout);
+    const float secondsRemaining = (g_expRoundState.nextTransitionAt > 0.0f && gpGlobals != NULL)
+        ? max(0.0f, g_expRoundState.nextTransitionAt - gpGlobals->time)
+        : 0.0f;
+
+    PrintLabDummyConsoleLine(
+        "round mode: %s state=%s round=%d connected=%d alive=%d",
+        modeEnabled ? "on" : "off",
+        GetRoundStateName(g_expRoundState.state),
+        g_expRoundState.roundNumber,
+        g_expRoundState.connectedPlayers,
+        g_expRoundState.alivePlayers);
+    PrintLabDummyConsoleLine(
+        "round config: freeze=%.1fs restart=%.1fs start_health=%.1f start_armor=%.1f no_respawn=%s friendlyfire=%s",
+        ExpRoundFreezeTimeSeconds(),
+        ExpRoundRestartDelaySeconds(),
+        ExpRoundStartHealth(),
+        ExpRoundStartArmor(),
+        ExpRoundNoRespawn() ? "yes" : "no",
+        ExpRoundFriendlyFireEnabled() ? "yes" : "no");
+    PrintLabDummyConsoleLine(
+        "round loadout: configured=%s resolved=%s valid=%s weapon_profile=%s",
+        configuredLoadout,
+        resolvedLoadout,
+        validLoadout ? "yes" : "no",
+        ExpRoundWeaponProfile()[0] != '\0' ? ExpRoundWeaponProfile() : "none");
+
+    if (g_expRoundState.nextTransitionAt > 0.0f)
+    {
+        PrintLabDummyConsoleLine("round timer: next_state_in=%.1fs", secondsRemaining);
+    }
+    else
+    {
+        PrintLabDummyConsoleLine("round timer: none");
+    }
+
+    if (g_expRoundState.lastEndReason[0] != '\0' || g_expRoundState.lastWinnerName[0] != '\0')
+    {
+        PrintLabDummyConsoleLine(
+            "last round result: winner=%s entindex=%d userid=%d reason=%s",
+            g_expRoundState.lastWinnerName[0] != '\0' ? g_expRoundState.lastWinnerName : "none",
+            g_expRoundState.lastWinnerEntIndex,
+            g_expRoundState.lastWinnerUserId,
+            g_expRoundState.lastEndReason[0] != '\0' ? g_expRoundState.lastEndReason : "unknown");
+    }
+    else
+    {
+        PrintLabDummyConsoleLine("last round result: none");
+    }
+
+    if (g_expRoundState.connectedPlayers <= 1 && g_expRoundState.state == kExpRoundStateLive)
+    {
+        PrintLabDummyConsoleLine("round note: single-player duel mode is active; the round restarts after the only player is eliminated.");
+    }
+
+    PrintLabDummyConsoleLine("commands: exp_round_start | exp_round_restart | exp_round_status | exp_round_stop | exp_round_slay [all]");
+}
+
+void ExpRoundStartCommand()
+{
+    CVAR_SET_FLOAT("sv_exp_round_mode", 1.0f);
+    const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
+    if (snapshot.connectedPlayers <= 0)
+    {
+        BeginRoundWaiting("manual_start", true);
+        PrintRoundStatus();
+        return;
+    }
+
+    if (g_expRoundState.state == kExpRoundStateFreezeTime ||
+        g_expRoundState.state == kExpRoundStateLive ||
+        g_expRoundState.state == kExpRoundStateRoundEnd ||
+        g_expRoundState.state == kExpRoundStateRestartPending)
+    {
+        PrintLabDummyConsoleLine("round mode is already active. Use exp_round_restart to reset the current round.");
+        PrintRoundStatus();
+        return;
+    }
+
+    BeginRoundFreeze(false, "manual_start");
+    PrintRoundStatus();
+}
+
+void ExpRoundRestartCommand()
+{
+    CVAR_SET_FLOAT("sv_exp_round_mode", 1.0f);
+    const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
+    if (snapshot.connectedPlayers <= 0)
+    {
+        BeginRoundWaiting("manual_restart", true);
+        PrintRoundStatus();
+        return;
+    }
+
+    BeginRoundFreeze(true, "manual_restart");
+    PrintRoundStatus();
+}
+
+void ExpRoundStatusCommand()
+{
+    PrintRoundStatus();
+}
+
+void ExpRoundStopCommand()
+{
+    if (g_expRoundState.state == kExpRoundStateDisabled && !ExpRoundModeEnabled())
+    {
+        PrintLabDummyConsoleLine("round mode is already off.");
+        PrintRoundStatus();
+        return;
+    }
+
+    CVAR_SET_FLOAT("sv_exp_round_mode", 0.0f);
+    StopRoundMode(true, "command_stop", true);
+    PrintRoundStatus();
+}
+
+void ExpRoundSlayCommand()
+{
+    const bool slayAllPlayers = CMD_ARGC() >= 2 && StringEqualsIgnoreCase(CMD_ARGV(1), "all");
+    const int killedPlayers = SlayRoundPlayers(slayAllPlayers);
+    if (killedPlayers <= 0)
+    {
+        PrintLabDummyConsoleLine("round slay: no live players were available to eliminate.");
+        return;
+    }
+
+    PrintLabDummyConsoleLine(
+        "round slay: eliminated %d %splayer%s.",
+        killedPlayers,
+        slayAllPlayers ? "live " : "",
+        killedPlayers == 1 ? "" : "s");
+}
+
+bool ShouldApplyRoundResetOnSpawn()
+{
+    return g_expRoundState.applyingRoundReset || g_expRoundState.state == kExpRoundStateFreezeTime;
 }
 
 void TrimCfgRequestString(const char *input, char *buffer, size_t bufferSize)
@@ -2608,6 +3357,7 @@ void RefreshFutureHooksMapState()
     }
 
     strncpy_s(g_futureHooksMapName, sizeof(g_futureHooksMapName), currentMapName, _TRUNCATE);
+    ClearRoundRuntimeState();
     ResetGlockLabDummyState();
     LoadLabDummySpotsForCurrentMap();
 }
@@ -4236,11 +4986,16 @@ void RegisterFutureGameplayCommands()
     g_engfuncs.pfnAddServerCommand((char *)"exp_target_status", ExpTargetStatusCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_target_tp_front", ExpTargetTpFrontCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_target_profile", ExpTargetProfileCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_round_start", ExpRoundStartCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_round_restart", ExpRoundRestartCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_round_status", ExpRoundStatusCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_round_stop", ExpRoundStopCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_round_slay", ExpRoundSlayCommand);
 }
 
 void MaintainMp5LabLoadout()
 {
-    if (!ExpMP5LabLoadoutEnabled())
+    if (!ExpMP5LabLoadoutEnabled() || ExpRoundModeActive())
     {
         return;
     }
@@ -4277,7 +5032,7 @@ void MaintainMp5LabLoadout()
 
 void Maintain357LabLoadout()
 {
-    if (!Exp357LabLoadoutEnabled())
+    if (!Exp357LabLoadoutEnabled() || ExpRoundModeActive())
     {
         return;
     }
@@ -4314,7 +5069,7 @@ void Maintain357LabLoadout()
 
 void MaintainShotgunLabLoadout()
 {
-    if (!ExpShotgunLabLoadoutEnabled())
+    if (!ExpShotgunLabLoadoutEnabled() || ExpRoundModeActive())
     {
         return;
     }
@@ -4428,6 +5183,15 @@ void RegisterFutureGameplayCvars()
     CVAR_REGISTER(&sv_exp_shotgun_lab_loadout);
     CVAR_REGISTER(&sv_exp_shotgun_lab_ammo);
     CVAR_REGISTER(&sv_exp_shotgun_lab_autoswitch);
+    CVAR_REGISTER(&sv_exp_round_mode);
+    CVAR_REGISTER(&sv_exp_round_freeze_time);
+    CVAR_REGISTER(&sv_exp_round_restart_delay);
+    CVAR_REGISTER(&sv_exp_round_start_health);
+    CVAR_REGISTER(&sv_exp_round_start_armor);
+    CVAR_REGISTER(&sv_exp_round_no_respawn);
+    CVAR_REGISTER(&sv_exp_round_friendlyfire);
+    CVAR_REGISTER(&sv_exp_round_weapon_profile);
+    CVAR_REGISTER(&sv_exp_round_loadout_mode);
     CVAR_REGISTER(&sv_exp_debug_weaponlog);
     CVAR_REGISTER(&sv_exp_debug_weaponlog_rejections);
     CVAR_REGISTER(&sv_exp_glock_lab_dummy);
@@ -4454,10 +5218,50 @@ void UpdateFutureGameplayHooksFrame()
 {
     EnsureWeaponDebugLogReady();
     RefreshFutureHooksMapState();
+    UpdateRoundModeFrame();
     MaintainMp5LabLoadout();
     Maintain357LabLoadout();
     MaintainShotgunLabLoadout();
     MaintainGlockLabDummy();
+}
+
+bool FutureGameplayPlayerCanRespawn(CBasePlayer *pPlayer)
+{
+    if (pPlayer == NULL || !ExpRoundModeActive() || !ExpRoundNoRespawn())
+    {
+        return true;
+    }
+
+    return g_expRoundState.state != kExpRoundStateFreezeTime &&
+        g_expRoundState.state != kExpRoundStateLive &&
+        g_expRoundState.state != kExpRoundStateRoundEnd &&
+        g_expRoundState.state != kExpRoundStateRestartPending;
+}
+
+void FutureGameplayOnPlayerSpawn(CBasePlayer *pPlayer)
+{
+    if (pPlayer == NULL || !ExpRoundModeActive() || !ShouldApplyRoundResetOnSpawn())
+    {
+        return;
+    }
+
+    ApplyRoundResetToPlayer(pPlayer);
+}
+
+void FutureGameplayOnPlayerKilled(CBasePlayer *pVictim, CBasePlayer *pKiller)
+{
+    if (pVictim == NULL)
+    {
+        return;
+    }
+
+    if (!ExpRoundModeActive() || g_expRoundState.state != kExpRoundStateLive)
+    {
+        return;
+    }
+
+    (void)pKiller;
+    EvaluateRoundOutcome();
 }
 
 bool ExpPistolTapFireEnabled()
@@ -4834,6 +5638,61 @@ float ExpShotgunLabAmmo()
 bool ExpShotgunLabAutoswitch()
 {
     return sv_exp_shotgun_lab_autoswitch.value != 0.0f;
+}
+
+bool ExpRoundModeEnabled()
+{
+    return sv_exp_round_mode.value != 0.0f;
+}
+
+float ExpRoundFreezeTimeSeconds()
+{
+    return GetPositiveOrDefaultCvarValue(sv_exp_round_freeze_time, kDefaultRoundFreezeTime);
+}
+
+float ExpRoundRestartDelaySeconds()
+{
+    return GetPositiveOrDefaultCvarValue(sv_exp_round_restart_delay, kDefaultRoundRestartDelay);
+}
+
+float ExpRoundStartHealth()
+{
+    return GetPositiveOrDefaultCvarValue(sv_exp_round_start_health, kDefaultRoundStartHealth);
+}
+
+float ExpRoundStartArmor()
+{
+    return GetNonNegativeCvarValue(sv_exp_round_start_armor);
+}
+
+bool ExpRoundNoRespawn()
+{
+    return sv_exp_round_no_respawn.value != 0.0f;
+}
+
+bool ExpRoundFriendlyFireEnabled()
+{
+    return sv_exp_round_friendlyfire.value != 0.0f;
+}
+
+const char *ExpRoundWeaponProfile()
+{
+    return GetOptionalCvarString(sv_exp_round_weapon_profile);
+}
+
+const char *ExpRoundLoadoutMode()
+{
+    return GetConfiguredRoundLoadoutMode();
+}
+
+bool ExpRoundModeActive()
+{
+    return ExpRoundModeEnabled() || g_expRoundState.state != kExpRoundStateDisabled;
+}
+
+bool ExpRoundLive()
+{
+    return g_expRoundState.state == kExpRoundStateLive;
 }
 
 bool ExpCfgDrivenModeActive()

@@ -1,9 +1,13 @@
 #pragma once
 
 class CBaseEntity;
+class CBasePlayer;
 
 void RegisterFutureGameplayCvars();
 void UpdateFutureGameplayHooksFrame();
+bool FutureGameplayPlayerCanRespawn(CBasePlayer *pPlayer);
+void FutureGameplayOnPlayerSpawn(CBasePlayer *pPlayer);
+void FutureGameplayOnPlayerKilled(CBasePlayer *pVictim, CBasePlayer *pKiller);
 bool ExpPistolTapFireEnabled();
 float ExpMoveSpreadScale();
 bool ExpFirstShotAccuracyEnabled();
@@ -79,6 +83,17 @@ bool Exp357LabAutoswitch();
 bool ExpShotgunLabLoadoutEnabled();
 float ExpShotgunLabAmmo();
 bool ExpShotgunLabAutoswitch();
+bool ExpRoundModeEnabled();
+float ExpRoundFreezeTimeSeconds();
+float ExpRoundRestartDelaySeconds();
+float ExpRoundStartHealth();
+float ExpRoundStartArmor();
+bool ExpRoundNoRespawn();
+bool ExpRoundFriendlyFireEnabled();
+const char *ExpRoundWeaponProfile();
+const char *ExpRoundLoadoutMode();
+bool ExpRoundModeActive();
+bool ExpRoundLive();
 bool ExpCfgDrivenModeActive();
 const char *ExpActiveCfgProfile();
 const char *ExpLastSuccessfulCfgProfile();
