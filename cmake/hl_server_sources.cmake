@@ -102,5 +102,6 @@ set(HL_SERVER_SOURCES
   "${HL_SDK_ROOT}/pm_shared/pm_math.c"
   "${HL_SDK_ROOT}/pm_shared/pm_shared.c"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/future_gameplay_hooks.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/weapon_tuning_core.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/weapon_debug_logger.cpp"
 )

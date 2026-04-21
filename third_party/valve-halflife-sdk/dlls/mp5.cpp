@@ -23,6 +23,7 @@
 #include "soundent.h"
 #include "gamerules.h"
 #include "future_gameplay_hooks.h"
+#include "weapon_tuning_core.h"
 #include "weapon_debug_logger.h"
 
 enum mp5_e
@@ -39,7 +40,6 @@ enum mp5_e
 
 namespace
 {
-const float kMp5MinMaxSpeed = 1.0f;
 const float kMp5FallbackMaxSpeed = 270.0f;
 
 float ClampFloat(float value, float minimum, float maximum)
@@ -59,25 +59,11 @@ float ClampFloat(float value, float minimum, float maximum)
 
 float RecoverBurstAdditionalSpread(float currentSpread, float elapsedSeconds)
 {
-	if (currentSpread <= 0.0f)
-	{
-		return 0.0f;
-	}
-
-	const float recoverySeconds = ExpMP5PrimarySpreadRecoverySeconds();
-	if (recoverySeconds <= 0.0f)
-	{
-		return 0.0f;
-	}
-
-	const float maxBurstSpread = ExpMP5PrimaryBurstMaxAdditionalSpread();
-	if (maxBurstSpread <= 0.0f)
-	{
-		return 0.0f;
-	}
-
-	const float recoveredSpread = currentSpread - ((maxBurstSpread / recoverySeconds) * elapsedSeconds);
-	return recoveredSpread > 0.0f ? recoveredSpread : 0.0f;
+	return RecoverSharedAdditionalSpread(
+		currentSpread,
+		elapsedSeconds,
+		ExpMP5PrimarySpreadRecoverySeconds(),
+		ExpMP5PrimaryBurstMaxAdditionalSpread());
 }
 }
 
@@ -195,16 +181,6 @@ void CMP5::PrimaryAttack()
 	m_pPlayer->m_iWeaponFlash = NORMAL_GUN_FLASH;
 	const BOOL fHadAmmo = (m_iClip > 0);
 	const BOOL fExperimentalPrimary = ExpMP5PrimaryEnabled();
-	const BOOL fGrounded = FBitSet(m_pPlayer->pev->flags, FL_ONGROUND);
-	const BOOL fDucking = (m_pPlayer->pev->button & IN_DUCK) || FBitSet(m_pPlayer->pev->flags, FL_DUCKING);
-	const float flHorizontalSpeed = m_pPlayer->pev->velocity.Length2D();
-
-	float flMaxSpeedForNormalization = m_pPlayer->pev->maxspeed;
-	if (flMaxSpeedForNormalization <= kMp5MinMaxSpeed)
-	{
-		flMaxSpeedForNormalization = kMp5FallbackMaxSpeed;
-	}
-
 	const BOOL fHasPreviousAcceptedShot = m_flLastAcceptedPrimaryShotTime >= 0.0f;
 	const float flTimeSincePreviousAcceptedShot = fHasPreviousAcceptedShot ? (gpGlobals->time - m_flLastAcceptedPrimaryShotTime) : 0.0f;
 	const float flRecoveredBurstAddedSpread = fHasPreviousAcceptedShot
@@ -226,6 +202,10 @@ void CMP5::PrimaryAttack()
 	float flMovementPenalty = 0.0f;
 	float flBurstAddedSpread = 0.0f;
 	int iBurstShotIndex = 1;
+	float flHorizontalSpeed = 0.0f;
+	float flMaxSpeedForNormalization = kMp5FallbackMaxSpeed;
+	BOOL fGrounded = FALSE;
+	BOOL fDucking = FALSE;
 
 	if (fExperimentalPrimary)
 	{
@@ -233,31 +213,21 @@ void CMP5::PrimaryAttack()
 		iBurstShotIndex = (flBurstAddedSpread > 0.0001f && m_iPrimaryBurstShotCount > 0)
 			? (m_iPrimaryBurstShotCount + 1)
 			: 1;
-
-		if (ExpMP5PrimaryFirstShotAccuracyEnabled() &&
-			fGrounded &&
-			flHorizontalSpeed <= ExpMP5PrimaryFirstShotSpeedThreshold() &&
-			flBurstAddedSpread <= 0.0001f)
-		{
-			fFirstShotAccuracyApplied = TRUE;
-		}
-
-		if (!fFirstShotAccuracyApplied)
-		{
-			const float flSpeedRatio = ClampFloat(flHorizontalSpeed / flMaxSpeedForNormalization, 0.0f, 1.0f);
-			flMovementPenalty = fGrounded
-				? (ExpMP5PrimaryGroundMovePenalty() * flSpeedRatio)
-				: ExpMP5PrimaryAirMovePenalty();
-
-			if (fDucking)
-			{
-				flMovementPenalty *= ExpMP5PrimaryDuckPenaltyScale();
-			}
-		}
-
-		const float flSpread = fFirstShotAccuracyApplied
-			? 0.0f
-			: ClampFloat(ExpMP5PrimaryBaseSpread() + flMovementPenalty + flBurstAddedSpread, 0.0f, ExpMP5PrimaryMaxSpread());
+		const SharedWeaponSpreadProfile spreadProfile = BuildMp5PrimarySpreadProfile();
+		const SharedWeaponSpreadState spreadState = BuildPlayerWeaponSpreadState(
+			m_pPlayer,
+			kMp5FallbackMaxSpeed,
+			fHasPreviousAcceptedShot != FALSE,
+			flTimeSincePreviousAcceptedShot,
+			flBurstAddedSpread);
+		const SharedWeaponSpreadResult spreadResult = ComputeSharedWeaponSpread(spreadProfile, spreadState);
+		const float flSpread = spreadResult.spread;
+		fFirstShotAccuracyApplied = spreadResult.firstShotAccuracyApplied ? TRUE : FALSE;
+		flMovementPenalty = spreadResult.movementPenalty;
+		flHorizontalSpeed = spreadState.horizontalSpeed;
+		flMaxSpeedForNormalization = spreadResult.normalizedMaxSpeed;
+		fGrounded = spreadState.grounded ? TRUE : FALSE;
+		fDucking = spreadState.ducking ? TRUE : FALSE;
 
 		BeginMp5PrimaryShotContext(m_pPlayer);
 		vecDir = m_pPlayer->FireBulletsPlayer( 1, vecSrc, vecAiming, Vector( flSpread, flSpread, flSpread ), 8192, BULLET_PLAYER_MP5, 2, 0, m_pPlayer->pev, m_pPlayer->random_seed );
@@ -269,7 +239,7 @@ void CMP5::PrimaryAttack()
 			acceptedTelemetry.experimentalModeActive = ExpMP5ExperimentalModeEnabled() != FALSE;
 			acceptedTelemetry.firstShotAccuracyApplied = fFirstShotAccuracyApplied != FALSE;
 			acceptedTelemetry.spread = flSpread;
-			acceptedTelemetry.baseSpread = ExpMP5PrimaryBaseSpread();
+			acceptedTelemetry.baseSpread = spreadProfile.baseSpread;
 			acceptedTelemetry.movementPenalty = flMovementPenalty;
 			acceptedTelemetry.burstAddedSpread = flBurstAddedSpread;
 			acceptedTelemetry.burstShotIndex = iBurstShotIndex;

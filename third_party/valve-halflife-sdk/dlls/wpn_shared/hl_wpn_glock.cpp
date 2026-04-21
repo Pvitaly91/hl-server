@@ -21,27 +21,12 @@
 #include "nodes.h"
 #include "player.h"
 #include "future_gameplay_hooks.h"
+#include "weapon_tuning_core.h"
 #include "weapon_debug_logger.h"
 
 namespace
 {
 const float kGlockFallbackMaxSpeed = 270.0f;
-const float kGlockMinMaxSpeed = 1.0f;
-
-float ClampFloat(float value, float minValue, float maxValue)
-{
-	if (value < minValue)
-	{
-		return minValue;
-	}
-
-	if (value > maxValue)
-	{
-		return maxValue;
-	}
-
-	return value;
-}
 }
 
 enum glock_e {
@@ -147,41 +132,23 @@ void CGlock::PrimaryAttack( void )
 	m_fPrimaryHoldBlockLogged = FALSE;
 
 	const BOOL fHadAmmo = (m_iClip > 0);
-	const BOOL fGrounded = FBitSet(m_pPlayer->pev->flags, FL_ONGROUND);
-	const BOOL fDucking = (m_pPlayer->pev->button & IN_DUCK) || FBitSet(m_pPlayer->pev->flags, FL_DUCKING);
-	const float flHorizontalSpeed = m_pPlayer->pev->velocity.Length2D();
-
-	float flMaxSpeedForNormalization = m_pPlayer->pev->maxspeed;
-	if (flMaxSpeedForNormalization <= kGlockMinMaxSpeed)
-	{
-		flMaxSpeedForNormalization = kGlockFallbackMaxSpeed;
-	}
-
-	const BOOL fFirstShotAccuracyApplied = QualifiesForFirstShotAccuracy();
-	float flMovementPenalty = 0.0f;
-
-	if (!fFirstShotAccuracyApplied)
-	{
-		const float flMoveSpreadScale = ExpMoveSpreadScale();
-		if (flMoveSpreadScale > 0.0f)
-		{
-			const float flSpeedRatio = ClampFloat(flHorizontalSpeed / flMaxSpeedForNormalization, 0.0f, 1.0f);
-			flMovementPenalty = fGrounded
-				? (ExpGlockPrimaryGroundMovePenalty() * flSpeedRatio * flMoveSpreadScale)
-				: (ExpGlockPrimaryAirMovePenalty() * flMoveSpreadScale);
-
-			if (fDucking)
-			{
-				flMovementPenalty *= ExpGlockPrimaryDuckPenaltyScale();
-			}
-		}
-	}
-
-	const float flSpread = fFirstShotAccuracyApplied
-		? 0.0f
-		: ClampFloat(ExpGlockPrimaryBaseSpread() + flMovementPenalty, 0.0f, ExpGlockPrimaryMaxSpread());
 	const BOOL fHasPreviousAcceptedShot = m_flLastAcceptedPrimaryShotTime >= 0.0f;
 	const float flTimeSincePreviousAcceptedShot = fHasPreviousAcceptedShot ? (gpGlobals->time - m_flLastAcceptedPrimaryShotTime) : 0.0f;
+	const SharedWeaponSpreadProfile spreadProfile = BuildGlockPrimarySpreadProfile();
+	const SharedWeaponSpreadState spreadState = BuildPlayerWeaponSpreadState(
+		m_pPlayer,
+		kGlockFallbackMaxSpeed,
+		fHasPreviousAcceptedShot != FALSE,
+		flTimeSincePreviousAcceptedShot,
+		0.0f);
+	const SharedWeaponSpreadResult spreadResult = ComputeSharedWeaponSpread(spreadProfile, spreadState);
+	const BOOL fGrounded = spreadState.grounded ? TRUE : FALSE;
+	const BOOL fDucking = spreadState.ducking ? TRUE : FALSE;
+	const float flHorizontalSpeed = spreadState.horizontalSpeed;
+	const float flMaxSpeedForNormalization = spreadResult.normalizedMaxSpeed;
+	const BOOL fFirstShotAccuracyApplied = spreadResult.firstShotAccuracyApplied ? TRUE : FALSE;
+	const float flMovementPenalty = spreadResult.movementPenalty;
+	const float flSpread = spreadResult.spread;
 
 	GlockFire( flSpread, 0.3, TRUE, TRUE );
 
@@ -192,7 +159,7 @@ void CGlock::PrimaryAttack( void )
 		acceptedTelemetry.tapFireActive = ExpPistolTapFireEnabled();
 		acceptedTelemetry.firstShotAccuracyApplied = fFirstShotAccuracyApplied != FALSE;
 		acceptedTelemetry.spread = flSpread;
-		acceptedTelemetry.baseSpread = ExpGlockPrimaryBaseSpread();
+		acceptedTelemetry.baseSpread = spreadProfile.baseSpread;
 		acceptedTelemetry.movementPenalty = flMovementPenalty;
 		acceptedTelemetry.horizontalSpeed = flHorizontalSpeed;
 		acceptedTelemetry.maxSpeedForNormalization = flMaxSpeedForNormalization;
@@ -302,60 +269,32 @@ BOOL CGlock::RequiresPrimaryAttackPress( void ) const
 
 BOOL CGlock::QualifiesForFirstShotAccuracy( void ) const
 {
-	if (!ExpFirstShotAccuracyEnabled())
-	{
-		return FALSE;
-	}
-
-	if (!FBitSet(m_pPlayer->pev->flags, FL_ONGROUND))
-	{
-		return FALSE;
-	}
-
-	if (m_pPlayer->pev->velocity.Length2D() > ExpGlockPrimaryFirstShotSpeedThreshold())
-	{
-		return FALSE;
-	}
-
-	const float flRecoverySeconds = ExpSpreadRecoverySeconds();
-	if (flRecoverySeconds <= 0.0f || m_flLastAcceptedPrimaryShotTime < 0.0f)
-	{
-		return TRUE;
-	}
-
-	return (gpGlobals->time - m_flLastAcceptedPrimaryShotTime) >= flRecoverySeconds;
+	const BOOL fHasPreviousAcceptedShot = m_flLastAcceptedPrimaryShotTime >= 0.0f;
+	const float flTimeSincePreviousAcceptedShot = fHasPreviousAcceptedShot ? (gpGlobals->time - m_flLastAcceptedPrimaryShotTime) : 0.0f;
+	const SharedWeaponSpreadResult spreadResult = ComputeSharedWeaponSpread(
+		BuildGlockPrimarySpreadProfile(),
+		BuildPlayerWeaponSpreadState(
+			m_pPlayer,
+			kGlockFallbackMaxSpeed,
+			fHasPreviousAcceptedShot != FALSE,
+			flTimeSincePreviousAcceptedShot,
+			0.0f));
+	return spreadResult.firstShotAccuracyApplied ? TRUE : FALSE;
 }
 
 float CGlock::GetPrimaryFireSpread( void ) const
 {
-	if (QualifiesForFirstShotAccuracy())
-	{
-		return 0.0f;
-	}
-
-	const float flMoveSpreadScale = ExpMoveSpreadScale();
-	if (flMoveSpreadScale <= 0.0f)
-	{
-		return ExpGlockPrimaryBaseSpread();
-	}
-
-	float flMaxSpeed = m_pPlayer->pev->maxspeed;
-	if (flMaxSpeed <= kGlockMinMaxSpeed)
-	{
-		flMaxSpeed = kGlockFallbackMaxSpeed;
-	}
-
-	const float flSpeedRatio = ClampFloat(m_pPlayer->pev->velocity.Length2D() / flMaxSpeed, 0.0f, 1.0f);
-	float flMovementPenalty = FBitSet(m_pPlayer->pev->flags, FL_ONGROUND)
-		? (ExpGlockPrimaryGroundMovePenalty() * flSpeedRatio * flMoveSpreadScale)
-		: (ExpGlockPrimaryAirMovePenalty() * flMoveSpreadScale);
-
-	if ((m_pPlayer->pev->button & IN_DUCK) || FBitSet(m_pPlayer->pev->flags, FL_DUCKING))
-	{
-		flMovementPenalty *= ExpGlockPrimaryDuckPenaltyScale();
-	}
-
-	return ClampFloat(ExpGlockPrimaryBaseSpread() + flMovementPenalty, 0.0f, ExpGlockPrimaryMaxSpread());
+	const BOOL fHasPreviousAcceptedShot = m_flLastAcceptedPrimaryShotTime >= 0.0f;
+	const float flTimeSincePreviousAcceptedShot = fHasPreviousAcceptedShot ? (gpGlobals->time - m_flLastAcceptedPrimaryShotTime) : 0.0f;
+	const SharedWeaponSpreadResult spreadResult = ComputeSharedWeaponSpread(
+		BuildGlockPrimarySpreadProfile(),
+		BuildPlayerWeaponSpreadState(
+			m_pPlayer,
+			kGlockFallbackMaxSpeed,
+			fHasPreviousAcceptedShot != FALSE,
+			flTimeSincePreviousAcceptedShot,
+			0.0f));
+	return spreadResult.spread;
 }
 
 

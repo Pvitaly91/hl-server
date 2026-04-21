@@ -16,6 +16,7 @@ The repository vendors a pinned snapshot of Valve's official Half-Life source ba
 - A disposable HLDS test stand for no-client and dedicated flows under `testbed/runtime/`.
 - A managed same-root live mod at `Half-Life\hlserver_testbed` for client-attached sessions.
 - Server-only experimental Glock and MP5 paths for manual stock-client-compatible gameplay iteration without changing the stock client DLL.
+- A shared server-side tuning core for Glock and MP5 so future weapons can reuse the same spread and damage primitives instead of copying ad-hoc math per weapon.
 
 It is not yet a gameplay conversion and it does not ship any proprietary game assets, Steam files, or HLDS binaries.
 
@@ -185,6 +186,29 @@ Live lab console commands:
 The live dummy now forces `mp_allowmonsters 1` before spawning, because the underlying server-side `monster_generic` entity is otherwise removed immediately on deathmatch maps.
 
 Persistent named target spots are stored under `<HalfLifeRoot>\hlserver_testbed\target_spots\<map>.json`. Each map file is human-readable JSON with an `active_spot` field and one or more named saved spots. See [docs/target-spots.md](/D:/DEV/CPP/HL-Server/docs/target-spots.md) for the exact file layout and command flow.
+
+## Shared Weapon Tuning Core
+
+Glock and MP5 now share a lightweight server-side tuning core for the common tuning dimensions that were already present in the repo:
+
+- base spread
+- ground movement penalty
+- air movement penalty
+- duck penalty scale
+- first-shot accuracy and its speed threshold
+- spread recovery inputs
+- max spread
+- base damage
+- headshot scale
+- headshot lethal handling
+
+Weapon-specific behavior stays in the weapon wrappers:
+
+- Glock still owns its tap-fire press/hold semantics.
+- MP5 still owns burst-growth and burst-specific spread accumulation.
+- Lab loadout and target workflow stay unchanged.
+
+The editor and cfg surface is intentionally unchanged. Existing `sv_exp_glock_*`, `sv_exp_mp5_*`, and exported cfg files still load through the same live-lab workflow. See [docs/shared-weapon-tuning.md](/D:/DEV/CPP/HL-Server/docs/shared-weapon-tuning.md) for the implementation note and verification summary.
 
 Launch live with a Glock cfg already exported into the active live mod root:
 

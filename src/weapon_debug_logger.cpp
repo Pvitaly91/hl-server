@@ -4,6 +4,7 @@
 #include "monsters.h"
 #include "player.h"
 #include "future_gameplay_hooks.h"
+#include "weapon_tuning_core.h"
 #include "weapon_debug_logger.h"
 
 #include <math.h>
@@ -244,141 +245,6 @@ void AppendOptionalQuotedTelemetryField(std::string *line, const char *key, cons
     *line += "=\"";
     *line += SanitizeLogValue(value);
     *line += "\"";
-}
-
-float GetFallbackHitgroupScale(CBaseEntity *pVictim, int hitgroup)
-{
-    const bool fPlayerVictim = pVictim != NULL && pVictim->IsPlayer();
-
-    switch (hitgroup)
-    {
-    case HITGROUP_HEAD:
-        return fPlayerVictim ? gSkillData.plrHead : gSkillData.monHead;
-    case HITGROUP_CHEST:
-        return fPlayerVictim ? gSkillData.plrChest : gSkillData.monChest;
-    case HITGROUP_STOMACH:
-        return fPlayerVictim ? gSkillData.plrStomach : gSkillData.monStomach;
-    case HITGROUP_LEFTARM:
-    case HITGROUP_RIGHTARM:
-        return fPlayerVictim ? gSkillData.plrArm : gSkillData.monArm;
-    case HITGROUP_LEFTLEG:
-    case HITGROUP_RIGHTLEG:
-        return fPlayerVictim ? gSkillData.plrLeg : gSkillData.monLeg;
-    case HITGROUP_GENERIC:
-    default:
-        return 1.0f;
-    }
-}
-
-float ClampFloat(float value, float minimum, float maximum)
-{
-    if (value < minimum)
-    {
-        return minimum;
-    }
-
-    if (value > maximum)
-    {
-        return maximum;
-    }
-
-    return value;
-}
-
-float ComputePlayerHeadshotLethalDamage(CBasePlayer *pPlayer)
-{
-    if (pPlayer == NULL || pPlayer->pev == NULL)
-    {
-        return 0.0f;
-    }
-
-    const float flHealth = pPlayer->pev->health > 0.0f ? pPlayer->pev->health : 0.0f;
-    const float flArmor = pPlayer->pev->armorvalue > 0.0f ? pPlayer->pev->armorvalue : 0.0f;
-    const float flRequiredDamage = (flArmor >= (2.0f * flHealth))
-        ? (5.0f * flHealth)
-        : (flHealth + (2.0f * flArmor));
-
-    return (float)ceil(flRequiredDamage);
-}
-
-float ComputeDummyHeadshotLethalDamage(CBaseEntity *pVictim)
-{
-    if (pVictim == NULL || pVictim->pev == NULL)
-    {
-        return 0.0f;
-    }
-
-    const float health = pVictim->pev->health > 0.0f ? pVictim->pev->health : 0.0f;
-    if (health <= 0.0f)
-    {
-        return 0.0f;
-    }
-
-    if (!ExpGlockLabDummyHeadProtected())
-    {
-        return (float)ceil(health);
-    }
-
-    const float armor = pVictim->pev->armorvalue > 0.0f ? pVictim->pev->armorvalue : 0.0f;
-    if (armor <= 0.0f)
-    {
-        return (float)ceil(health);
-    }
-
-    const float armorHealthFraction = ClampFloat(ExpGlockLabDummyArmorHealthFraction(), 0.0f, 1.0f);
-    const float armorDrainScale = ExpGlockLabDummyArmorDrainScale();
-    const float absorbedFraction = 1.0f - armorHealthFraction;
-
-    if (absorbedFraction <= 0.0f)
-    {
-        return (float)ceil(health);
-    }
-
-    if (armorDrainScale <= 0.0f)
-    {
-        if (armorHealthFraction <= 0.0f)
-        {
-            return 0.0f;
-        }
-
-        return (float)ceil(health / armorHealthFraction);
-    }
-
-    if (armorHealthFraction > 0.0f)
-    {
-        const float transitionDamage = armor / (absorbedFraction * armorDrainScale);
-        const float lethalWhileArmored = health / armorHealthFraction;
-        if (lethalWhileArmored <= transitionDamage)
-        {
-            return (float)ceil(lethalWhileArmored);
-        }
-    }
-
-    return (float)ceil(health + (armor / armorDrainScale));
-}
-
-float ComputeHeadshotLethalDamage(CBaseEntity *pVictim)
-{
-    if (pVictim == NULL || pVictim->pev == NULL)
-    {
-        return 0.0f;
-    }
-
-    if (IsExpGlockLabDummyEntity(pVictim))
-    {
-        const float dummyLethalDamage = ComputeDummyHeadshotLethalDamage(pVictim);
-        if (dummyLethalDamage > 0.0f)
-        {
-            return dummyLethalDamage;
-        }
-    }
-
-    if (pVictim->IsPlayer())
-    {
-        return ComputePlayerHeadshotLethalDamage((CBasePlayer *)pVictim);
-    }
-
-    return (float)ceil(pVictim->pev->health > 0.0f ? pVictim->pev->health : 0.0f);
 }
 
 const char *GetHitgroupName(int hitgroup)
@@ -711,20 +577,6 @@ const char *GetEntityKind(CBaseEntity *pEntity)
     }
 
     return "entity";
-}
-
-bool DummyArmorProtectsHitgroup(int hitgroup, bool headProtected)
-{
-    switch (hitgroup)
-    {
-    case HITGROUP_CHEST:
-    case HITGROUP_STOMACH:
-        return true;
-    case HITGROUP_HEAD:
-        return headProtected;
-    default:
-        return false;
-    }
 }
 
 int GetEntityIndex(CBaseEntity *pEntity)
@@ -1305,13 +1157,14 @@ void BeginGlockPrimaryShotContext(CBasePlayer *pPlayer)
         return;
     }
 
+    const SharedWeaponDamageProfile damageProfile = BuildGlockPrimaryDamageProfile();
     g_glockPrimaryShotContext.active = true;
     g_glockPrimaryShotContext.attacker = pPlayer->pev;
     g_glockPrimaryShotContext.attackerPlayer = pPlayer;
     g_glockPrimaryShotContext.experimentalModeActive = ExpGlockExperimentalModeEnabled();
-    g_glockPrimaryShotContext.baseDamage = ExpGlockPrimaryDamage();
-    g_glockPrimaryShotContext.headshotScale = ExpGlockPrimaryHeadshotScale();
-    g_glockPrimaryShotContext.headshotLethal = ExpGlockPrimaryHeadshotLethal();
+    g_glockPrimaryShotContext.baseDamage = damageProfile.baseDamage;
+    g_glockPrimaryShotContext.headshotScale = damageProfile.headshotScale;
+    g_glockPrimaryShotContext.headshotLethal = damageProfile.headshotLethal;
     strncpy_s(g_glockPrimaryShotContext.profileName, sizeof(g_glockPrimaryShotContext.profileName), ExpGlockProfileName(), _TRUNCATE);
     strncpy_s(g_glockPrimaryShotContext.targetProfileName, sizeof(g_glockPrimaryShotContext.targetProfileName), ExpGlockLabTargetProfileName(), _TRUNCATE);
 }
@@ -1338,100 +1191,40 @@ bool ApplyActiveGlockPrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAtta
         return false;
     }
 
-    const bool fHeadshot = hitgroup == HITGROUP_HEAD;
-    float flHitgroupScale = GetFallbackHitgroupScale(pVictim, hitgroup);
-
-    if (fHeadshot)
+    SharedWeaponDamageProfile damageProfile = {};
+    damageProfile.baseDamage = g_glockPrimaryShotContext.baseDamage;
+    damageProfile.headshotScale = g_glockPrimaryShotContext.headshotScale;
+    damageProfile.headshotLethal = g_glockPrimaryShotContext.headshotLethal;
+    SharedWeaponTraceDamageResult traceResult = {};
+    if (!ApplySharedWeaponTraceDamage(
+            pVictim,
+            hitgroup,
+            damageProfile,
+            *pDamage,
+            &traceResult))
     {
-        flHitgroupScale = g_glockPrimaryShotContext.headshotScale;
+        return false;
     }
 
-    float flDamage = GetActiveGlockPrimaryBaseDamage(pevAttacker, *pDamage) * flHitgroupScale;
-    bool fHeadshotLethalApplied = false;
-    const bool fDummyVictim = IsExpGlockLabDummyEntity(pVictim);
-
-    if (fHeadshot && g_glockPrimaryShotContext.headshotLethal)
-    {
-        const float flLethalDamage = ComputeHeadshotLethalDamage(pVictim);
-        if (flLethalDamage > flDamage)
-        {
-            flDamage = flLethalDamage;
-            fHeadshotLethalApplied = true;
-        }
-    }
-
-    float flDamageToHealth = flDamage;
-    float flDamageAbsorbed = 0.0f;
-    float flArmorDrain = 0.0f;
-    bool fDummyArmorApplied = false;
-    const bool fDummyHeadProtected = fDummyVictim && ExpGlockLabDummyHeadProtected();
-    const float flDummyArmorBefore = fDummyVictim && pVictim->pev->armorvalue > 0.0f ? pVictim->pev->armorvalue : 0.0f;
-
-    if (fDummyVictim && flDummyArmorBefore > 0.0f && DummyArmorProtectsHitgroup(hitgroup, fDummyHeadProtected))
-    {
-        const float flArmorHealthFraction = ClampFloat(ExpGlockLabDummyArmorHealthFraction(), 0.0f, 1.0f);
-        const float flDesiredDamageToHealth = flDamage * flArmorHealthFraction;
-        const float flDesiredDamageAbsorbed = flDamage - flDesiredDamageToHealth;
-        const float flArmorDrainScale = ExpGlockLabDummyArmorDrainScale();
-
-        if (flDesiredDamageAbsorbed > 0.0f)
-        {
-            if (flArmorDrainScale <= 0.0f)
-            {
-                flDamageToHealth = flDesiredDamageToHealth;
-                flDamageAbsorbed = flDesiredDamageAbsorbed;
-                flArmorDrain = 0.0f;
-                fDummyArmorApplied = true;
-            }
-            else
-            {
-                const float flDesiredArmorDrain = flDesiredDamageAbsorbed * flArmorDrainScale;
-
-                if (flDesiredArmorDrain <= flDummyArmorBefore)
-                {
-                    flDamageToHealth = flDesiredDamageToHealth;
-                    flDamageAbsorbed = flDesiredDamageAbsorbed;
-                    flArmorDrain = flDesiredArmorDrain;
-                    fDummyArmorApplied = true;
-                }
-                else
-                {
-                    flArmorDrain = flDummyArmorBefore;
-                    flDamageAbsorbed = flArmorDrain / flArmorDrainScale;
-                    flDamageToHealth = flDamage - flDamageAbsorbed;
-                    fDummyArmorApplied = flDamageAbsorbed > 0.0f;
-                }
-            }
-
-            pVictim->pev->armorvalue = flDummyArmorBefore - flArmorDrain;
-            if (pVictim->pev->armorvalue < 0.0f)
-            {
-                pVictim->pev->armorvalue = 0.0f;
-            }
-        }
-    }
-
-    *pDamage = flDamageToHealth;
+    *pDamage = traceResult.damageToHealth;
 
     g_glockPrimaryShotContext.pendingHit = true;
     g_glockPrimaryShotContext.victim = pVictim;
     g_glockPrimaryShotContext.hitgroup = hitgroup;
-    g_glockPrimaryShotContext.headshot = fHeadshot;
-    g_glockPrimaryShotContext.hitgroupScale = flHitgroupScale;
-    g_glockPrimaryShotContext.traceDamage = flDamage;
-    g_glockPrimaryShotContext.headshotLethalApplied = fHeadshotLethalApplied;
+    g_glockPrimaryShotContext.headshot = traceResult.headshot;
+    g_glockPrimaryShotContext.hitgroupScale = traceResult.hitgroupScale;
+    g_glockPrimaryShotContext.traceDamage = traceResult.traceDamage;
+    g_glockPrimaryShotContext.headshotLethalApplied = traceResult.headshotLethalApplied;
     g_glockPrimaryShotContext.victimHealthBefore = pVictim->pev->health;
-    g_glockPrimaryShotContext.victimArmorKnown = pVictim->IsPlayer() || fDummyVictim;
-    g_glockPrimaryShotContext.victimArmorBefore = g_glockPrimaryShotContext.victimArmorKnown
-        ? (fDummyVictim ? flDummyArmorBefore : pVictim->pev->armorvalue)
-        : 0.0f;
-    g_glockPrimaryShotContext.victimIsDummy = fDummyVictim;
-    g_glockPrimaryShotContext.dummyArmorApplied = fDummyArmorApplied;
-    g_glockPrimaryShotContext.dummyHeadProtected = fDummyHeadProtected;
-    g_glockPrimaryShotContext.damageRaw = flDamage;
-    g_glockPrimaryShotContext.damageToHealth = flDamageToHealth;
-    g_glockPrimaryShotContext.damageAbsorbed = flDamageAbsorbed;
-    g_glockPrimaryShotContext.armorDrain = flArmorDrain;
+    g_glockPrimaryShotContext.victimArmorKnown = traceResult.victimArmorKnown;
+    g_glockPrimaryShotContext.victimArmorBefore = traceResult.victimArmorBefore;
+    g_glockPrimaryShotContext.victimIsDummy = traceResult.dummyVictim;
+    g_glockPrimaryShotContext.dummyArmorApplied = traceResult.dummyArmorApplied;
+    g_glockPrimaryShotContext.dummyHeadProtected = traceResult.dummyHeadProtected;
+    g_glockPrimaryShotContext.damageRaw = traceResult.traceDamage;
+    g_glockPrimaryShotContext.damageToHealth = traceResult.damageToHealth;
+    g_glockPrimaryShotContext.damageAbsorbed = traceResult.damageAbsorbed;
+    g_glockPrimaryShotContext.armorDrain = traceResult.armorDrain;
 
     return true;
 }
@@ -1577,13 +1370,14 @@ void BeginMp5PrimaryShotContext(CBasePlayer *pPlayer)
         return;
     }
 
+    const SharedWeaponDamageProfile damageProfile = BuildMp5PrimaryDamageProfile();
     g_mp5PrimaryShotContext.active = true;
     g_mp5PrimaryShotContext.attacker = pPlayer->pev;
     g_mp5PrimaryShotContext.attackerPlayer = pPlayer;
     g_mp5PrimaryShotContext.experimentalModeActive = ExpMP5ExperimentalModeEnabled();
-    g_mp5PrimaryShotContext.baseDamage = ExpMP5PrimaryDamage();
-    g_mp5PrimaryShotContext.headshotScale = ExpMP5PrimaryHeadshotScale();
-    g_mp5PrimaryShotContext.headshotLethal = ExpMP5PrimaryHeadshotLethal();
+    g_mp5PrimaryShotContext.baseDamage = damageProfile.baseDamage;
+    g_mp5PrimaryShotContext.headshotScale = damageProfile.headshotScale;
+    g_mp5PrimaryShotContext.headshotLethal = damageProfile.headshotLethal;
     strncpy_s(g_mp5PrimaryShotContext.profileName, sizeof(g_mp5PrimaryShotContext.profileName), ExpMP5ProfileName(), _TRUNCATE);
     strncpy_s(g_mp5PrimaryShotContext.targetProfileName, sizeof(g_mp5PrimaryShotContext.targetProfileName), ExpGlockLabTargetProfileName(), _TRUNCATE);
 }
@@ -1610,100 +1404,40 @@ bool ApplyActiveMp5PrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAttack
         return false;
     }
 
-    const bool headshot = hitgroup == HITGROUP_HEAD;
-    float hitgroupScale = GetFallbackHitgroupScale(pVictim, hitgroup);
-
-    if (headshot)
+    SharedWeaponDamageProfile damageProfile = {};
+    damageProfile.baseDamage = g_mp5PrimaryShotContext.baseDamage;
+    damageProfile.headshotScale = g_mp5PrimaryShotContext.headshotScale;
+    damageProfile.headshotLethal = g_mp5PrimaryShotContext.headshotLethal;
+    SharedWeaponTraceDamageResult traceResult = {};
+    if (!ApplySharedWeaponTraceDamage(
+            pVictim,
+            hitgroup,
+            damageProfile,
+            *pDamage,
+            &traceResult))
     {
-        hitgroupScale = g_mp5PrimaryShotContext.headshotScale;
+        return false;
     }
 
-    float damage = GetActiveMp5PrimaryBaseDamage(pevAttacker, *pDamage) * hitgroupScale;
-    bool headshotLethalApplied = false;
-    const bool dummyVictim = IsExpGlockLabDummyEntity(pVictim);
-
-    if (headshot && g_mp5PrimaryShotContext.headshotLethal)
-    {
-        const float lethalDamage = ComputeHeadshotLethalDamage(pVictim);
-        if (lethalDamage > damage)
-        {
-            damage = lethalDamage;
-            headshotLethalApplied = true;
-        }
-    }
-
-    float damageToHealth = damage;
-    float damageAbsorbed = 0.0f;
-    float armorDrain = 0.0f;
-    bool dummyArmorApplied = false;
-    const bool dummyHeadProtected = dummyVictim && ExpGlockLabDummyHeadProtected();
-    const float dummyArmorBefore = dummyVictim && pVictim->pev->armorvalue > 0.0f ? pVictim->pev->armorvalue : 0.0f;
-
-    if (dummyVictim && dummyArmorBefore > 0.0f && DummyArmorProtectsHitgroup(hitgroup, dummyHeadProtected))
-    {
-        const float armorHealthFraction = ClampFloat(ExpGlockLabDummyArmorHealthFraction(), 0.0f, 1.0f);
-        const float desiredDamageToHealth = damage * armorHealthFraction;
-        const float desiredDamageAbsorbed = damage - desiredDamageToHealth;
-        const float armorDrainScale = ExpGlockLabDummyArmorDrainScale();
-
-        if (desiredDamageAbsorbed > 0.0f)
-        {
-            if (armorDrainScale <= 0.0f)
-            {
-                damageToHealth = desiredDamageToHealth;
-                damageAbsorbed = desiredDamageAbsorbed;
-                armorDrain = 0.0f;
-                dummyArmorApplied = true;
-            }
-            else
-            {
-                const float desiredArmorDrain = desiredDamageAbsorbed * armorDrainScale;
-
-                if (desiredArmorDrain <= dummyArmorBefore)
-                {
-                    damageToHealth = desiredDamageToHealth;
-                    damageAbsorbed = desiredDamageAbsorbed;
-                    armorDrain = desiredArmorDrain;
-                    dummyArmorApplied = true;
-                }
-                else
-                {
-                    armorDrain = dummyArmorBefore;
-                    damageAbsorbed = armorDrain / armorDrainScale;
-                    damageToHealth = damage - damageAbsorbed;
-                    dummyArmorApplied = damageAbsorbed > 0.0f;
-                }
-            }
-
-            pVictim->pev->armorvalue = dummyArmorBefore - armorDrain;
-            if (pVictim->pev->armorvalue < 0.0f)
-            {
-                pVictim->pev->armorvalue = 0.0f;
-            }
-        }
-    }
-
-    *pDamage = damageToHealth;
+    *pDamage = traceResult.damageToHealth;
 
     g_mp5PrimaryShotContext.pendingHit = true;
     g_mp5PrimaryShotContext.victim = pVictim;
     g_mp5PrimaryShotContext.hitgroup = hitgroup;
-    g_mp5PrimaryShotContext.headshot = headshot;
-    g_mp5PrimaryShotContext.hitgroupScale = hitgroupScale;
-    g_mp5PrimaryShotContext.traceDamage = damage;
-    g_mp5PrimaryShotContext.headshotLethalApplied = headshotLethalApplied;
+    g_mp5PrimaryShotContext.headshot = traceResult.headshot;
+    g_mp5PrimaryShotContext.hitgroupScale = traceResult.hitgroupScale;
+    g_mp5PrimaryShotContext.traceDamage = traceResult.traceDamage;
+    g_mp5PrimaryShotContext.headshotLethalApplied = traceResult.headshotLethalApplied;
     g_mp5PrimaryShotContext.victimHealthBefore = pVictim->pev->health;
-    g_mp5PrimaryShotContext.victimArmorKnown = pVictim->IsPlayer() || dummyVictim;
-    g_mp5PrimaryShotContext.victimArmorBefore = g_mp5PrimaryShotContext.victimArmorKnown
-        ? (dummyVictim ? dummyArmorBefore : pVictim->pev->armorvalue)
-        : 0.0f;
-    g_mp5PrimaryShotContext.victimIsDummy = dummyVictim;
-    g_mp5PrimaryShotContext.dummyArmorApplied = dummyArmorApplied;
-    g_mp5PrimaryShotContext.dummyHeadProtected = dummyHeadProtected;
-    g_mp5PrimaryShotContext.damageRaw = damage;
-    g_mp5PrimaryShotContext.damageToHealth = damageToHealth;
-    g_mp5PrimaryShotContext.damageAbsorbed = damageAbsorbed;
-    g_mp5PrimaryShotContext.armorDrain = armorDrain;
+    g_mp5PrimaryShotContext.victimArmorKnown = traceResult.victimArmorKnown;
+    g_mp5PrimaryShotContext.victimArmorBefore = traceResult.victimArmorBefore;
+    g_mp5PrimaryShotContext.victimIsDummy = traceResult.dummyVictim;
+    g_mp5PrimaryShotContext.dummyArmorApplied = traceResult.dummyArmorApplied;
+    g_mp5PrimaryShotContext.dummyHeadProtected = traceResult.dummyHeadProtected;
+    g_mp5PrimaryShotContext.damageRaw = traceResult.traceDamage;
+    g_mp5PrimaryShotContext.damageToHealth = traceResult.damageToHealth;
+    g_mp5PrimaryShotContext.damageAbsorbed = traceResult.damageAbsorbed;
+    g_mp5PrimaryShotContext.armorDrain = traceResult.armorDrain;
 
     return true;
 }

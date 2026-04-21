@@ -164,6 +164,16 @@ The live dummy now forces `mp_allowmonsters 1` before spawning, because the back
 
 Persistent target spots are stored under `<HalfLifeRoot>\hlserver_testbed\target_spots\<map>.json`. Each file is human-readable JSON and persists both the active spot name and the saved spot transforms for that map. See [docs/target-spots.md](/D:/DEV/CPP/HL-Server/docs/target-spots.md) for the exact command flow and file format.
 
+## Shared tuning compatibility
+
+The current server build routes both Glock and MP5 through one shared server-side tuning core for common spread and damage calculations, but the editor surface is unchanged on purpose:
+
+- existing `sv_exp_glock_*` and `sv_exp_mp5_*` names still map to the same exported cfg fields
+- existing `.hlcfg.json` projects still export normal GoldSrc `.cfg` files
+- existing exported cfgs such as `editor_glock_simple.cfg` and `editor_mp5_simple.cfg` still apply through `exp_cfg_apply`, `exp_lab_apply`, `-CfgProfile`, and `-CfgPath`
+
+That means the editor workflow in this document remains the recommended path even after the Glock/MP5 server refactor.
+
 ## JSON vs CFG
 
 - `.hlcfg.json` is the editable project file for reopening the same tuning session later.
