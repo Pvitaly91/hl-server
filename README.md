@@ -149,9 +149,9 @@ Bare filenames now resolve in this order:
 
 The launcher prints the exact resolved path before launch.
 
-## Live lab workflow
+## Recommended stable live-lab workflow
 
-The fastest day-to-day tuning loop is now:
+This is the recommended integrated path for future server work. Legacy demo and older export paths still exist, but the direct live-mod, editor-exported cfg, live cfg command, and reliable target workflow below is the preferred day-to-day loop.
 
 1. Edit values in `HlConfigEditorCpp`.
 2. `Quick Export to Live Mod` so the cfg lands directly in `<HalfLifeRoot>\hlserver_testbed\`.
@@ -162,6 +162,8 @@ The fastest day-to-day tuning loop is now:
 7. Change dummy presets on the fly with `exp_target_profile unarmored`, `exp_target_profile vest`, or `exp_target_profile vest_headprotected`.
 8. Inspect state any time with `exp_cfg_status` and `exp_target_status`.
 9. Test in-game, then review the normal weapon log and analyzer output.
+
+Integration provenance for this recommended path is recorded in [docs/stable-live-lab-state.md](/D:/DEV/CPP/HL-Server/docs/stable-live-lab-state.md).
 
 Live lab console commands:
 

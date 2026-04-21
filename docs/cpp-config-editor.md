@@ -127,9 +127,9 @@ External cfg files still work through `-CfgPath`:
 scripts\play-hlserver-testbed-direct.bat -CfgPath "D:\some-folder\editor_glock_simple.cfg"
 ```
 
-## Live lab workflow
+## Recommended stable live-lab workflow
 
-Use this loop when the server is already running and you want to iterate quickly:
+Use this as the preferred integrated path. Legacy demo and backward-compatible export paths remain available, but the direct live-mod workflow below is the recommended base for future tuning work:
 
 1. Edit the values in `HlConfigEditorCpp`.
 2. Quick-export the cfg directly into `<HalfLifeRoot>\hlserver_testbed\`.
@@ -140,6 +140,8 @@ Use this loop when the server is already running and you want to iterate quickly
 7. Switch target presets with `exp_target_profile unarmored`, `exp_target_profile vest`, or `exp_target_profile vest_headprotected`.
 8. Inspect the current live state with `exp_cfg_status` and `exp_target_status`.
 9. Test in-game and then review the weapon log or analyzer output.
+
+Subsystem provenance for this recommended path is recorded in [docs/stable-live-lab-state.md](/D:/DEV/CPP/HL-Server/docs/stable-live-lab-state.md).
 
 Live lab console commands:
 
