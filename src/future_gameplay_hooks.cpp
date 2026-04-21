@@ -5,6 +5,7 @@
 #include "player.h"
 #include "weapons.h"
 #include "client.h"
+#include "gamerules.h"
 
 #include "future_gameplay_hooks.h"
 #include "weapon_debug_logger.h"
@@ -65,6 +66,13 @@ const float kRoundEndHoldSeconds = 0.25f;
 const float kDefaultRoundFreezeTime = 3.0f;
 const float kDefaultRoundRestartDelay = 3.0f;
 const float kDefaultRoundStartHealth = 100.0f;
+const float kDefaultTeamRoundOverrideValue = -1.0f;
+const int kMaxRoundTeamPlayerSlots = 33;
+const int kMaxRoundFakeClientNameLength = 64;
+const char *kDefaultTeamRoundSpawnMode = "dm_spawns";
+const char *kDefaultTeamRoundTeam1Name = "team1";
+const char *kDefaultTeamRoundTeam2Name = "team2";
+const char *kRoundEndReasonTeamsIncomplete = "teams_incomplete";
 
 struct LiveCfgState
 {
@@ -162,18 +170,48 @@ enum ExpRoundStateType
     kExpRoundStateRestartPending
 };
 
+enum ExpRoundTeamId
+{
+    kExpRoundTeamNone = 0,
+    kExpRoundTeam1 = 1,
+    kExpRoundTeam2 = 2
+};
+
+struct ExpRoundTeamAssignment
+{
+    bool assigned;
+    int teamId;
+    int userId;
+    char playerName[64];
+};
+
+struct ExpRoundFakeClientRecord
+{
+    bool active;
+    int userId;
+    char playerName[64];
+};
+
 struct ExpRoundRuntimeState
 {
     ExpRoundStateType state;
     int roundNumber;
     int connectedPlayers;
     int alivePlayers;
+    int team1ConnectedPlayers;
+    int team2ConnectedPlayers;
+    int unassignedConnectedPlayers;
+    int team1AlivePlayers;
+    int team2AlivePlayers;
+    int unassignedAlivePlayers;
     float stateEnteredAt;
     float nextTransitionAt;
     bool applyingRoundReset;
     char lastWinnerName[64];
     int lastWinnerEntIndex;
     int lastWinnerUserId;
+    int lastWinnerTeamId;
+    char lastWinnerTeamName[64];
     char lastEndReason[64];
 };
 
@@ -181,7 +219,15 @@ struct ExpRoundPlayerSnapshot
 {
     int connectedPlayers;
     int alivePlayers;
+    int team1ConnectedPlayers;
+    int team2ConnectedPlayers;
+    int unassignedConnectedPlayers;
+    int team1AlivePlayers;
+    int team2AlivePlayers;
+    int unassignedAlivePlayers;
     CBasePlayer *lastAlivePlayer;
+    CBasePlayer *lastAliveTeam1Player;
+    CBasePlayer *lastAliveTeam2Player;
 };
 
 const LabDummyProfileDefinition kBuiltInLabDummyProfiles[] = {
@@ -300,6 +346,17 @@ cvar_t sv_exp_round_no_respawn = {"sv_exp_round_no_respawn", "1", FCVAR_SERVER};
 cvar_t sv_exp_round_friendlyfire = {"sv_exp_round_friendlyfire", "0", FCVAR_SERVER};
 cvar_t sv_exp_round_weapon_profile = {"sv_exp_round_weapon_profile", "", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
 cvar_t sv_exp_round_loadout_mode = {"sv_exp_round_loadout_mode", "none", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
+cvar_t sv_exp_team_round_mode = {"sv_exp_team_round_mode", "0", FCVAR_SERVER};
+cvar_t sv_exp_team_round_teamplay = {"sv_exp_team_round_teamplay", "1", FCVAR_SERVER};
+cvar_t sv_exp_team_round_spawn_mode = {"sv_exp_team_round_spawn_mode", "dm_spawns", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
+cvar_t sv_exp_team_round_team1_name = {"sv_exp_team_round_team1_name", "team1", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
+cvar_t sv_exp_team_round_team2_name = {"sv_exp_team_round_team2_name", "team2", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
+cvar_t sv_exp_team_round_team1_loadout = {"sv_exp_team_round_team1_loadout", "", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
+cvar_t sv_exp_team_round_team2_loadout = {"sv_exp_team_round_team2_loadout", "", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
+cvar_t sv_exp_team_round_team1_health = {"sv_exp_team_round_team1_health", "-1.0", FCVAR_SERVER};
+cvar_t sv_exp_team_round_team2_health = {"sv_exp_team_round_team2_health", "-1.0", FCVAR_SERVER};
+cvar_t sv_exp_team_round_team1_armor = {"sv_exp_team_round_team1_armor", "-1.0", FCVAR_SERVER};
+cvar_t sv_exp_team_round_team2_armor = {"sv_exp_team_round_team2_armor", "-1.0", FCVAR_SERVER};
 cvar_t sv_exp_debug_weaponlog = {"sv_exp_debug_weaponlog", "0", FCVAR_SERVER};
 cvar_t sv_exp_debug_weaponlog_rejections = {"sv_exp_debug_weaponlog_rejections", "0", FCVAR_SERVER};
 cvar_t sv_exp_glock_lab_dummy = {"sv_exp_glock_lab_dummy", "0", FCVAR_SERVER};
@@ -335,9 +392,16 @@ float g_glockLabDummyRetryTime = 0.0f;
 char g_futureHooksMapName[64] = "";
 LiveCfgState g_liveCfgState = {};
 ExpRoundRuntimeState g_expRoundState = {};
+ExpRoundTeamAssignment g_expRoundTeamAssignments[kMaxRoundTeamPlayerSlots] = {};
+ExpRoundFakeClientRecord g_expRoundFakeClientRecords[kMaxRoundTeamPlayerSlots] = {};
 
 void PrintLabDummyStatus();
 void PrintRoundStatus();
+void PrintTeamStatus();
+bool IsRoundManagedPlayer(CBasePlayer *pPlayer);
+bool IsRoundFakeClient(CBasePlayer *pPlayer);
+void UpdateRoundPopulationSnapshot();
+void TrimCfgRequestString(const char *input, char *buffer, size_t bufferSize);
 bool EnsureLabDummyMonsterSpawningEnabled(LabDummyFailureInfo *failure, const LabDummySpawnSelection *selection);
 bool SaveLabDummySpotsForCurrentMap(char *failureReason, size_t failureReasonSize);
 void LoadLabDummySpotsForCurrentMap();
@@ -670,6 +734,415 @@ const char *GetRoundStateName(ExpRoundStateType state)
     }
 }
 
+bool TeamRoundModeConfigured()
+{
+    return sv_exp_team_round_mode.value != 0.0f;
+}
+
+bool TeamRoundTeamplayConfigured()
+{
+    return sv_exp_team_round_teamplay.value != 0.0f;
+}
+
+const char *GetConfiguredTeamRoundSpawnMode()
+{
+    return GetNonEmptyCvarString(sv_exp_team_round_spawn_mode, kDefaultTeamRoundSpawnMode);
+}
+
+bool TeamRoundSpawnModeSupported()
+{
+    return StringEqualsIgnoreCase(GetConfiguredTeamRoundSpawnMode(), kDefaultTeamRoundSpawnMode);
+}
+
+const char *GetResolvedTeamRoundSpawnMode()
+{
+    return kDefaultTeamRoundSpawnMode;
+}
+
+const char *GetConfiguredTeamRoundName(int teamId)
+{
+    if (teamId == kExpRoundTeam1)
+    {
+        return GetNonEmptyCvarString(sv_exp_team_round_team1_name, kDefaultTeamRoundTeam1Name);
+    }
+
+    if (teamId == kExpRoundTeam2)
+    {
+        return GetNonEmptyCvarString(sv_exp_team_round_team2_name, kDefaultTeamRoundTeam2Name);
+    }
+
+    return "none";
+}
+
+int NormalizeRoundTeamId(int teamId)
+{
+    if (teamId == kExpRoundTeam1 || teamId == kExpRoundTeam2)
+    {
+        return teamId;
+    }
+
+    return kExpRoundTeamNone;
+}
+
+int GetRoundTeamSlot(CBasePlayer *pPlayer)
+{
+    const int entityIndex = GetPlayerEntityIndex(pPlayer);
+    if (entityIndex <= 0 || entityIndex >= kMaxRoundTeamPlayerSlots)
+    {
+        return 0;
+    }
+
+    return entityIndex;
+}
+
+void ClearRoundFakeClientRecordSlot(int slot)
+{
+    if (slot <= 0 || slot >= kMaxRoundTeamPlayerSlots)
+    {
+        return;
+    }
+
+    memset(&g_expRoundFakeClientRecords[slot], 0, sizeof(g_expRoundFakeClientRecords[slot]));
+}
+
+void MarkRoundFakeClient(CBasePlayer *pPlayer)
+{
+    const int slot = GetRoundTeamSlot(pPlayer);
+    if (slot <= 0 || pPlayer == NULL)
+    {
+        return;
+    }
+
+    ExpRoundFakeClientRecord &record = g_expRoundFakeClientRecords[slot];
+    memset(&record, 0, sizeof(record));
+    record.active = true;
+    record.userId = GetPlayerUserId(pPlayer);
+    strncpy_s(record.playerName, sizeof(record.playerName), GetSafePlayerName(pPlayer), _TRUNCATE);
+    if (pPlayer->pev != NULL)
+    {
+        pPlayer->pev->flags |= (FL_CLIENT | FL_FAKECLIENT);
+    }
+}
+
+void ClearRoundFakeClientRecord(CBasePlayer *pPlayer)
+{
+    ClearRoundFakeClientRecordSlot(GetRoundTeamSlot(pPlayer));
+}
+
+void ApplyRoundTeamLabel(CBasePlayer *pPlayer, int teamId)
+{
+    if (pPlayer == NULL)
+    {
+        return;
+    }
+
+    const char *teamName = teamId == kExpRoundTeamNone ? "" : GetConfiguredTeamRoundName(teamId);
+    strncpy_s(pPlayer->m_szTeamName, sizeof(pPlayer->m_szTeamName), teamName, _TRUNCATE);
+
+    if (pPlayer->edict() != NULL)
+    {
+        g_engfuncs.pfnSetClientKeyValue(
+            pPlayer->entindex(),
+            g_engfuncs.pfnGetInfoKeyBuffer(pPlayer->edict()),
+            "team",
+            pPlayer->m_szTeamName);
+    }
+}
+
+void ClearRoundTeamAssignmentSlot(int slot)
+{
+    if (slot <= 0 || slot >= kMaxRoundTeamPlayerSlots)
+    {
+        return;
+    }
+
+    memset(&g_expRoundTeamAssignments[slot], 0, sizeof(g_expRoundTeamAssignments[slot]));
+}
+
+void ResetRoundTeamAssignments()
+{
+    memset(g_expRoundTeamAssignments, 0, sizeof(g_expRoundTeamAssignments));
+}
+
+void AssignRoundTeamToPlayer(CBasePlayer *pPlayer, int teamId)
+{
+    const int slot = GetRoundTeamSlot(pPlayer);
+    teamId = NormalizeRoundTeamId(teamId);
+    if (slot <= 0 || pPlayer == NULL)
+    {
+        return;
+    }
+
+    ExpRoundTeamAssignment &assignment = g_expRoundTeamAssignments[slot];
+    memset(&assignment, 0, sizeof(assignment));
+    assignment.assigned = teamId != kExpRoundTeamNone;
+    assignment.teamId = teamId;
+    assignment.userId = GetPlayerUserId(pPlayer);
+    strncpy_s(assignment.playerName, sizeof(assignment.playerName), GetSafePlayerName(pPlayer), _TRUNCATE);
+    ApplyRoundTeamLabel(pPlayer, teamId);
+}
+
+void ClearRoundTeamAssignment(CBasePlayer *pPlayer)
+{
+    const int slot = GetRoundTeamSlot(pPlayer);
+    if (slot <= 0)
+    {
+        return;
+    }
+
+    ClearRoundTeamAssignmentSlot(slot);
+    ApplyRoundTeamLabel(pPlayer, kExpRoundTeamNone);
+}
+
+int GetAssignedRoundTeamId(CBasePlayer *pPlayer)
+{
+    if (!IsRoundManagedPlayer(pPlayer))
+    {
+        return kExpRoundTeamNone;
+    }
+
+    const int slot = GetRoundTeamSlot(pPlayer);
+    if (slot > 0)
+    {
+        ExpRoundTeamAssignment &assignment = g_expRoundTeamAssignments[slot];
+        if (assignment.assigned)
+        {
+            const int userId = GetPlayerUserId(pPlayer);
+            if (assignment.userId <= 0 || userId <= 0 || assignment.userId == userId)
+            {
+                ApplyRoundTeamLabel(pPlayer, assignment.teamId);
+                return NormalizeRoundTeamId(assignment.teamId);
+            }
+
+            ClearRoundTeamAssignmentSlot(slot);
+        }
+    }
+
+    if (StringEqualsIgnoreCase(pPlayer->m_szTeamName, GetConfiguredTeamRoundName(kExpRoundTeam1)))
+    {
+        return kExpRoundTeam1;
+    }
+
+    if (StringEqualsIgnoreCase(pPlayer->m_szTeamName, GetConfiguredTeamRoundName(kExpRoundTeam2)))
+    {
+        return kExpRoundTeam2;
+    }
+
+    return kExpRoundTeamNone;
+}
+
+int CountConnectedPlayersOnRoundTeam(int teamId)
+{
+    if (gpGlobals == NULL)
+    {
+        return 0;
+    }
+
+    int connectedPlayers = 0;
+    for (int playerIndex = 1; playerIndex <= gpGlobals->maxClients; ++playerIndex)
+    {
+        CBaseEntity *pEntity = UTIL_PlayerByIndex(playerIndex);
+        if (pEntity == NULL || !pEntity->IsPlayer() || pEntity->pev == NULL)
+        {
+            continue;
+        }
+
+        CBasePlayer *pPlayer = (CBasePlayer *)pEntity;
+        if (!IsRoundManagedPlayer(pPlayer))
+        {
+            continue;
+        }
+
+        if (GetAssignedRoundTeamId(pPlayer) == teamId)
+        {
+            ++connectedPlayers;
+        }
+    }
+
+    return connectedPlayers;
+}
+
+int ChoosePreferredAutoAssignTeam()
+{
+    const int team1Players = CountConnectedPlayersOnRoundTeam(kExpRoundTeam1);
+    const int team2Players = CountConnectedPlayersOnRoundTeam(kExpRoundTeam2);
+    return team1Players <= team2Players ? kExpRoundTeam1 : kExpRoundTeam2;
+}
+
+void AutoAssignPlayerToRoundTeam(CBasePlayer *pPlayer)
+{
+    if (!IsRoundManagedPlayer(pPlayer))
+    {
+        return;
+    }
+
+    AssignRoundTeamToPlayer(pPlayer, ChoosePreferredAutoAssignTeam());
+}
+
+int AutoAssignRoundTeams(bool reassignAllPlayers)
+{
+    if (gpGlobals == NULL)
+    {
+        return 0;
+    }
+
+    if (reassignAllPlayers)
+    {
+        ResetRoundTeamAssignments();
+    }
+
+    int assignedPlayers = 0;
+    for (int playerIndex = 1; playerIndex <= gpGlobals->maxClients; ++playerIndex)
+    {
+        CBaseEntity *pEntity = UTIL_PlayerByIndex(playerIndex);
+        if (pEntity == NULL || !pEntity->IsPlayer() || pEntity->pev == NULL)
+        {
+            continue;
+        }
+
+        CBasePlayer *pPlayer = (CBasePlayer *)pEntity;
+        if (!IsRoundManagedPlayer(pPlayer))
+        {
+            continue;
+        }
+
+        if (!reassignAllPlayers && GetAssignedRoundTeamId(pPlayer) != kExpRoundTeamNone)
+        {
+            continue;
+        }
+
+        AutoAssignPlayerToRoundTeam(pPlayer);
+        ++assignedPlayers;
+    }
+
+    return assignedPlayers;
+}
+
+bool TryResolveRoundTeamId(const char *requestedTeam, int *pTeamId)
+{
+    if (pTeamId == NULL)
+    {
+        return false;
+    }
+
+    *pTeamId = kExpRoundTeamNone;
+
+    char trimmedToken[64];
+    TrimCfgRequestString(requestedTeam, trimmedToken, sizeof(trimmedToken));
+    if (trimmedToken[0] == '\0')
+    {
+        return false;
+    }
+
+    if (StringEqualsIgnoreCase(trimmedToken, "1") ||
+        StringEqualsIgnoreCase(trimmedToken, "team1") ||
+        StringEqualsIgnoreCase(trimmedToken, GetConfiguredTeamRoundName(kExpRoundTeam1)))
+    {
+        *pTeamId = kExpRoundTeam1;
+        return true;
+    }
+
+    if (StringEqualsIgnoreCase(trimmedToken, "2") ||
+        StringEqualsIgnoreCase(trimmedToken, "team2") ||
+        StringEqualsIgnoreCase(trimmedToken, GetConfiguredTeamRoundName(kExpRoundTeam2)))
+    {
+        *pTeamId = kExpRoundTeam2;
+        return true;
+    }
+
+    return false;
+}
+
+bool TryResolveRoundPlayerToken(const char *requestedPlayer, CBasePlayer **ppPlayer, char *failureReason, size_t failureReasonSize)
+{
+    if (ppPlayer == NULL)
+    {
+        return false;
+    }
+
+    *ppPlayer = NULL;
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    if (gpGlobals == NULL)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "player list is unavailable");
+        }
+        return false;
+    }
+
+    char trimmedToken[64];
+    TrimCfgRequestString(requestedPlayer, trimmedToken, sizeof(trimmedToken));
+    if (trimmedToken[0] == '\0')
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "player token cannot be empty");
+        }
+        return false;
+    }
+
+    const int numericToken = atoi(trimmedToken);
+    CBasePlayer *pNameMatch = NULL;
+    int partialMatches = 0;
+    for (int playerIndex = 1; playerIndex <= gpGlobals->maxClients; ++playerIndex)
+    {
+        CBaseEntity *pEntity = UTIL_PlayerByIndex(playerIndex);
+        if (pEntity == NULL || !pEntity->IsPlayer() || pEntity->pev == NULL)
+        {
+            continue;
+        }
+
+        CBasePlayer *pPlayer = (CBasePlayer *)pEntity;
+        if (!IsRoundManagedPlayer(pPlayer))
+        {
+            continue;
+        }
+
+        if (numericToken > 0 &&
+            (GetPlayerEntityIndex(pPlayer) == numericToken || GetPlayerUserId(pPlayer) == numericToken))
+        {
+            *ppPlayer = pPlayer;
+            return true;
+        }
+
+        const char *playerName = GetSafePlayerName(pPlayer);
+        if (StringEqualsIgnoreCase(playerName, trimmedToken))
+        {
+            *ppPlayer = pPlayer;
+            return true;
+        }
+
+        if (_strnicmp(playerName, trimmedToken, strlen(trimmedToken)) == 0)
+        {
+            pNameMatch = pPlayer;
+            ++partialMatches;
+        }
+    }
+
+    if (partialMatches == 1 && pNameMatch != NULL)
+    {
+        *ppPlayer = pNameMatch;
+        return true;
+    }
+
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        _snprintf_s(
+            failureReason,
+            failureReasonSize,
+            _TRUNCATE,
+            partialMatches > 1 ? "player token \"%s\" matched multiple players" : "no player matched \"%s\"",
+            trimmedToken);
+    }
+
+    return false;
+}
+
 void ClearRoundRuntimeState()
 {
     memset(&g_expRoundState, 0, sizeof(g_expRoundState));
@@ -684,6 +1157,308 @@ bool IsRoundManagedPlayer(CBasePlayer *pPlayer)
         pPlayer->IsObserver() == 0 &&
         pPlayer->pev->netname != 0 &&
         STRING(pPlayer->pev->netname)[0] != '\0';
+}
+
+bool IsRoundFakeClient(CBasePlayer *pPlayer)
+{
+    if (pPlayer == NULL)
+    {
+        return false;
+    }
+
+    const int slot = GetRoundTeamSlot(pPlayer);
+    if (slot > 0)
+    {
+        ExpRoundFakeClientRecord &record = g_expRoundFakeClientRecords[slot];
+        if (record.active)
+        {
+            const int userId = GetPlayerUserId(pPlayer);
+            if ((record.userId <= 0 || userId <= 0 || record.userId == userId) &&
+                (record.playerName[0] == '\0' || StringEqualsIgnoreCase(record.playerName, GetSafePlayerName(pPlayer))))
+            {
+                if (pPlayer->pev != NULL)
+                {
+                    pPlayer->pev->flags |= (FL_CLIENT | FL_FAKECLIENT);
+                }
+                return true;
+            }
+
+            ClearRoundFakeClientRecordSlot(slot);
+        }
+    }
+
+    return pPlayer->pev != NULL && FBitSet(pPlayer->pev->flags, FL_FAKECLIENT);
+}
+
+bool IsRoundPlayerNameTaken(const char *playerName)
+{
+    if (gpGlobals == NULL || playerName == NULL || playerName[0] == '\0')
+    {
+        return false;
+    }
+
+    for (int playerIndex = 1; playerIndex <= gpGlobals->maxClients; ++playerIndex)
+    {
+        CBaseEntity *pEntity = UTIL_PlayerByIndex(playerIndex);
+        if (pEntity == NULL || !pEntity->IsPlayer() || pEntity->pev == NULL)
+        {
+            continue;
+        }
+
+        CBasePlayer *pPlayer = (CBasePlayer *)pEntity;
+        if (!IsRoundManagedPlayer(pPlayer))
+        {
+            continue;
+        }
+
+        if (StringEqualsIgnoreCase(GetSafePlayerName(pPlayer), playerName))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void SanitizeRoundFakeClientName(const char *input, const char *fallbackName, char *buffer, size_t bufferSize)
+{
+    if (buffer == NULL || bufferSize == 0)
+    {
+        return;
+    }
+
+    TrimCfgRequestString(input, buffer, bufferSize);
+    if (buffer[0] == '\0' && fallbackName != NULL)
+    {
+        strncpy_s(buffer, bufferSize, fallbackName, _TRUNCATE);
+    }
+
+    for (char *cursor = buffer; *cursor != '\0'; ++cursor)
+    {
+        const unsigned char ch = (unsigned char)(*cursor);
+        if (!isalnum(ch) && *cursor != '_' && *cursor != '-')
+        {
+            *cursor = '_';
+        }
+    }
+
+    if (buffer[0] == '\0')
+    {
+        strncpy_s(buffer, bufferSize, "round_fake", _TRUNCATE);
+    }
+}
+
+bool BuildUniqueRoundFakeClientName(
+    int teamId,
+    const char *requestedName,
+    char *buffer,
+    size_t bufferSize,
+    char *failureReason,
+    size_t failureReasonSize)
+{
+    if (buffer == NULL || bufferSize == 0)
+    {
+        return false;
+    }
+
+    buffer[0] = '\0';
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    char fallbackName[kMaxRoundFakeClientNameLength];
+    _snprintf_s(
+        fallbackName,
+        sizeof(fallbackName),
+        _TRUNCATE,
+        "%s_fake",
+        teamId == kExpRoundTeam2 ? GetConfiguredTeamRoundName(kExpRoundTeam2) : GetConfiguredTeamRoundName(kExpRoundTeam1));
+
+    char baseName[kMaxRoundFakeClientNameLength];
+    SanitizeRoundFakeClientName(requestedName, fallbackName, baseName, sizeof(baseName));
+    if (!IsRoundPlayerNameTaken(baseName))
+    {
+        strncpy_s(buffer, bufferSize, baseName, _TRUNCATE);
+        return true;
+    }
+
+    for (int suffix = 2; suffix <= 32; ++suffix)
+    {
+        char candidateName[kMaxRoundFakeClientNameLength];
+        _snprintf_s(candidateName, sizeof(candidateName), _TRUNCATE, "%s_%d", baseName, suffix);
+        if (!IsRoundPlayerNameTaken(candidateName))
+        {
+            strncpy_s(buffer, bufferSize, candidateName, _TRUNCATE);
+            return true;
+        }
+    }
+
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        strcpy_s(failureReason, failureReasonSize, "could not find an available fake player name");
+    }
+
+    return false;
+}
+
+bool CreateRoundFakeClient(
+    int teamId,
+    const char *requestedName,
+    char *createdName,
+    size_t createdNameSize,
+    char *failureReason,
+    size_t failureReasonSize)
+{
+    if (createdName != NULL && createdNameSize > 0)
+    {
+        createdName[0] = '\0';
+    }
+
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    if (gpGlobals == NULL)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "global state is unavailable");
+        }
+        return false;
+    }
+
+    if (g_engfuncs.pfnCreateFakeClient == NULL)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "pfnCreateFakeClient is unavailable in this engine build");
+        }
+        return false;
+    }
+
+    char fakeName[kMaxRoundFakeClientNameLength];
+    if (!BuildUniqueRoundFakeClientName(teamId, requestedName, fakeName, sizeof(fakeName), failureReason, failureReasonSize))
+    {
+        return false;
+    }
+
+    edict_t *pEdict = g_engfuncs.pfnCreateFakeClient(fakeName);
+    if (FNullEnt(pEdict))
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "engine refused to create a fake client");
+        }
+        return false;
+    }
+
+    FREE_PRIVATE(pEdict);
+    CBasePlayer *pPlayer = GetClassPtr((CBasePlayer *)VARS(pEdict));
+    if (pPlayer == NULL || pPlayer->pev == NULL)
+    {
+        SERVER_COMMAND(UTIL_VarArgs("kick \"%s\"\n", fakeName));
+        SERVER_EXECUTE();
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "failed to allocate player state for the fake client");
+        }
+        return false;
+    }
+
+    char *infoBuffer = g_engfuncs.pfnGetInfoKeyBuffer(pEdict);
+    if (infoBuffer != NULL)
+    {
+        g_engfuncs.pfnSetClientKeyValue(ENTINDEX(pEdict), infoBuffer, "model", (char *)"gordon");
+        g_engfuncs.pfnSetClientKeyValue(ENTINDEX(pEdict), infoBuffer, "team", (char *)"");
+    }
+
+    pPlayer->pev->flags |= (FL_CLIENT | FL_FAKECLIENT);
+
+    char rejectReason[128] = "";
+    if (!ClientConnect(pEdict, fakeName, "127.0.0.1", rejectReason))
+    {
+        SERVER_COMMAND(UTIL_VarArgs("kick \"%s\"\n", fakeName));
+        SERVER_EXECUTE();
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            if (rejectReason[0] != '\0')
+            {
+                strncpy_s(failureReason, failureReasonSize, rejectReason, _TRUNCATE);
+            }
+            else
+            {
+                strcpy_s(failureReason, failureReasonSize, "ClientConnect rejected the fake client");
+            }
+        }
+        return false;
+    }
+
+    ClientPutInServer(pEdict);
+    pPlayer = (CBasePlayer *)CBaseEntity::Instance(pEdict);
+    if (pPlayer == NULL || pPlayer->pev == NULL)
+    {
+        SERVER_COMMAND(UTIL_VarArgs("kick \"%s\"\n", fakeName));
+        SERVER_EXECUTE();
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "fake client player entity did not initialize");
+        }
+        return false;
+    }
+
+    pPlayer->pev->flags |= (FL_CLIENT | FL_FAKECLIENT);
+    if (g_pGameRules != NULL)
+    {
+        g_pGameRules->InitHUD(pPlayer);
+    }
+    pPlayer->m_fInitHUD = FALSE;
+    pPlayer->m_fGameHUDInitialized = TRUE;
+    MarkRoundFakeClient(pPlayer);
+    AssignRoundTeamToPlayer(pPlayer, teamId);
+    UpdateRoundPopulationSnapshot();
+
+    if (createdName != NULL && createdNameSize > 0)
+    {
+        strncpy_s(createdName, createdNameSize, fakeName, _TRUNCATE);
+    }
+
+    return true;
+}
+
+int KickAllRoundFakeClients()
+{
+    int kickedClients = 0;
+    if (gpGlobals == NULL)
+    {
+        return kickedClients;
+    }
+
+    for (int playerIndex = 1; playerIndex <= gpGlobals->maxClients; ++playerIndex)
+    {
+        CBaseEntity *pEntity = UTIL_PlayerByIndex(playerIndex);
+        if (pEntity == NULL || !pEntity->IsPlayer() || pEntity->pev == NULL)
+        {
+            continue;
+        }
+
+        CBasePlayer *pPlayer = (CBasePlayer *)pEntity;
+        if (!IsRoundManagedPlayer(pPlayer) || !IsRoundFakeClient(pPlayer))
+        {
+            continue;
+        }
+
+        SERVER_COMMAND(UTIL_VarArgs("kick \"%s\"\n", GetSafePlayerName(pPlayer)));
+        ++kickedClients;
+    }
+
+    if (kickedClients > 0)
+    {
+        SERVER_EXECUTE();
+    }
+
+    return kickedClients;
 }
 
 ExpRoundPlayerSnapshot CollectRoundPlayerSnapshot()
@@ -709,10 +1484,38 @@ ExpRoundPlayerSnapshot CollectRoundPlayerSnapshot()
         }
 
         ++snapshot.connectedPlayers;
+        const int teamId = GetAssignedRoundTeamId(pPlayer);
+        if (teamId == kExpRoundTeam1)
+        {
+            ++snapshot.team1ConnectedPlayers;
+        }
+        else if (teamId == kExpRoundTeam2)
+        {
+            ++snapshot.team2ConnectedPlayers;
+        }
+        else
+        {
+            ++snapshot.unassignedConnectedPlayers;
+        }
+
         if (pPlayer->IsAlive() && pPlayer->pev->deadflag == DEAD_NO)
         {
             ++snapshot.alivePlayers;
             snapshot.lastAlivePlayer = pPlayer;
+            if (teamId == kExpRoundTeam1)
+            {
+                ++snapshot.team1AlivePlayers;
+                snapshot.lastAliveTeam1Player = pPlayer;
+            }
+            else if (teamId == kExpRoundTeam2)
+            {
+                ++snapshot.team2AlivePlayers;
+                snapshot.lastAliveTeam2Player = pPlayer;
+            }
+            else
+            {
+                ++snapshot.unassignedAlivePlayers;
+            }
         }
     }
 
@@ -724,6 +1527,12 @@ void UpdateRoundPopulationSnapshot()
     const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
     g_expRoundState.connectedPlayers = snapshot.connectedPlayers;
     g_expRoundState.alivePlayers = snapshot.alivePlayers;
+    g_expRoundState.team1ConnectedPlayers = snapshot.team1ConnectedPlayers;
+    g_expRoundState.team2ConnectedPlayers = snapshot.team2ConnectedPlayers;
+    g_expRoundState.unassignedConnectedPlayers = snapshot.unassignedConnectedPlayers;
+    g_expRoundState.team1AlivePlayers = snapshot.team1AlivePlayers;
+    g_expRoundState.team2AlivePlayers = snapshot.team2AlivePlayers;
+    g_expRoundState.unassignedAlivePlayers = snapshot.unassignedAlivePlayers;
 }
 
 void SetRoundState(ExpRoundStateType state, float transitionDelaySeconds)
@@ -734,11 +1543,13 @@ void SetRoundState(ExpRoundStateType state, float transitionDelaySeconds)
     UpdateRoundPopulationSnapshot();
 }
 
-void StoreRoundWinner(CBasePlayer *pWinner, const char *reason)
+void StoreRoundWinner(CBasePlayer *pWinner, int winnerTeamId, const char *reason)
 {
     g_expRoundState.lastWinnerName[0] = '\0';
     g_expRoundState.lastWinnerEntIndex = 0;
     g_expRoundState.lastWinnerUserId = 0;
+    g_expRoundState.lastWinnerTeamId = kExpRoundTeamNone;
+    g_expRoundState.lastWinnerTeamName[0] = '\0';
     g_expRoundState.lastEndReason[0] = '\0';
 
     if (pWinner != NULL)
@@ -746,12 +1557,52 @@ void StoreRoundWinner(CBasePlayer *pWinner, const char *reason)
         strncpy_s(g_expRoundState.lastWinnerName, sizeof(g_expRoundState.lastWinnerName), GetSafePlayerName(pWinner), _TRUNCATE);
         g_expRoundState.lastWinnerEntIndex = pWinner->edict() != NULL ? ENTINDEX(pWinner->edict()) : 0;
         g_expRoundState.lastWinnerUserId = GetPlayerUserId(pWinner);
+        if (winnerTeamId == kExpRoundTeamNone)
+        {
+            winnerTeamId = GetAssignedRoundTeamId(pWinner);
+        }
+    }
+
+    winnerTeamId = NormalizeRoundTeamId(winnerTeamId);
+    if (winnerTeamId != kExpRoundTeamNone)
+    {
+        g_expRoundState.lastWinnerTeamId = winnerTeamId;
+        strncpy_s(
+            g_expRoundState.lastWinnerTeamName,
+            sizeof(g_expRoundState.lastWinnerTeamName),
+            GetConfiguredTeamRoundName(winnerTeamId),
+            _TRUNCATE);
     }
 
     if (reason != NULL)
     {
         strncpy_s(g_expRoundState.lastEndReason, sizeof(g_expRoundState.lastEndReason), reason, _TRUNCATE);
     }
+}
+
+bool RoundTeamsReady(const ExpRoundPlayerSnapshot &snapshot)
+{
+    if (!TeamRoundModeConfigured())
+    {
+        return snapshot.connectedPlayers > 0;
+    }
+
+    return snapshot.team1ConnectedPlayers > 0 && snapshot.team2ConnectedPlayers > 0;
+}
+
+const char *GetRoundWaitingReasonForSnapshot(const ExpRoundPlayerSnapshot &snapshot)
+{
+    if (snapshot.connectedPlayers <= 0)
+    {
+        return "no_players";
+    }
+
+    if (TeamRoundModeConfigured() && !RoundTeamsReady(snapshot))
+    {
+        return kRoundEndReasonTeamsIncomplete;
+    }
+
+    return "players_ready";
 }
 
 const char *GetConfiguredRoundLoadoutMode()
@@ -794,6 +1645,117 @@ const char *GetResolvedRoundLoadoutMode()
     return "none";
 }
 
+const char *GetConfiguredTeamRoundLoadoutMode(int teamId)
+{
+    if (teamId == kExpRoundTeam1)
+    {
+        return GetOptionalCvarString(sv_exp_team_round_team1_loadout);
+    }
+
+    if (teamId == kExpRoundTeam2)
+    {
+        return GetOptionalCvarString(sv_exp_team_round_team2_loadout);
+    }
+
+    return "";
+}
+
+const char *GetResolvedRoundLoadoutModeForTeam(int teamId)
+{
+    const char *configuredTeamLoadout = GetConfiguredTeamRoundLoadoutMode(teamId);
+    if (configuredTeamLoadout[0] == '\0')
+    {
+        return GetResolvedRoundLoadoutMode();
+    }
+
+    if (StringEqualsIgnoreCase(configuredTeamLoadout, "glock"))
+    {
+        return "glock";
+    }
+
+    if (StringEqualsIgnoreCase(configuredTeamLoadout, "mp5"))
+    {
+        return "mp5";
+    }
+
+    if (StringEqualsIgnoreCase(configuredTeamLoadout, "357"))
+    {
+        return "357";
+    }
+
+    if (StringEqualsIgnoreCase(configuredTeamLoadout, "shotgun"))
+    {
+        return "shotgun";
+    }
+
+    if (StringEqualsIgnoreCase(configuredTeamLoadout, "none"))
+    {
+        return "none";
+    }
+
+    return GetResolvedRoundLoadoutMode();
+}
+
+float GetResolvedRoundStartHealthForTeam(int teamId)
+{
+    if (teamId == kExpRoundTeam1 && sv_exp_team_round_team1_health.value > 0.0f)
+    {
+        return sv_exp_team_round_team1_health.value;
+    }
+
+    if (teamId == kExpRoundTeam2 && sv_exp_team_round_team2_health.value > 0.0f)
+    {
+        return sv_exp_team_round_team2_health.value;
+    }
+
+    return ExpRoundStartHealth();
+}
+
+float GetResolvedRoundStartArmorForTeam(int teamId)
+{
+    if (teamId == kExpRoundTeam1 && sv_exp_team_round_team1_armor.value >= 0.0f)
+    {
+        return sv_exp_team_round_team1_armor.value;
+    }
+
+    if (teamId == kExpRoundTeam2 && sv_exp_team_round_team2_armor.value >= 0.0f)
+    {
+        return sv_exp_team_round_team2_armor.value;
+    }
+
+    return ExpRoundStartArmor();
+}
+
+const char *GetResolvedRoundLoadoutModeForPlayer(CBasePlayer *pPlayer)
+{
+    if (TeamRoundModeConfigured())
+    {
+        return GetResolvedRoundLoadoutModeForTeam(GetAssignedRoundTeamId(pPlayer));
+    }
+
+    return GetResolvedRoundLoadoutMode();
+}
+
+float GetResolvedRoundStartHealthForPlayer(CBasePlayer *pPlayer)
+{
+    if (TeamRoundModeConfigured())
+    {
+        return GetResolvedRoundStartHealthForTeam(GetAssignedRoundTeamId(pPlayer));
+    }
+
+    return ExpRoundStartHealth();
+}
+
+float GetResolvedRoundStartArmorForPlayer(CBasePlayer *pPlayer)
+{
+    if (TeamRoundModeConfigured())
+    {
+        return GetResolvedRoundStartArmorForTeam(GetAssignedRoundTeamId(pPlayer));
+    }
+
+    return ExpRoundStartArmor();
+}
+
 void GiveRoundAmmo(CBasePlayer *pPlayer, const char *ammoName, int amount, int maxCarry)
 {
     if (pPlayer == NULL || amount <= 0)
@@ -811,7 +1773,7 @@ void ApplyRoundResetToPlayer(CBasePlayer *pPlayer)
         return;
     }
 
-    const char *loadoutMode = GetResolvedRoundLoadoutMode();
+    const char *loadoutMode = GetResolvedRoundLoadoutModeForPlayer(pPlayer);
     const bool customLoadout = !StringEqualsIgnoreCase(loadoutMode, "none");
     const int savedAutoSwitch = pPlayer->m_iAutoWepSwitch;
     pPlayer->m_iAutoWepSwitch = 1;
@@ -848,9 +1810,10 @@ void ApplyRoundResetToPlayer(CBasePlayer *pPlayer)
         }
     }
 
-    pPlayer->pev->health = ExpRoundStartHealth();
-    pPlayer->pev->max_health = ExpRoundStartHealth();
-    pPlayer->pev->armorvalue = ExpRoundStartArmor();
+    const float startHealth = GetResolvedRoundStartHealthForPlayer(pPlayer);
+    pPlayer->pev->health = startHealth;
+    pPlayer->pev->max_health = startHealth;
+    pPlayer->pev->armorvalue = GetResolvedRoundStartArmorForPlayer(pPlayer);
     pPlayer->m_iAutoWepSwitch = savedAutoSwitch;
 }
 
@@ -920,7 +1883,7 @@ void RespawnDeadPlayersForDeathmatch()
     }
 }
 
-int SlayRoundPlayers(bool slayAllPlayers)
+int SlayRoundPlayers(bool slayAllPlayers, int teamFilter)
 {
     if (gpGlobals == NULL)
     {
@@ -938,6 +1901,11 @@ int SlayRoundPlayers(bool slayAllPlayers)
 
         CBasePlayer *pPlayer = (CBasePlayer *)pEntity;
         if (!IsRoundManagedPlayer(pPlayer) || !pPlayer->IsAlive() || pPlayer->pev->deadflag != DEAD_NO)
+        {
+            continue;
+        }
+
+        if (teamFilter != kExpRoundTeamNone && GetAssignedRoundTeamId(pPlayer) != teamFilter)
         {
             continue;
         }
@@ -975,14 +1943,40 @@ void BeginRoundWaiting(const char *reason, bool printMessage)
         GetValueOrFallback(reason, "waiting_for_players"),
         GetConfiguredRoundLoadoutMode(),
         ExpRoundWeaponProfile()[0] != '\0' ? ExpRoundWeaponProfile() : "none");
+
+    if (TeamRoundModeConfigured())
+    {
+        PrintLabDummyConsoleLine(
+            "team waiting detail: %s=%d/%d %s=%d/%d unassigned=%d/%d spawn_mode=%s resolved_spawn=%s",
+            GetConfiguredTeamRoundName(kExpRoundTeam1),
+            g_expRoundState.team1ConnectedPlayers,
+            g_expRoundState.team1AlivePlayers,
+            GetConfiguredTeamRoundName(kExpRoundTeam2),
+            g_expRoundState.team2ConnectedPlayers,
+            g_expRoundState.team2AlivePlayers,
+            g_expRoundState.unassignedConnectedPlayers,
+            g_expRoundState.unassignedAlivePlayers,
+            GetConfiguredTeamRoundSpawnMode(),
+            GetResolvedTeamRoundSpawnMode());
+
+        if (!TeamRoundSpawnModeSupported())
+        {
+            PrintLabDummyConsoleLine("team spawn note: manual team spawn spots are not implemented in this pass; falling back to dm_spawns.");
+        }
+    }
 }
 
 void BeginRoundFreeze(bool emitRestartEvent, const char *reason)
 {
-    const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
-    if (snapshot.connectedPlayers <= 0)
+    if (TeamRoundModeConfigured())
     {
-        BeginRoundWaiting(reason, true);
+        AutoAssignRoundTeams(false);
+    }
+
+    const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
+    if (!RoundTeamsReady(snapshot))
+    {
+        BeginRoundWaiting(GetRoundWaitingReasonForSnapshot(snapshot), true);
         return;
     }
 
@@ -1000,11 +1994,30 @@ void BeginRoundFreeze(bool emitRestartEvent, const char *reason)
         g_expRoundState.roundNumber,
         g_expRoundState.connectedPlayers,
         g_expRoundState.alivePlayers,
-        GetConfiguredRoundLoadoutMode(),
+        TeamRoundModeConfigured() ? "per_team" : GetConfiguredRoundLoadoutMode(),
         ExpRoundWeaponProfile()[0] != '\0' ? ExpRoundWeaponProfile() : "none",
         ExpRoundStartHealth(),
         ExpRoundStartArmor(),
         ExpRoundFreezeTimeSeconds());
+
+    if (TeamRoundModeConfigured())
+    {
+        PrintLabDummyConsoleLine(
+            "team freeze detail: %s=%d/%d loadout=%s health=%.1f armor=%.1f | %s=%d/%d loadout=%s health=%.1f armor=%.1f",
+            GetConfiguredTeamRoundName(kExpRoundTeam1),
+            g_expRoundState.team1ConnectedPlayers,
+            g_expRoundState.team1AlivePlayers,
+            GetResolvedRoundLoadoutModeForTeam(kExpRoundTeam1),
+            GetResolvedRoundStartHealthForTeam(kExpRoundTeam1),
+            GetResolvedRoundStartArmorForTeam(kExpRoundTeam1),
+            GetConfiguredTeamRoundName(kExpRoundTeam2),
+            g_expRoundState.team2ConnectedPlayers,
+            g_expRoundState.team2AlivePlayers,
+            GetResolvedRoundLoadoutModeForTeam(kExpRoundTeam2),
+            GetResolvedRoundStartHealthForTeam(kExpRoundTeam2),
+            GetResolvedRoundStartArmorForTeam(kExpRoundTeam2));
+    }
+
     LogRoundEvent("round_start", GetRoundStateName(g_expRoundState.state), g_expRoundState.roundNumber, g_expRoundState.connectedPlayers, g_expRoundState.alivePlayers, NULL, reason);
 }
 
@@ -1016,23 +2029,36 @@ void BeginRoundLive(const char *reason)
         g_expRoundState.roundNumber,
         g_expRoundState.connectedPlayers,
         g_expRoundState.alivePlayers,
-        GetConfiguredRoundLoadoutMode(),
+        TeamRoundModeConfigured() ? "per_team" : GetConfiguredRoundLoadoutMode(),
         ExpRoundNoRespawn() ? "yes" : "no");
-    if (g_expRoundState.connectedPlayers <= 1)
+
+    if (TeamRoundModeConfigured())
+    {
+        PrintLabDummyConsoleLine(
+            "team live detail: %s alive=%d %s alive=%d unassigned=%d teamplay=%s",
+            GetConfiguredTeamRoundName(kExpRoundTeam1),
+            g_expRoundState.team1AlivePlayers,
+            GetConfiguredTeamRoundName(kExpRoundTeam2),
+            g_expRoundState.team2AlivePlayers,
+            g_expRoundState.unassignedAlivePlayers,
+            TeamRoundTeamplayConfigured() ? "yes" : "no");
+    }
+    else if (g_expRoundState.connectedPlayers <= 1)
     {
         PrintLabDummyConsoleLine("round note: single-player live round; it ends after the only player is eliminated.");
     }
     LogRoundEvent("round_live", GetRoundStateName(g_expRoundState.state), g_expRoundState.roundNumber, g_expRoundState.connectedPlayers, g_expRoundState.alivePlayers, NULL, reason);
 }
 
-void EndRound(CBasePlayer *pWinner, const char *reason)
+void EndRound(CBasePlayer *pWinner, int winnerTeamId, const char *reason)
 {
-    StoreRoundWinner(pWinner, reason);
+    StoreRoundWinner(pWinner, winnerTeamId, reason);
     SetRoundState(kExpRoundStateRoundEnd, kRoundEndHoldSeconds);
     PrintLabDummyConsoleLine(
-        "round %d ended: winner=%s reason=%s connected=%d alive=%d restart_in=%.1fs",
+        "round %d ended: winner=%s winner_team=%s reason=%s connected=%d alive=%d restart_in=%.1fs",
         g_expRoundState.roundNumber,
         g_expRoundState.lastWinnerName[0] != '\0' ? g_expRoundState.lastWinnerName : "none",
+        g_expRoundState.lastWinnerTeamName[0] != '\0' ? g_expRoundState.lastWinnerTeamName : "none",
         g_expRoundState.lastEndReason[0] != '\0' ? g_expRoundState.lastEndReason : "unknown",
         g_expRoundState.connectedPlayers,
         g_expRoundState.alivePlayers,
@@ -1056,6 +2082,12 @@ void EvaluateRoundOutcome()
     const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
     g_expRoundState.connectedPlayers = snapshot.connectedPlayers;
     g_expRoundState.alivePlayers = snapshot.alivePlayers;
+    g_expRoundState.team1ConnectedPlayers = snapshot.team1ConnectedPlayers;
+    g_expRoundState.team2ConnectedPlayers = snapshot.team2ConnectedPlayers;
+    g_expRoundState.unassignedConnectedPlayers = snapshot.unassignedConnectedPlayers;
+    g_expRoundState.team1AlivePlayers = snapshot.team1AlivePlayers;
+    g_expRoundState.team2AlivePlayers = snapshot.team2AlivePlayers;
+    g_expRoundState.unassignedAlivePlayers = snapshot.unassignedAlivePlayers;
 
     if (snapshot.connectedPlayers <= 0)
     {
@@ -1063,24 +2095,51 @@ void EvaluateRoundOutcome()
         return;
     }
 
+    if (TeamRoundModeConfigured())
+    {
+        if (snapshot.team1AlivePlayers > 0 && snapshot.team2AlivePlayers <= 0)
+        {
+            EndRound(snapshot.lastAliveTeam1Player, kExpRoundTeam1, "last_team_alive");
+            return;
+        }
+
+        if (snapshot.team2AlivePlayers > 0 && snapshot.team1AlivePlayers <= 0)
+        {
+            EndRound(snapshot.lastAliveTeam2Player, kExpRoundTeam2, "last_team_alive");
+            return;
+        }
+
+        if (snapshot.team1AlivePlayers <= 0 && snapshot.team2AlivePlayers <= 0)
+        {
+            EndRound(NULL, kExpRoundTeamNone, "all_teams_eliminated");
+            return;
+        }
+
+        if (!RoundTeamsReady(snapshot))
+        {
+            BeginRoundWaiting(kRoundEndReasonTeamsIncomplete, false);
+        }
+        return;
+    }
+
     if (snapshot.connectedPlayers == 1)
     {
         if (snapshot.alivePlayers <= 0)
         {
-            EndRound(NULL, "solo_eliminated");
+            EndRound(NULL, kExpRoundTeamNone, "solo_eliminated");
         }
         return;
     }
 
     if (snapshot.alivePlayers == 1)
     {
-        EndRound(snapshot.lastAlivePlayer, "last_alive");
+        EndRound(snapshot.lastAlivePlayer, kExpRoundTeamNone, "last_alive");
         return;
     }
 
     if (snapshot.alivePlayers <= 0)
     {
-        EndRound(NULL, "all_eliminated");
+        EndRound(NULL, kExpRoundTeamNone, "all_eliminated");
     }
 }
 
@@ -1113,14 +2172,19 @@ void EnsureRoundModeState()
 
     if (g_expRoundState.state == kExpRoundStateDisabled)
     {
+        if (TeamRoundModeConfigured())
+        {
+            AutoAssignRoundTeams(false);
+        }
+
         const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
-        if (snapshot.connectedPlayers > 0)
+        if (RoundTeamsReady(snapshot))
         {
             BeginRoundFreeze(false, "mode_enabled");
         }
         else
         {
-            BeginRoundWaiting("mode_enabled", false);
+            BeginRoundWaiting(GetRoundWaitingReasonForSnapshot(snapshot), false);
         }
     }
 }
@@ -1135,10 +2199,21 @@ void UpdateRoundModeFrame()
 
     if (g_expRoundState.state == kExpRoundStateWaitingForPlayers)
     {
+        if (TeamRoundModeConfigured())
+        {
+            AutoAssignRoundTeams(false);
+        }
+
         const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
         g_expRoundState.connectedPlayers = snapshot.connectedPlayers;
         g_expRoundState.alivePlayers = snapshot.alivePlayers;
-        if (snapshot.connectedPlayers > 0)
+        g_expRoundState.team1ConnectedPlayers = snapshot.team1ConnectedPlayers;
+        g_expRoundState.team2ConnectedPlayers = snapshot.team2ConnectedPlayers;
+        g_expRoundState.unassignedConnectedPlayers = snapshot.unassignedConnectedPlayers;
+        g_expRoundState.team1AlivePlayers = snapshot.team1AlivePlayers;
+        g_expRoundState.team2AlivePlayers = snapshot.team2AlivePlayers;
+        g_expRoundState.unassignedAlivePlayers = snapshot.unassignedAlivePlayers;
+        if (RoundTeamsReady(snapshot))
         {
             BeginRoundFreeze(false, "players_ready");
         }
@@ -1150,9 +2225,15 @@ void UpdateRoundModeFrame()
         const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
         g_expRoundState.connectedPlayers = snapshot.connectedPlayers;
         g_expRoundState.alivePlayers = snapshot.alivePlayers;
-        if (snapshot.connectedPlayers <= 0)
+        g_expRoundState.team1ConnectedPlayers = snapshot.team1ConnectedPlayers;
+        g_expRoundState.team2ConnectedPlayers = snapshot.team2ConnectedPlayers;
+        g_expRoundState.unassignedConnectedPlayers = snapshot.unassignedConnectedPlayers;
+        g_expRoundState.team1AlivePlayers = snapshot.team1AlivePlayers;
+        g_expRoundState.team2AlivePlayers = snapshot.team2AlivePlayers;
+        g_expRoundState.unassignedAlivePlayers = snapshot.unassignedAlivePlayers;
+        if (!RoundTeamsReady(snapshot))
         {
-            BeginRoundWaiting("no_players", false);
+            BeginRoundWaiting(GetRoundWaitingReasonForSnapshot(snapshot), false);
             return;
         }
 
@@ -1174,9 +2255,15 @@ void UpdateRoundModeFrame()
         const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
         g_expRoundState.connectedPlayers = snapshot.connectedPlayers;
         g_expRoundState.alivePlayers = snapshot.alivePlayers;
-        if (snapshot.connectedPlayers <= 0)
+        g_expRoundState.team1ConnectedPlayers = snapshot.team1ConnectedPlayers;
+        g_expRoundState.team2ConnectedPlayers = snapshot.team2ConnectedPlayers;
+        g_expRoundState.unassignedConnectedPlayers = snapshot.unassignedConnectedPlayers;
+        g_expRoundState.team1AlivePlayers = snapshot.team1AlivePlayers;
+        g_expRoundState.team2AlivePlayers = snapshot.team2AlivePlayers;
+        g_expRoundState.unassignedAlivePlayers = snapshot.unassignedAlivePlayers;
+        if (!RoundTeamsReady(snapshot))
         {
-            BeginRoundWaiting("no_players", false);
+            BeginRoundWaiting(GetRoundWaitingReasonForSnapshot(snapshot), false);
             return;
         }
 
@@ -1192,9 +2279,15 @@ void UpdateRoundModeFrame()
         const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
         g_expRoundState.connectedPlayers = snapshot.connectedPlayers;
         g_expRoundState.alivePlayers = snapshot.alivePlayers;
-        if (snapshot.connectedPlayers <= 0)
+        g_expRoundState.team1ConnectedPlayers = snapshot.team1ConnectedPlayers;
+        g_expRoundState.team2ConnectedPlayers = snapshot.team2ConnectedPlayers;
+        g_expRoundState.unassignedConnectedPlayers = snapshot.unassignedConnectedPlayers;
+        g_expRoundState.team1AlivePlayers = snapshot.team1AlivePlayers;
+        g_expRoundState.team2AlivePlayers = snapshot.team2AlivePlayers;
+        g_expRoundState.unassignedAlivePlayers = snapshot.unassignedAlivePlayers;
+        if (!RoundTeamsReady(snapshot))
         {
-            BeginRoundWaiting("no_players", false);
+            BeginRoundWaiting(GetRoundWaitingReasonForSnapshot(snapshot), false);
             return;
         }
 
@@ -1239,6 +2332,41 @@ void PrintRoundStatus()
         validLoadout ? "yes" : "no",
         ExpRoundWeaponProfile()[0] != '\0' ? ExpRoundWeaponProfile() : "none");
 
+    PrintLabDummyConsoleLine(
+        "team round config: enabled=%s teamplay=%s spawn_mode=%s resolved_spawn=%s",
+        TeamRoundModeConfigured() ? "yes" : "no",
+        TeamRoundTeamplayConfigured() ? "yes" : "no",
+        GetConfiguredTeamRoundSpawnMode(),
+        GetResolvedTeamRoundSpawnMode());
+
+    if (TeamRoundModeConfigured())
+    {
+        PrintLabDummyConsoleLine(
+            "team counts: %s connected=%d alive=%d | %s connected=%d alive=%d | unassigned connected=%d alive=%d",
+            GetConfiguredTeamRoundName(kExpRoundTeam1),
+            g_expRoundState.team1ConnectedPlayers,
+            g_expRoundState.team1AlivePlayers,
+            GetConfiguredTeamRoundName(kExpRoundTeam2),
+            g_expRoundState.team2ConnectedPlayers,
+            g_expRoundState.team2AlivePlayers,
+            g_expRoundState.unassignedConnectedPlayers,
+            g_expRoundState.unassignedAlivePlayers);
+        PrintLabDummyConsoleLine(
+            "team loadouts: %s=%s %s=%s",
+            GetConfiguredTeamRoundName(kExpRoundTeam1),
+            GetResolvedRoundLoadoutModeForTeam(kExpRoundTeam1),
+            GetConfiguredTeamRoundName(kExpRoundTeam2),
+            GetResolvedRoundLoadoutModeForTeam(kExpRoundTeam2));
+        PrintLabDummyConsoleLine(
+            "team health/armor: %s=%.1f/%.1f %s=%.1f/%.1f",
+            GetConfiguredTeamRoundName(kExpRoundTeam1),
+            GetResolvedRoundStartHealthForTeam(kExpRoundTeam1),
+            GetResolvedRoundStartArmorForTeam(kExpRoundTeam1),
+            GetConfiguredTeamRoundName(kExpRoundTeam2),
+            GetResolvedRoundStartHealthForTeam(kExpRoundTeam2),
+            GetResolvedRoundStartArmorForTeam(kExpRoundTeam2));
+    }
+
     if (g_expRoundState.nextTransitionAt > 0.0f)
     {
         PrintLabDummyConsoleLine("round timer: next_state_in=%.1fs", secondsRemaining);
@@ -1251,8 +2379,9 @@ void PrintRoundStatus()
     if (g_expRoundState.lastEndReason[0] != '\0' || g_expRoundState.lastWinnerName[0] != '\0')
     {
         PrintLabDummyConsoleLine(
-            "last round result: winner=%s entindex=%d userid=%d reason=%s",
+            "last round result: winner=%s winner_team=%s entindex=%d userid=%d reason=%s",
             g_expRoundState.lastWinnerName[0] != '\0' ? g_expRoundState.lastWinnerName : "none",
+            g_expRoundState.lastWinnerTeamName[0] != '\0' ? g_expRoundState.lastWinnerTeamName : "none",
             g_expRoundState.lastWinnerEntIndex,
             g_expRoundState.lastWinnerUserId,
             g_expRoundState.lastEndReason[0] != '\0' ? g_expRoundState.lastEndReason : "unknown");
@@ -1267,16 +2396,22 @@ void PrintRoundStatus()
         PrintLabDummyConsoleLine("round note: single-player duel mode is active; the round restarts after the only player is eliminated.");
     }
 
-    PrintLabDummyConsoleLine("commands: exp_round_start | exp_round_restart | exp_round_status | exp_round_stop | exp_round_slay [all]");
+    PrintLabDummyConsoleLine("commands: exp_round_start | exp_round_restart | exp_round_status | exp_round_stop | exp_round_slay [all|team1|team2]");
+    PrintLabDummyConsoleLine("team commands: exp_team_join <player> <team> | exp_team_autoassign | exp_team_status | exp_team_fake_add <team> [name] | exp_team_fake_clear");
 }
 
 void ExpRoundStartCommand()
 {
     CVAR_SET_FLOAT("sv_exp_round_mode", 1.0f);
-    const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
-    if (snapshot.connectedPlayers <= 0)
+    if (TeamRoundModeConfigured())
     {
-        BeginRoundWaiting("manual_start", true);
+        AutoAssignRoundTeams(false);
+    }
+
+    const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
+    if (!RoundTeamsReady(snapshot))
+    {
+        BeginRoundWaiting(GetRoundWaitingReasonForSnapshot(snapshot), true);
         PrintRoundStatus();
         return;
     }
@@ -1298,10 +2433,15 @@ void ExpRoundStartCommand()
 void ExpRoundRestartCommand()
 {
     CVAR_SET_FLOAT("sv_exp_round_mode", 1.0f);
-    const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
-    if (snapshot.connectedPlayers <= 0)
+    if (TeamRoundModeConfigured())
     {
-        BeginRoundWaiting("manual_restart", true);
+        AutoAssignRoundTeams(false);
+    }
+
+    const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
+    if (!RoundTeamsReady(snapshot))
+    {
+        BeginRoundWaiting(GetRoundWaitingReasonForSnapshot(snapshot), true);
         PrintRoundStatus();
         return;
     }
@@ -1331,8 +2471,22 @@ void ExpRoundStopCommand()
 
 void ExpRoundSlayCommand()
 {
-    const bool slayAllPlayers = CMD_ARGC() >= 2 && StringEqualsIgnoreCase(CMD_ARGV(1), "all");
-    const int killedPlayers = SlayRoundPlayers(slayAllPlayers);
+    bool slayAllPlayers = false;
+    int teamFilter = kExpRoundTeamNone;
+    if (CMD_ARGC() >= 2)
+    {
+        if (StringEqualsIgnoreCase(CMD_ARGV(1), "all"))
+        {
+            slayAllPlayers = true;
+        }
+        else if (!TryResolveRoundTeamId(CMD_ARGV(1), &teamFilter))
+        {
+            PrintLabDummyConsoleLine("usage: exp_round_slay [all|team1|team2]");
+            return;
+        }
+    }
+
+    const int killedPlayers = SlayRoundPlayers(slayAllPlayers || teamFilter != kExpRoundTeamNone, teamFilter);
     if (killedPlayers <= 0)
     {
         PrintLabDummyConsoleLine("round slay: no live players were available to eliminate.");
@@ -1340,10 +2494,11 @@ void ExpRoundSlayCommand()
     }
 
     PrintLabDummyConsoleLine(
-        "round slay: eliminated %d %splayer%s.",
+        "round slay: eliminated %d %splayer%s%s.",
         killedPlayers,
         slayAllPlayers ? "live " : "",
-        killedPlayers == 1 ? "" : "s");
+        killedPlayers == 1 ? "" : "s",
+        teamFilter == kExpRoundTeamNone ? "" : UTIL_VarArgs(" from %s", GetConfiguredTeamRoundName(teamFilter)));
 }
 
 bool ShouldApplyRoundResetOnSpawn()
@@ -1379,6 +2534,188 @@ void TrimCfgRequestString(const char *input, char *buffer, size_t bufferSize)
 
     const size_t length = (size_t)(end - start);
     strncpy_s(buffer, bufferSize, start, length);
+}
+
+void PrintTeamStatus()
+{
+    UpdateRoundPopulationSnapshot();
+
+    PrintLabDummyConsoleLine(
+        "team round: %s teamplay=%s spawn_mode=%s resolved_spawn=%s",
+        TeamRoundModeConfigured() ? "on" : "off",
+        TeamRoundTeamplayConfigured() ? "on" : "off",
+        GetConfiguredTeamRoundSpawnMode(),
+        GetResolvedTeamRoundSpawnMode());
+    PrintLabDummyConsoleLine(
+        "team config: %s loadout=%s health=%.1f armor=%.1f | %s loadout=%s health=%.1f armor=%.1f",
+        GetConfiguredTeamRoundName(kExpRoundTeam1),
+        GetResolvedRoundLoadoutModeForTeam(kExpRoundTeam1),
+        GetResolvedRoundStartHealthForTeam(kExpRoundTeam1),
+        GetResolvedRoundStartArmorForTeam(kExpRoundTeam1),
+        GetConfiguredTeamRoundName(kExpRoundTeam2),
+        GetResolvedRoundLoadoutModeForTeam(kExpRoundTeam2),
+        GetResolvedRoundStartHealthForTeam(kExpRoundTeam2),
+        GetResolvedRoundStartArmorForTeam(kExpRoundTeam2));
+    PrintLabDummyConsoleLine(
+        "team counts: %s connected=%d alive=%d | %s connected=%d alive=%d | unassigned connected=%d alive=%d",
+        GetConfiguredTeamRoundName(kExpRoundTeam1),
+        g_expRoundState.team1ConnectedPlayers,
+        g_expRoundState.team1AlivePlayers,
+        GetConfiguredTeamRoundName(kExpRoundTeam2),
+        g_expRoundState.team2ConnectedPlayers,
+        g_expRoundState.team2AlivePlayers,
+        g_expRoundState.unassignedConnectedPlayers,
+        g_expRoundState.unassignedAlivePlayers);
+
+    if (!TeamRoundSpawnModeSupported())
+    {
+        PrintLabDummyConsoleLine("team spawn note: manual team spawn spots are not implemented in this pass; dm_spawns remains the active behavior.");
+    }
+
+    bool anyPlayers = false;
+    if (gpGlobals != NULL)
+    {
+        for (int playerIndex = 1; playerIndex <= gpGlobals->maxClients; ++playerIndex)
+        {
+            CBaseEntity *pEntity = UTIL_PlayerByIndex(playerIndex);
+            if (pEntity == NULL || !pEntity->IsPlayer() || pEntity->pev == NULL)
+            {
+                continue;
+            }
+
+            CBasePlayer *pPlayer = (CBasePlayer *)pEntity;
+            if (!IsRoundManagedPlayer(pPlayer))
+            {
+                continue;
+            }
+
+            anyPlayers = true;
+            const int teamId = GetAssignedRoundTeamId(pPlayer);
+            PrintLabDummyConsoleLine(
+                "team player: name=%s entindex=%d userid=%d fake=%s team=%s alive=%s health=%.1f armor=%.1f",
+                GetSafePlayerName(pPlayer),
+                GetPlayerEntityIndex(pPlayer),
+                GetPlayerUserId(pPlayer),
+                IsRoundFakeClient(pPlayer) ? "yes" : "no",
+                teamId == kExpRoundTeamNone ? "unassigned" : GetConfiguredTeamRoundName(teamId),
+                (pPlayer->IsAlive() && pPlayer->pev->deadflag == DEAD_NO) ? "yes" : "no",
+                pPlayer->pev->health,
+                pPlayer->pev->armorvalue);
+        }
+    }
+
+    if (!anyPlayers)
+    {
+        PrintLabDummyConsoleLine("team player list: none");
+    }
+}
+
+void ExpTeamJoinCommand()
+{
+    if (CMD_ARGC() < 3)
+    {
+        PrintLabDummyConsoleLine("usage: exp_team_join <player> <team>");
+        PrintLabDummyConsoleLine(
+            "teams: %s | %s",
+            GetConfiguredTeamRoundName(kExpRoundTeam1),
+            GetConfiguredTeamRoundName(kExpRoundTeam2));
+        return;
+    }
+
+    char failureReason[128];
+    CBasePlayer *pPlayer = NULL;
+    if (!TryResolveRoundPlayerToken(CMD_ARGV(1), &pPlayer, failureReason, sizeof(failureReason)))
+    {
+        PrintLabDummyConsoleLine("team join failed: %s", failureReason);
+        return;
+    }
+
+    int teamId = kExpRoundTeamNone;
+    if (!TryResolveRoundTeamId(CMD_ARGV(2), &teamId))
+    {
+        PrintLabDummyConsoleLine(
+            "team join failed: unknown team \"%s\". Use team1/team2 or %s/%s.",
+            CMD_ARGV(2),
+            GetConfiguredTeamRoundName(kExpRoundTeam1),
+            GetConfiguredTeamRoundName(kExpRoundTeam2));
+        return;
+    }
+
+    AssignRoundTeamToPlayer(pPlayer, teamId);
+    UpdateRoundPopulationSnapshot();
+    PrintLabDummyConsoleLine(
+        "team join: %s assigned to %s.",
+        GetSafePlayerName(pPlayer),
+        GetConfiguredTeamRoundName(teamId));
+    PrintTeamStatus();
+}
+
+void ExpTeamAutoassignCommand()
+{
+    const int assignedPlayers = AutoAssignRoundTeams(true);
+    UpdateRoundPopulationSnapshot();
+    PrintLabDummyConsoleLine(
+        "team autoassign: assigned %d player%s across %s and %s.",
+        assignedPlayers,
+        assignedPlayers == 1 ? "" : "s",
+        GetConfiguredTeamRoundName(kExpRoundTeam1),
+        GetConfiguredTeamRoundName(kExpRoundTeam2));
+    PrintTeamStatus();
+}
+
+void ExpTeamStatusCommand()
+{
+    PrintTeamStatus();
+}
+
+void ExpTeamFakeAddCommand()
+{
+    if (CMD_ARGC() < 2)
+    {
+        PrintLabDummyConsoleLine("usage: exp_team_fake_add <team> [name]");
+        PrintLabDummyConsoleLine(
+            "teams: %s | %s",
+            GetConfiguredTeamRoundName(kExpRoundTeam1),
+            GetConfiguredTeamRoundName(kExpRoundTeam2));
+        return;
+    }
+
+    int teamId = kExpRoundTeamNone;
+    if (!TryResolveRoundTeamId(CMD_ARGV(1), &teamId))
+    {
+        PrintLabDummyConsoleLine(
+            "team fake add failed: unknown team \"%s\". Use team1/team2 or %s/%s.",
+            CMD_ARGV(1),
+            GetConfiguredTeamRoundName(kExpRoundTeam1),
+            GetConfiguredTeamRoundName(kExpRoundTeam2));
+        return;
+    }
+
+    char createdName[kMaxRoundFakeClientNameLength];
+    char failureReason[128];
+    const char *requestedName = CMD_ARGC() >= 3 ? CMD_ARGV(2) : "";
+    if (!CreateRoundFakeClient(teamId, requestedName, createdName, sizeof(createdName), failureReason, sizeof(failureReason)))
+    {
+        PrintLabDummyConsoleLine("team fake add failed: %s", failureReason[0] != '\0' ? failureReason : "unknown error");
+        return;
+    }
+
+    PrintLabDummyConsoleLine(
+        "team fake add: created %s on %s for local team-round verification.",
+        createdName,
+        GetConfiguredTeamRoundName(teamId));
+    PrintTeamStatus();
+}
+
+void ExpTeamFakeClearCommand()
+{
+    const int kickedClients = KickAllRoundFakeClients();
+    UpdateRoundPopulationSnapshot();
+    PrintLabDummyConsoleLine(
+        "team fake clear: removed %d fake client%s.",
+        kickedClients,
+        kickedClients == 1 ? "" : "s");
+    PrintTeamStatus();
 }
 
 bool TryResolveLabDummySpotName(
@@ -4991,6 +6328,11 @@ void RegisterFutureGameplayCommands()
     g_engfuncs.pfnAddServerCommand((char *)"exp_round_status", ExpRoundStatusCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_round_stop", ExpRoundStopCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_round_slay", ExpRoundSlayCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_team_join", ExpTeamJoinCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_team_autoassign", ExpTeamAutoassignCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_team_status", ExpTeamStatusCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_team_fake_add", ExpTeamFakeAddCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_team_fake_clear", ExpTeamFakeClearCommand);
 }
 
 void MaintainMp5LabLoadout()
@@ -5192,6 +6534,17 @@ void RegisterFutureGameplayCvars()
     CVAR_REGISTER(&sv_exp_round_friendlyfire);
     CVAR_REGISTER(&sv_exp_round_weapon_profile);
     CVAR_REGISTER(&sv_exp_round_loadout_mode);
+    CVAR_REGISTER(&sv_exp_team_round_mode);
+    CVAR_REGISTER(&sv_exp_team_round_teamplay);
+    CVAR_REGISTER(&sv_exp_team_round_spawn_mode);
+    CVAR_REGISTER(&sv_exp_team_round_team1_name);
+    CVAR_REGISTER(&sv_exp_team_round_team2_name);
+    CVAR_REGISTER(&sv_exp_team_round_team1_loadout);
+    CVAR_REGISTER(&sv_exp_team_round_team2_loadout);
+    CVAR_REGISTER(&sv_exp_team_round_team1_health);
+    CVAR_REGISTER(&sv_exp_team_round_team2_health);
+    CVAR_REGISTER(&sv_exp_team_round_team1_armor);
+    CVAR_REGISTER(&sv_exp_team_round_team2_armor);
     CVAR_REGISTER(&sv_exp_debug_weaponlog);
     CVAR_REGISTER(&sv_exp_debug_weaponlog_rejections);
     CVAR_REGISTER(&sv_exp_glock_lab_dummy);
@@ -5238,14 +6591,118 @@ bool FutureGameplayPlayerCanRespawn(CBasePlayer *pPlayer)
         g_expRoundState.state != kExpRoundStateRestartPending;
 }
 
+bool FutureGameplayPlayerCanTakeDamage(CBasePlayer *pPlayer, CBaseEntity *pAttacker)
+{
+    if (pPlayer == NULL || pAttacker == NULL)
+    {
+        return true;
+    }
+
+    if (!TeamRoundModeConfigured() || !TeamRoundTeamplayConfigured() || ExpRoundFriendlyFireEnabled())
+    {
+        return true;
+    }
+
+    if (!pAttacker->IsPlayer())
+    {
+        return true;
+    }
+
+    CBasePlayer *pAttackerPlayer = (CBasePlayer *)pAttacker;
+    if (pAttackerPlayer == pPlayer)
+    {
+        return true;
+    }
+
+    const int victimTeam = GetAssignedRoundTeamId(pPlayer);
+    const int attackerTeam = GetAssignedRoundTeamId(pAttackerPlayer);
+    if (victimTeam == kExpRoundTeamNone || attackerTeam == kExpRoundTeamNone)
+    {
+        return true;
+    }
+
+    return victimTeam != attackerTeam;
+}
+
+int FutureGameplayPlayerRelationship(CBaseEntity *pPlayer, CBaseEntity *pTarget)
+{
+    if (!TeamRoundModeConfigured() || !TeamRoundTeamplayConfigured() ||
+        pPlayer == NULL || pTarget == NULL || !pPlayer->IsPlayer() || !pTarget->IsPlayer())
+    {
+        return GR_NOTTEAMMATE;
+    }
+
+    const int playerTeam = GetAssignedRoundTeamId((CBasePlayer *)pPlayer);
+    const int targetTeam = GetAssignedRoundTeamId((CBasePlayer *)pTarget);
+    if (playerTeam != kExpRoundTeamNone && playerTeam == targetTeam)
+    {
+        return GR_TEAMMATE;
+    }
+
+    return GR_NOTTEAMMATE;
+}
+
+void FutureGameplayOnPlayerInitHUD(CBasePlayer *pPlayer)
+{
+    if (pPlayer == NULL)
+    {
+        return;
+    }
+
+    if (TeamRoundModeConfigured())
+    {
+        if (GetAssignedRoundTeamId(pPlayer) == kExpRoundTeamNone)
+        {
+            AutoAssignPlayerToRoundTeam(pPlayer);
+        }
+        else
+        {
+            ApplyRoundTeamLabel(pPlayer, GetAssignedRoundTeamId(pPlayer));
+        }
+    }
+    else
+    {
+        ApplyRoundTeamLabel(pPlayer, kExpRoundTeamNone);
+    }
+
+    UpdateRoundPopulationSnapshot();
+}
+
 void FutureGameplayOnPlayerSpawn(CBasePlayer *pPlayer)
 {
-    if (pPlayer == NULL || !ExpRoundModeActive() || !ShouldApplyRoundResetOnSpawn())
+    if (pPlayer == NULL)
+    {
+        return;
+    }
+
+    if (IsRoundFakeClient(pPlayer) && pPlayer->pev != NULL)
+    {
+        pPlayer->pev->flags |= (FL_CLIENT | FL_FAKECLIENT);
+    }
+
+    if (!ExpRoundModeActive() || !ShouldApplyRoundResetOnSpawn())
     {
         return;
     }
 
     ApplyRoundResetToPlayer(pPlayer);
+}
+
+void FutureGameplayOnClientDisconnected(CBasePlayer *pPlayer)
+{
+    if (pPlayer == NULL)
+    {
+        return;
+    }
+
+    ClearRoundFakeClientRecord(pPlayer);
+    ClearRoundTeamAssignment(pPlayer);
+    UpdateRoundPopulationSnapshot();
+
+    if (ExpRoundModeActive() && g_expRoundState.state == kExpRoundStateLive)
+    {
+        EvaluateRoundOutcome();
+    }
 }
 
 void FutureGameplayOnPlayerKilled(CBasePlayer *pVictim, CBasePlayer *pKiller)
@@ -5683,6 +7140,106 @@ const char *ExpRoundWeaponProfile()
 const char *ExpRoundLoadoutMode()
 {
     return GetConfiguredRoundLoadoutMode();
+}
+
+bool ExpTeamRoundModeEnabled()
+{
+    return TeamRoundModeConfigured();
+}
+
+bool ExpTeamRoundTeamplayEnabled()
+{
+    return TeamRoundTeamplayConfigured();
+}
+
+const char *ExpTeamRoundSpawnMode()
+{
+    return GetConfiguredTeamRoundSpawnMode();
+}
+
+const char *ExpTeamRoundTeam1Name()
+{
+    return GetConfiguredTeamRoundName(kExpRoundTeam1);
+}
+
+const char *ExpTeamRoundTeam2Name()
+{
+    return GetConfiguredTeamRoundName(kExpRoundTeam2);
+}
+
+const char *ExpTeamRoundTeam1Loadout()
+{
+    return GetResolvedRoundLoadoutModeForTeam(kExpRoundTeam1);
+}
+
+const char *ExpTeamRoundTeam2Loadout()
+{
+    return GetResolvedRoundLoadoutModeForTeam(kExpRoundTeam2);
+}
+
+float ExpTeamRoundTeam1Health()
+{
+    return GetResolvedRoundStartHealthForTeam(kExpRoundTeam1);
+}
+
+float ExpTeamRoundTeam2Health()
+{
+    return GetResolvedRoundStartHealthForTeam(kExpRoundTeam2);
+}
+
+float ExpTeamRoundTeam1Armor()
+{
+    return GetResolvedRoundStartArmorForTeam(kExpRoundTeam1);
+}
+
+float ExpTeamRoundTeam2Armor()
+{
+    return GetResolvedRoundStartArmorForTeam(kExpRoundTeam2);
+}
+
+int ExpRoundConnectedPlayersForTeam(int teamId)
+{
+    if (teamId == kExpRoundTeam1)
+    {
+        return g_expRoundState.team1ConnectedPlayers;
+    }
+
+    if (teamId == kExpRoundTeam2)
+    {
+        return g_expRoundState.team2ConnectedPlayers;
+    }
+
+    return 0;
+}
+
+int ExpRoundAlivePlayersForTeam(int teamId)
+{
+    if (teamId == kExpRoundTeam1)
+    {
+        return g_expRoundState.team1AlivePlayers;
+    }
+
+    if (teamId == kExpRoundTeam2)
+    {
+        return g_expRoundState.team2AlivePlayers;
+    }
+
+    return 0;
+}
+
+int ExpRoundUnassignedConnectedPlayers()
+{
+    return g_expRoundState.unassignedConnectedPlayers;
+}
+
+int ExpRoundUnassignedAlivePlayers()
+{
+    return g_expRoundState.unassignedAlivePlayers;
+}
+
+const char *ExpRoundLastWinnerTeamName()
+{
+    return g_expRoundState.lastWinnerTeamName;
 }
 
 bool ExpRoundModeActive()

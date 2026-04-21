@@ -386,6 +386,7 @@ void CHalfLifeMultiplay :: InitHUD( CBasePlayer *pl )
 	}
 
 	UpdateGameMode( pl );
+	FutureGameplayOnPlayerInitHUD( pl );
 
 	// sending just one score makes the hud scoreboard active;  otherwise
 	// it is just disabled for single play
@@ -454,6 +455,7 @@ void CHalfLifeMultiplay :: ClientDisconnected( edict_t *pClient )
 					GETPLAYERUSERID( pPlayer->edict() ) );
 			}
 
+			FutureGameplayOnClientDisconnected( pPlayer );
 			pPlayer->RemoveAllItems( TRUE );// destroy all of the players weapons and items
 		}
 	}
@@ -482,7 +484,7 @@ float CHalfLifeMultiplay :: FlPlayerFallDamage( CBasePlayer *pPlayer )
 //=========================================================
 BOOL CHalfLifeMultiplay::FPlayerCanTakeDamage( CBasePlayer *pPlayer, CBaseEntity *pAttacker )
 {
-	return TRUE;
+	return FutureGameplayPlayerCanTakeDamage( pPlayer, pAttacker ) ? TRUE : FALSE;
 }
 
 //=========================================================
@@ -1076,8 +1078,7 @@ edict_t *CHalfLifeMultiplay::GetPlayerSpawnSpot( CBasePlayer *pPlayer )
 //=========================================================
 int CHalfLifeMultiplay::PlayerRelationship( CBaseEntity *pPlayer, CBaseEntity *pTarget )
 {
-	// half life deathmatch has only enemies
-	return GR_NOTTEAMMATE;
+	return FutureGameplayPlayerRelationship( pPlayer, pTarget );
 }
 
 BOOL CHalfLifeMultiplay :: PlayFootstepSounds( CBasePlayer *pl, float fvol )

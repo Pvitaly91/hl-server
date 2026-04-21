@@ -186,23 +186,26 @@ Live lab console commands:
 - `exp_round_restart` forces a clean round reset, respawns players, reapplies the configured loadout, and starts freeze time again.
 - `exp_round_status` prints current round state, player counts, timers, loadout mode, start health/armor, and the last winner/reason.
 - `exp_round_stop` disables round mode and restores normal deathmatch respawn flow.
-- `exp_round_slay [all]` is a small server-side round test helper that eliminates one live player, or every live player with `all`, without relying on client console input.
+- `exp_round_slay [all|team1|team2]` is a small server-side round test helper that can eliminate one live player, every live player, or every live player on one configured team.
+- `exp_team_join <player> <team>`, `exp_team_autoassign`, and `exp_team_status` provide lightweight server-side team assignment and debugging for small live round tests.
+- `exp_team_fake_add <team> [name]` and `exp_team_fake_clear` are optional local verification helpers when only one real client is available and you still need to exercise last-team-alive round flow.
 
 The live dummy now forces `mp_allowmonsters 1` before spawning, because the underlying server-side `monster_generic` entity is otherwise removed immediately on deathmatch maps.
 
 Persistent named target spots are stored under `<HalfLifeRoot>\hlserver_testbed\target_spots\<map>.json`. Each map file is human-readable JSON with an `active_spot` field and one or more named saved spots. See [docs/target-spots.md](/D:/DEV/CPP/HL-Server/docs/target-spots.md) for the exact file layout and command flow.
 
-## Round-Based Duel Mode
+## Round Modes
 
-The repo now has a first server-side round loop for live duel testing. It is intentionally narrow:
+The repo now has a first server-side round loop for live duel testing plus a simple team-oriented extension for 1v1 / 2v2 style live checks. It is intentionally narrow:
 
 - round start with freeze time
 - deterministic health, armor, and loadout reset
 - no respawn during the live round
 - elimination-based round end
 - automatic next-round restart after a short delay
+- optional two-team assignment with last-team-alive win logic
 
-It is not a full Counter-Strike ruleset yet. There is no economy, buy menu, team assignment, or join-in-progress polish in this pass.
+It is not a full Counter-Strike ruleset yet. There is no economy, buy menu, manual team spawn-spot system, or polished join-in-progress flow in this pass.
 
 Main round cvars:
 
@@ -216,6 +219,21 @@ Main round cvars:
 - `sv_exp_round_weapon_profile`
 - `sv_exp_round_loadout_mode none|glock|mp5|357|shotgun`
 
+Additional team-round cvars:
+
+- `sv_exp_team_round_mode 0|1`
+- `sv_exp_team_round_teamplay 0|1`
+- `sv_exp_team_round_spawn_mode dm_spawns|manual_spots`
+  The current pass resolves everything back to `dm_spawns`. `manual_spots` is reserved but not implemented yet.
+- `sv_exp_team_round_team1_name`
+- `sv_exp_team_round_team2_name`
+- `sv_exp_team_round_team1_loadout`
+- `sv_exp_team_round_team2_loadout`
+- `sv_exp_team_round_team1_health`
+- `sv_exp_team_round_team2_health`
+- `sv_exp_team_round_team1_armor`
+- `sv_exp_team_round_team2_armor`
+
 Recommended duel loop:
 
 1. Export and apply the weapon cfg you want to test, for example `exp_cfg_apply editor_357_test.cfg`.
@@ -228,6 +246,20 @@ Recommended duel loop:
 4. Use `exp_round_status` to inspect the current state.
 5. Play the round. Dead players stay out until the automatic restart.
 6. Use `exp_round_restart` for a forced clean reset or `exp_round_stop` to go back to normal deathmatch respawn behavior.
+
+Recommended small-team loop:
+
+1. Apply the weapon cfg you want to test, for example `exp_cfg_apply editor_mp5_simple.cfg`.
+2. Configure team round mode, for example:
+   `sv_exp_round_mode 1`
+   `sv_exp_team_round_mode 1`
+   `sv_exp_team_round_team1_loadout mp5`
+   `sv_exp_team_round_team2_loadout 357`
+3. Run `exp_team_autoassign` or `exp_team_join <player> <team>`.
+4. Use `exp_team_status` and `exp_round_status` to confirm assignments and alive counts.
+5. Run `exp_round_start`.
+6. The round ends when one configured team has no living players left, then restarts after the configured delay.
+7. If you only have one real client available, `exp_team_fake_add <team>` can stand in as a small local verification helper while you validate team round transitions.
 
 For the full state model, command reference, and current limitations, see [docs/round-mode.md](/D:/DEV/CPP/HL-Server/docs/round-mode.md).
 

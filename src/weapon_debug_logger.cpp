@@ -940,12 +940,18 @@ void LogRoundEvent(const char *event, const char *state, int roundNumber, int co
     char timestamp[64];
     char line[2048];
     FormatTimestamp(timestamp, sizeof(timestamp));
+    const char *winnerTeamName = "none";
+    if ((pWinner != NULL || (event != NULL && strcmp(event, "round_end") == 0)) &&
+        ExpRoundLastWinnerTeamName()[0] != '\0')
+    {
+        winnerTeamName = ExpRoundLastWinnerTeamName();
+    }
 
     _snprintf_s(
         line,
         sizeof(line),
         _TRUNCATE,
-        "[weaponlog] type=round ts=%s map=%s event=%s state=%s round=%d connected_players=%d alive_players=%d winner=\"%s\" winner_entindex=%d winner_userid=%d no_respawn=%d friendlyfire=%d loadout_mode=\"%s\" weapon_profile=\"%s\"",
+        "[weaponlog] type=round ts=%s map=%s event=%s state=%s round=%d connected_players=%d alive_players=%d team_mode=%d teamplay=%d team1_name=\"%s\" team2_name=\"%s\" team1_connected=%d team2_connected=%d unassigned_connected=%d team1_alive=%d team2_alive=%d unassigned_alive=%d winner=\"%s\" winner_team=\"%s\" winner_entindex=%d winner_userid=%d no_respawn=%d friendlyfire=%d loadout_mode=\"%s\" weapon_profile=\"%s\"",
         timestamp,
         SanitizeLogValue(GetSafeMapName()).c_str(),
         SanitizeLogValue(event).c_str(),
@@ -953,7 +959,18 @@ void LogRoundEvent(const char *event, const char *state, int roundNumber, int co
         roundNumber,
         connectedPlayers,
         alivePlayers,
+        ExpTeamRoundModeEnabled() ? 1 : 0,
+        ExpTeamRoundTeamplayEnabled() ? 1 : 0,
+        SanitizeLogValue(ExpTeamRoundTeam1Name()).c_str(),
+        SanitizeLogValue(ExpTeamRoundTeam2Name()).c_str(),
+        ExpRoundConnectedPlayersForTeam(1),
+        ExpRoundConnectedPlayersForTeam(2),
+        ExpRoundUnassignedConnectedPlayers(),
+        ExpRoundAlivePlayersForTeam(1),
+        ExpRoundAlivePlayersForTeam(2),
+        ExpRoundUnassignedAlivePlayers(),
         GetSafePlayerName(pWinner).c_str(),
+        SanitizeLogValue(winnerTeamName).c_str(),
         GetPlayerEntityIndex(pWinner),
         GetPlayerUserId(pWinner),
         ExpRoundNoRespawn() ? 1 : 0,
