@@ -189,6 +189,7 @@ Live lab console commands:
 - `exp_round_slay [all|team1|team2]` is a small server-side round test helper that can eliminate one live player, every live player, or every live player on one configured team.
 - `exp_team_join <player> <team>`, `exp_team_autoassign`, and `exp_team_status` provide lightweight server-side team assignment and debugging for small live round tests.
 - `exp_team_fake_add <team> [name]` and `exp_team_fake_clear` are optional local verification helpers when only one real client is available and you still need to exercise last-team-alive round flow.
+- `exp_team_spawn_mark <team> [name]`, `exp_team_spawn_unmark <team> <name>`, `exp_team_spawn_list`, `exp_team_spawn_use <team> <name>`, and `exp_team_spawn_status` manage persistent per-team round spawns under `<HalfLifeRoot>\hlserver_testbed\team_spawns\<map>.json`.
 
 The live dummy now forces `mp_allowmonsters 1` before spawning, because the underlying server-side `monster_generic` entity is otherwise removed immediately on deathmatch maps.
 
@@ -205,7 +206,7 @@ The repo now has a first server-side round loop for live duel testing plus a sim
 - automatic next-round restart after a short delay
 - optional two-team assignment with last-team-alive win logic
 
-It is not a full Counter-Strike ruleset yet. There is no economy, buy menu, manual team spawn-spot system, or polished join-in-progress flow in this pass.
+It is not a full Counter-Strike ruleset yet. There is no economy, buy menu, or polished join-in-progress flow in this pass.
 
 Main round cvars:
 
@@ -224,7 +225,7 @@ Additional team-round cvars:
 - `sv_exp_team_round_mode 0|1`
 - `sv_exp_team_round_teamplay 0|1`
 - `sv_exp_team_round_spawn_mode dm_spawns|manual_spots`
-  The current pass resolves everything back to `dm_spawns`. `manual_spots` is reserved but not implemented yet.
+  `manual_spots` now prefers persisted per-team saved spawns first, then falls back to normal map deathmatch spawns with explicit status and telemetry when a saved team spawn is missing or blocked.
 - `sv_exp_team_round_team1_name`
 - `sv_exp_team_round_team2_name`
 - `sv_exp_team_round_team1_loadout`
@@ -260,6 +261,24 @@ Recommended small-team loop:
 5. Run `exp_round_start`.
 6. The round ends when one configured team has no living players left, then restarts after the configured delay.
 7. If you only have one real client available, `exp_team_fake_add <team>` can stand in as a small local verification helper while you validate team round transitions.
+
+Recommended persisted team-spawn setup for a map:
+
+1. Enable team round mode and saved spawn usage, for example:
+   `sv_exp_round_mode 1`
+   `sv_exp_team_round_mode 1`
+   `sv_exp_team_round_spawn_mode manual_spots`
+2. Place one live player on alpha and mark the spawn:
+   `exp_team_join Poni alpha`
+   `exp_team_spawn_mark alpha default`
+3. Place one live player on bravo and mark the spawn:
+   `exp_team_join Poni bravo`
+   `exp_team_spawn_mark bravo default`
+4. Select the active saved spawns:
+   `exp_team_spawn_use alpha default`
+   `exp_team_spawn_use bravo default`
+5. Restart the round with `exp_round_restart`.
+6. Use `exp_team_spawn_status` to confirm that round start used the saved team spawns and that the file under `<HalfLifeRoot>\hlserver_testbed\team_spawns\<map>.json` is loaded.
 
 For the full state model, command reference, and current limitations, see [docs/round-mode.md](/D:/DEV/CPP/HL-Server/docs/round-mode.md).
 

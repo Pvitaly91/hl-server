@@ -94,6 +94,7 @@ void LogGlockLabDummySpawnFailed(CBasePlayer *pAnchorPlayer, const char *source,
 void LogGlockLabDummyMark(const char *action, CBasePlayer *pAnchorPlayer, const Vector &origin, const Vector &angles, const char *details, const char *spotName, const char *spotStorage);
 void LogGlockLabDummyReposition(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, const Vector &origin, const Vector &angles, const char *reason, const char *source, const char *candidate, const char *spotName, const char *spotStorage);
 void LogGlockLabDummyClear(CBaseEntity *pDummy, const char *reason);
+void LogTeamSpawnEvent(const char *event, CBasePlayer *pPlayer, int teamId, const char *teamName, const Vector &origin, const Vector &angles, const char *source, const char *candidate, const char *spotName, const char *spotStorage, const char *reason);
 void BeginGlockPrimaryShotContext(CBasePlayer *pPlayer);
 void BeginMp5PrimaryShotContext(CBasePlayer *pPlayer);
 void Begin357PrimaryShotContext(CBasePlayer *pPlayer);

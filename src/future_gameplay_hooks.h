@@ -9,6 +9,7 @@ bool FutureGameplayPlayerCanRespawn(CBasePlayer *pPlayer);
 bool FutureGameplayPlayerCanTakeDamage(CBasePlayer *pPlayer, CBaseEntity *pAttacker);
 int FutureGameplayPlayerRelationship(CBaseEntity *pPlayer, CBaseEntity *pTarget);
 void FutureGameplayOnPlayerInitHUD(CBasePlayer *pPlayer);
+void FutureGameplayApplyPlayerSpawnOverride(CBasePlayer *pPlayer);
 void FutureGameplayOnPlayerSpawn(CBasePlayer *pPlayer);
 void FutureGameplayOnPlayerKilled(CBasePlayer *pVictim, CBasePlayer *pKiller);
 void FutureGameplayOnClientDisconnected(CBasePlayer *pPlayer);

@@ -24,7 +24,6 @@ This repo now includes a server-side no-respawn round loop for live testing on t
 - buy menu
 - Counter-Strike parity
 - polished join-in-progress handling
-- manual team spawn spots
 
 This is a clean first round loop, not a full game-mode conversion.
 
@@ -57,7 +56,7 @@ This is a clean first round loop, not a full game-mode conversion.
 - `sv_exp_team_round_spawn_mode`
   - `dm_spawns`
   - `manual_spots`
-  - Current implementation always resolves to `dm_spawns`. `manual_spots` is reserved for a later pass.
+  - `manual_spots` prefers persisted per-team saved spawns, then explicit fallback to the normal map deathmatch spawns
 - `sv_exp_team_round_team1_name`
 - `sv_exp_team_round_team2_name`
 - `sv_exp_team_round_team1_loadout`
@@ -97,6 +96,16 @@ This is a clean first round loop, not a full game-mode conversion.
   - optional local verification helper that spawns one server-side fake client on the requested team
 - `exp_team_fake_clear`
   - removes any fake clients created by `exp_team_fake_add`
+- `exp_team_spawn_mark <team> [name]`
+  - saves or updates a named spawn for the requested team on the current map. If no name is given, it writes `default`
+- `exp_team_spawn_unmark <team> <name>`
+  - removes one named saved spawn from the requested team
+- `exp_team_spawn_list`
+  - prints the saved team-spawn state for the current map
+- `exp_team_spawn_use <team> <name>`
+  - selects the active named spawn for the requested team
+- `exp_team_spawn_status`
+  - prints the current team-spawn file path, saved names, active selection, last applied spawn source, and last failure per team
 
 ## Recommended workflow
 
@@ -153,12 +162,49 @@ During a team session:
 5. Use `exp_round_restart` for a forced reset or `exp_round_stop` to return to plain deathmatch.
 6. If you only have one real client available, `exp_team_fake_add <team>` can be used as a local verification helper for the team-elimination loop.
 
+Example persisted team-spawn setup:
+
+```text
+sv_exp_round_mode 1
+sv_exp_team_round_mode 1
+sv_exp_team_round_spawn_mode manual_spots
+exp_team_join Poni alpha
+exp_team_spawn_mark alpha default
+exp_team_join Poni bravo
+exp_team_spawn_mark bravo default
+exp_team_spawn_use alpha default
+exp_team_spawn_use bravo default
+exp_round_restart
+```
+
+## Persistent team spawn spots
+
+Saved team spawns live under:
+
+- `<HalfLifeRoot>\hlserver_testbed\team_spawns\<map>.json`
+
+The file is human-readable JSON. It stores:
+
+- two team buckets
+- the active saved spawn name for each team
+- one or more named spawn records per team
+- origin and yaw for each saved spawn
+- creation/update timestamps
+
+Round-start spawn resolution in team mode with `sv_exp_team_round_spawn_mode manual_spots` is:
+
+1. active saved spawn for the player's team
+2. `default` saved spawn for the player's team
+3. normal deathmatch map spawn fallback
+
+If a saved spawn is blocked or invalid, the server logs the failure reason and the fallback source instead of silently ignoring it.
+
 ## Notes
 
 - With one human player, the mode still works for solo validation. The round goes live, and the only player must be eliminated before the restart path triggers.
 - In team mode, one human player is enough to verify status and waiting behavior, but you still need players on both teams for a real last-team-alive round result.
 - Round loadout reset is server-side and deterministic. It reuses the same experimental weapon surfaces already driven by cfg files.
 - Team loadout and start health/armor inherit from the global round cvars unless the team-specific overrides are set.
-- Team mode currently keeps the normal map spawn system. There is no persisted manual team spawn-spot workflow in this pass.
+- Team mode can now use persisted per-team saved spawns. If none are available, or if a saved spawn is blocked, the server falls back to the normal map spawn logic and records that fallback in status and telemetry.
 - `exp_team_fake_add` and `exp_team_fake_clear` exist only as small server-side validation helpers for local team-round testing when a second human is not available.
 - Existing target dummy, cfg apply, and persistent saved-spot workflows remain available when round mode is off.

@@ -1070,6 +1070,8 @@ edict_t *CHalfLifeMultiplay::GetPlayerSpawnSpot( CBasePlayer *pPlayer )
 		FireTargets( STRING(pentSpawnSpot->v.target), pPlayer, pPlayer, USE_TOGGLE, 0 );
 	}
 
+	FutureGameplayApplyPlayerSpawnOverride( pPlayer );
+
 	return pentSpawnSpot;
 }
 

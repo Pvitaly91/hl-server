@@ -50,6 +50,7 @@ const size_t kMaxLabDummySpotFileFailureLength = 512;
 const size_t kMaxLabDummySpotListLength = 512;
 const size_t kMaxLabDummySpotsPerMap = 32;
 const size_t kMaxLabDummySpotFileSize = 64 * 1024;
+const size_t kMaxTeamSpawnSpotsPerTeam = 16;
 const char *kAllowedGlockLabDummyModels[] = {
     "models/barney.mdl",
     "models/scientist.mdl"};
@@ -62,6 +63,9 @@ const char *kDefaultLabDummySpotName = "default";
 const char *kLabDummySpotStorageDisk = "disk";
 const char *kLabDummySpotStorageSession = "session";
 const char *kLabDummyTargetSpotsDirectoryName = "target_spots";
+const char *kTeamSpawnSpotStorageDisk = "disk";
+const char *kTeamSpawnSpotStorageSession = "session";
+const char *kTeamSpawnSpotsDirectoryName = "team_spawns";
 const float kRoundEndHoldSeconds = 0.25f;
 const float kDefaultRoundFreezeTime = 3.0f;
 const float kDefaultRoundRestartDelay = 3.0f;
@@ -70,9 +74,13 @@ const float kDefaultTeamRoundOverrideValue = -1.0f;
 const int kMaxRoundTeamPlayerSlots = 33;
 const int kMaxRoundFakeClientNameLength = 64;
 const char *kDefaultTeamRoundSpawnMode = "dm_spawns";
+const char *kManualTeamRoundSpawnMode = "manual_spots";
 const char *kDefaultTeamRoundTeam1Name = "team1";
 const char *kDefaultTeamRoundTeam2Name = "team2";
 const char *kRoundEndReasonTeamsIncomplete = "teams_incomplete";
+const char *kTeamSpawnSourceSavedSpot = "saved_spot";
+const char *kTeamSpawnSourceDmSpawn = "dm_spawn";
+const char *kTeamSpawnCandidateDefault = "default";
 
 struct LiveCfgState
 {
@@ -158,6 +166,67 @@ struct LabDummyPlacementCandidate
     float forwardOffset;
     float rightOffset;
     float upOffset;
+};
+
+struct TeamSpawnSavedSpotRecord
+{
+    bool valid;
+    bool loadedFromDisk;
+    int teamId;
+    Vector origin;
+    Vector angles;
+    char name[kMaxLabDummySpotNameLength];
+    char createdAt[kMaxLabDummySpotTimestampLength];
+    char updatedAt[kMaxLabDummySpotTimestampLength];
+    char note[kMaxLabDummySpotNoteLength];
+};
+
+struct TeamSpawnSelection
+{
+    bool valid;
+    int teamId;
+    Vector origin;
+    Vector angles;
+    char source[32];
+    char candidate[64];
+    char spotName[kMaxLabDummySpotNameLength];
+    char spotStorage[kMaxLabDummySpotStorageLength];
+};
+
+struct TeamSpawnFailureInfo
+{
+    int teamId;
+    char code[64];
+    char source[32];
+    char candidate[64];
+    char reason[512];
+    char spotName[kMaxLabDummySpotNameLength];
+    char spotStorage[kMaxLabDummySpotStorageLength];
+};
+
+struct TeamSpawnPlacementCandidate
+{
+    const char *label;
+    float forwardOffset;
+    float rightOffset;
+    float upOffset;
+};
+
+struct TeamSpawnRuntimeStatus
+{
+    bool valid;
+    int teamId;
+    int roundNumber;
+    Vector origin;
+    Vector angles;
+    char playerName[64];
+    int playerEntIndex;
+    int playerUserId;
+    char source[32];
+    char candidate[64];
+    char spotName[kMaxLabDummySpotNameLength];
+    char spotStorage[kMaxLabDummySpotStorageLength];
+    char reason[512];
 };
 
 enum ExpRoundStateType
@@ -267,6 +336,20 @@ const LabDummyPlacementCandidate kLabDummyPlacementCandidates[] = {
     {"left_96_up_18", 0.0f, -kGlockLabDummyPlacementLongStep, kGlockLabDummyPlacementVerticalStep},
     {"back_64_up_18", -kGlockLabDummyPlacementWideStep, 0.0f, kGlockLabDummyPlacementVerticalStep},
     {"back_96_up_18", -kGlockLabDummyPlacementLongStep, 0.0f, kGlockLabDummyPlacementVerticalStep}};
+
+const TeamSpawnPlacementCandidate kTeamSpawnPlacementCandidates[] = {
+    {"center", 0.0f, 0.0f, 0.0f},
+    {"right_32", 0.0f, kGlockLabDummyPlacementSideStep * 2.0f, 0.0f},
+    {"left_32", 0.0f, -kGlockLabDummyPlacementSideStep * 2.0f, 0.0f},
+    {"forward_32", kGlockLabDummyPlacementForwardStep * 2.0f, 0.0f, 0.0f},
+    {"back_32", -kGlockLabDummyPlacementForwardStep * 2.0f, 0.0f, 0.0f},
+    {"up_18", 0.0f, 0.0f, kGlockLabDummyPlacementVerticalStep},
+    {"right_64", 0.0f, kGlockLabDummyPlacementWideStep, 0.0f},
+    {"left_64", 0.0f, -kGlockLabDummyPlacementWideStep, 0.0f},
+    {"forward_64", kGlockLabDummyPlacementWideStep, 0.0f, 0.0f},
+    {"back_64", -kGlockLabDummyPlacementWideStep, 0.0f, 0.0f},
+    {"right_32_up_18", 0.0f, kGlockLabDummyPlacementSideStep * 2.0f, kGlockLabDummyPlacementVerticalStep},
+    {"left_32_up_18", 0.0f, -kGlockLabDummyPlacementSideStep * 2.0f, kGlockLabDummyPlacementVerticalStep}};
 
 cvar_t sv_exp_pistol_tapfire = {"sv_exp_pistol_tapfire", "0", FCVAR_SERVER};
 cvar_t sv_exp_move_spread_scale = {"sv_exp_move_spread_scale", "0.0", FCVAR_SERVER};
@@ -383,6 +466,14 @@ int g_glockLabDummySavedSpotCount = 0;
 char g_glockLabDummyActiveSpotName[kMaxLabDummySpotNameLength] = "";
 char g_glockLabDummyTargetSpotsPath[kMaxLiveCfgPathLength] = "";
 char g_glockLabDummyTargetSpotsLoadFailure[kMaxLabDummySpotFileFailureLength] = "";
+TeamSpawnSavedSpotRecord g_teamSpawnSavedSpots[3][kMaxTeamSpawnSpotsPerTeam] = {};
+int g_teamSpawnSavedSpotCounts[3] = {};
+char g_teamSpawnActiveSpotNames[3][kMaxLabDummySpotNameLength] = {};
+char g_teamSpawnSpotsPath[kMaxLiveCfgPathLength] = "";
+char g_teamSpawnSpotsLoadFailure[kMaxLabDummySpotFileFailureLength] = "";
+TeamSpawnRuntimeStatus g_teamSpawnLastApplied[3] = {};
+TeamSpawnFailureInfo g_teamSpawnLastFailure[3] = {};
+char g_teamSpawnLastFailureAt[3][64] = {};
 LabDummyTransformMemory g_glockLabDummyLastGoodTransform = {};
 LabDummyFailureInfo g_glockLabDummyLastSpawnFailure = {};
 char g_glockLabDummyLastFailureAt[64] = "";
@@ -398,6 +489,8 @@ ExpRoundFakeClientRecord g_expRoundFakeClientRecords[kMaxRoundTeamPlayerSlots] =
 void PrintLabDummyStatus();
 void PrintRoundStatus();
 void PrintTeamStatus();
+void PrintTeamSpawnStatus();
+void RefreshFutureHooksMapState();
 bool IsRoundManagedPlayer(CBasePlayer *pPlayer);
 bool IsRoundFakeClient(CBasePlayer *pPlayer);
 void UpdateRoundPopulationSnapshot();
@@ -405,6 +498,15 @@ void TrimCfgRequestString(const char *input, char *buffer, size_t bufferSize);
 bool EnsureLabDummyMonsterSpawningEnabled(LabDummyFailureInfo *failure, const LabDummySpawnSelection *selection);
 bool SaveLabDummySpotsForCurrentMap(char *failureReason, size_t failureReasonSize);
 void LoadLabDummySpotsForCurrentMap();
+bool SaveTeamSpawnSpotsForCurrentMap(char *failureReason, size_t failureReasonSize);
+void LoadTeamSpawnSpotsForCurrentMap();
+bool TryResolveTeamSpawnSpotName(const char *requestedName, char *buffer, size_t bufferSize, bool useDefaultIfEmpty, char *failureReason, size_t failureReasonSize);
+const TeamSpawnSavedSpotRecord *FindTeamSpawnSavedSpotConst(int teamId, const char *spotName);
+const TeamSpawnSavedSpotRecord *GetActiveTeamSpawnSavedSpot(int teamId);
+const TeamSpawnSavedSpotRecord *GetDefaultTeamSpawnSavedSpot(int teamId);
+void BuildTeamSpawnNamesSummary(int teamId, char *buffer, size_t bufferSize);
+TeamSpawnSavedSpotRecord *UpsertTeamSpawnSavedSpot(int teamId, const char *spotName, const Vector &origin, const Vector &angles, char *failureReason, size_t failureReasonSize);
+bool RemoveTeamSpawnSavedSpot(int teamId, const char *spotName, TeamSpawnSavedSpotRecord *removedSpot, char *failureReason, size_t failureReasonSize);
 
 float GetNonNegativeCvarValue(const cvar_t &cvar)
 {
@@ -612,6 +714,73 @@ void StoreLabDummySavedSpotRecord(
     strncpy_s(spot->note, sizeof(spot->note), note != NULL ? note : "", _TRUNCATE);
 }
 
+void ClearTeamSpawnSavedSpotRecord(TeamSpawnSavedSpotRecord *spot)
+{
+    if (spot == NULL)
+    {
+        return;
+    }
+
+    spot->valid = false;
+    spot->loadedFromDisk = false;
+    spot->teamId = kExpRoundTeamNone;
+    spot->origin = g_vecZero;
+    spot->angles = g_vecZero;
+    spot->name[0] = '\0';
+    spot->createdAt[0] = '\0';
+    spot->updatedAt[0] = '\0';
+    spot->note[0] = '\0';
+}
+
+void StoreTeamSpawnSavedSpotRecord(
+    TeamSpawnSavedSpotRecord *spot,
+    int teamId,
+    const char *name,
+    const Vector &origin,
+    const Vector &angles,
+    const char *createdAt,
+    const char *updatedAt,
+    const char *note,
+    bool loadedFromDisk)
+{
+    if (spot == NULL)
+    {
+        return;
+    }
+
+    spot->valid = true;
+    spot->loadedFromDisk = loadedFromDisk;
+    spot->teamId = (teamId == kExpRoundTeam1 || teamId == kExpRoundTeam2) ? teamId : kExpRoundTeamNone;
+    spot->origin = origin;
+    spot->angles = angles;
+    strncpy_s(spot->name, sizeof(spot->name), name != NULL ? name : "", _TRUNCATE);
+    strncpy_s(spot->createdAt, sizeof(spot->createdAt), createdAt != NULL ? createdAt : "", _TRUNCATE);
+    strncpy_s(spot->updatedAt, sizeof(spot->updatedAt), updatedAt != NULL ? updatedAt : "", _TRUNCATE);
+    strncpy_s(spot->note, sizeof(spot->note), note != NULL ? note : "", _TRUNCATE);
+}
+
+void ClearTeamSpawnFailureInfo(TeamSpawnFailureInfo *failure)
+{
+    if (failure == NULL)
+    {
+        return;
+    }
+
+    memset(failure, 0, sizeof(*failure));
+    failure->teamId = kExpRoundTeamNone;
+}
+
+void ClearTeamSpawnRuntimeStatus(TeamSpawnRuntimeStatus *status)
+{
+    if (status == NULL)
+    {
+        return;
+    }
+
+    memset(status, 0, sizeof(*status));
+    status->teamId = kExpRoundTeamNone;
+}
+
 void ClearAllLabDummySavedSpots()
 {
     for (int spotIndex = 0; spotIndex < ARRAYSIZE(g_glockLabDummySavedSpots); ++spotIndex)
@@ -623,6 +792,26 @@ void ClearAllLabDummySavedSpots()
     g_glockLabDummyActiveSpotName[0] = '\0';
     g_glockLabDummyTargetSpotsPath[0] = '\0';
     g_glockLabDummyTargetSpotsLoadFailure[0] = '\0';
+}
+
+void ClearAllTeamSpawnSavedSpots()
+{
+    for (int teamId = kExpRoundTeam1; teamId <= kExpRoundTeam2; ++teamId)
+    {
+        for (int spotIndex = 0; spotIndex < ARRAYSIZE(g_teamSpawnSavedSpots[teamId]); ++spotIndex)
+        {
+            ClearTeamSpawnSavedSpotRecord(&g_teamSpawnSavedSpots[teamId][spotIndex]);
+        }
+
+        g_teamSpawnSavedSpotCounts[teamId] = 0;
+        g_teamSpawnActiveSpotNames[teamId][0] = '\0';
+        ClearTeamSpawnRuntimeStatus(&g_teamSpawnLastApplied[teamId]);
+        ClearTeamSpawnFailureInfo(&g_teamSpawnLastFailure[teamId]);
+        g_teamSpawnLastFailureAt[teamId][0] = '\0';
+    }
+
+    g_teamSpawnSpotsPath[0] = '\0';
+    g_teamSpawnSpotsLoadFailure[0] = '\0';
 }
 
 void AppendLabDummyFailureAttempt(char *buffer, size_t bufferSize, const LabDummyFailureInfo &failure)
@@ -749,14 +938,20 @@ const char *GetConfiguredTeamRoundSpawnMode()
     return GetNonEmptyCvarString(sv_exp_team_round_spawn_mode, kDefaultTeamRoundSpawnMode);
 }
 
+bool TeamRoundManualSpawnsConfigured()
+{
+    return StringEqualsIgnoreCase(GetConfiguredTeamRoundSpawnMode(), kManualTeamRoundSpawnMode);
+}
+
 bool TeamRoundSpawnModeSupported()
 {
-    return StringEqualsIgnoreCase(GetConfiguredTeamRoundSpawnMode(), kDefaultTeamRoundSpawnMode);
+    return StringEqualsIgnoreCase(GetConfiguredTeamRoundSpawnMode(), kDefaultTeamRoundSpawnMode) ||
+        StringEqualsIgnoreCase(GetConfiguredTeamRoundSpawnMode(), kManualTeamRoundSpawnMode);
 }
 
 const char *GetResolvedTeamRoundSpawnMode()
 {
-    return kDefaultTeamRoundSpawnMode;
+    return TeamRoundManualSpawnsConfigured() ? kManualTeamRoundSpawnMode : kDefaultTeamRoundSpawnMode;
 }
 
 const char *GetConfiguredTeamRoundName(int teamId)
@@ -1051,6 +1246,63 @@ bool TryResolveRoundTeamId(const char *requestedTeam, int *pTeamId)
     }
 
     return false;
+}
+
+const char *GetRoundTeamBucketKey(int teamId)
+{
+    if (teamId == kExpRoundTeam1)
+    {
+        return "team1";
+    }
+
+    if (teamId == kExpRoundTeam2)
+    {
+        return "team2";
+    }
+
+    return "none";
+}
+
+const char *GetTeamSpawnSpotStorageLabel(const TeamSpawnSavedSpotRecord *spot)
+{
+    if (spot == NULL || !spot->valid)
+    {
+        return "";
+    }
+
+    return spot->loadedFromDisk ? kTeamSpawnSpotStorageDisk : kTeamSpawnSpotStorageSession;
+}
+
+CBasePlayer *FindFirstManagedPlayerOnRoundTeam(int teamId, bool requireAlive)
+{
+    if (gpGlobals == NULL)
+    {
+        return NULL;
+    }
+
+    for (int playerIndex = 1; playerIndex <= gpGlobals->maxClients; ++playerIndex)
+    {
+        CBaseEntity *pEntity = UTIL_PlayerByIndex(playerIndex);
+        if (pEntity == NULL || !pEntity->IsPlayer() || pEntity->pev == NULL)
+        {
+            continue;
+        }
+
+        CBasePlayer *pPlayer = (CBasePlayer *)pEntity;
+        if (!IsRoundManagedPlayer(pPlayer) || GetAssignedRoundTeamId(pPlayer) != teamId)
+        {
+            continue;
+        }
+
+        if (requireAlive && (!pPlayer->IsAlive() || pPlayer->pev->deadflag != DEAD_NO))
+        {
+            continue;
+        }
+
+        return pPlayer;
+    }
+
+    return NULL;
 }
 
 bool TryResolveRoundPlayerToken(const char *requestedPlayer, CBasePlayer **ppPlayer, char *failureReason, size_t failureReasonSize)
@@ -1961,7 +2213,9 @@ void BeginRoundWaiting(const char *reason, bool printMessage)
 
         if (!TeamRoundSpawnModeSupported())
         {
-            PrintLabDummyConsoleLine("team spawn note: manual team spawn spots are not implemented in this pass; falling back to dm_spawns.");
+            PrintLabDummyConsoleLine(
+                "team spawn note: configured spawn_mode \"%s\" is unsupported; falling back to dm_spawns.",
+                GetConfiguredTeamRoundSpawnMode());
         }
     }
 }
@@ -2365,6 +2619,7 @@ void PrintRoundStatus()
             GetConfiguredTeamRoundName(kExpRoundTeam2),
             GetResolvedRoundStartHealthForTeam(kExpRoundTeam2),
             GetResolvedRoundStartArmorForTeam(kExpRoundTeam2));
+        PrintTeamSpawnStatus();
     }
 
     if (g_expRoundState.nextTransitionAt > 0.0f)
@@ -2398,6 +2653,7 @@ void PrintRoundStatus()
 
     PrintLabDummyConsoleLine("commands: exp_round_start | exp_round_restart | exp_round_status | exp_round_stop | exp_round_slay [all|team1|team2]");
     PrintLabDummyConsoleLine("team commands: exp_team_join <player> <team> | exp_team_autoassign | exp_team_status | exp_team_fake_add <team> [name] | exp_team_fake_clear");
+    PrintLabDummyConsoleLine("team spawn commands: exp_team_spawn_mark <team> [name] | exp_team_spawn_unmark <team> <name> | exp_team_spawn_list | exp_team_spawn_use <team> <name> | exp_team_spawn_status");
 }
 
 void ExpRoundStartCommand()
@@ -2536,6 +2792,114 @@ void TrimCfgRequestString(const char *input, char *buffer, size_t bufferSize)
     strncpy_s(buffer, bufferSize, start, length);
 }
 
+void PrintTeamSpawnStatus()
+{
+    RefreshFutureHooksMapState();
+
+    PrintLabDummyConsoleLine(
+        "team spawn storage: file=%s load_state=%s",
+        g_teamSpawnSpotsPath[0] != '\0' ? g_teamSpawnSpotsPath : "n/a",
+        g_teamSpawnSpotsLoadFailure[0] != '\0' ? g_teamSpawnSpotsLoadFailure : "ok");
+
+    for (int teamId = kExpRoundTeam1; teamId <= kExpRoundTeam2; ++teamId)
+    {
+        char namesSummary[kMaxLabDummySpotListLength];
+        char origin[64];
+        BuildTeamSpawnNamesSummary(teamId, namesSummary, sizeof(namesSummary));
+        strcpy_s(origin, sizeof(origin), "n/a");
+
+        const TeamSpawnSavedSpotRecord *activeSpot = GetActiveTeamSpawnSavedSpot(teamId);
+        const TeamSpawnSavedSpotRecord *defaultSpot = GetDefaultTeamSpawnSavedSpot(teamId);
+        PrintLabDummyConsoleLine(
+            "team spawn spots: team=%s count=%d active=%s names=%s",
+            GetConfiguredTeamRoundName(teamId),
+            g_teamSpawnSavedSpotCounts[teamId],
+            g_teamSpawnActiveSpotNames[teamId][0] != '\0' ? g_teamSpawnActiveSpotNames[teamId] : "none",
+            namesSummary[0] != '\0' ? namesSummary : "none");
+
+        if (activeSpot != NULL)
+        {
+            FormatVector3(origin, sizeof(origin), activeSpot->origin);
+            PrintLabDummyConsoleLine(
+                "team spawn active: team=%s name=%s storage=%s origin=%s yaw=%.1f updated_at=%s",
+                GetConfiguredTeamRoundName(teamId),
+                activeSpot->name,
+                GetTeamSpawnSpotStorageLabel(activeSpot),
+                origin,
+                activeSpot->angles.y,
+                activeSpot->updatedAt[0] != '\0' ? activeSpot->updatedAt : "n/a");
+        }
+        else if (g_teamSpawnActiveSpotNames[teamId][0] != '\0')
+        {
+            PrintLabDummyConsoleLine(
+                "team spawn active: team=%s name=%s state=missing",
+                GetConfiguredTeamRoundName(teamId),
+                g_teamSpawnActiveSpotNames[teamId]);
+        }
+        else if (defaultSpot != NULL)
+        {
+            FormatVector3(origin, sizeof(origin), defaultSpot->origin);
+            PrintLabDummyConsoleLine(
+                "team spawn active: team=%s none selected fallback=%s storage=%s origin=%s yaw=%.1f",
+                GetConfiguredTeamRoundName(teamId),
+                defaultSpot->name,
+                GetTeamSpawnSpotStorageLabel(defaultSpot),
+                origin,
+                defaultSpot->angles.y);
+        }
+        else
+        {
+            PrintLabDummyConsoleLine("team spawn active: team=%s none selected", GetConfiguredTeamRoundName(teamId));
+        }
+
+        if (g_teamSpawnLastApplied[teamId].valid)
+        {
+            FormatVector3(origin, sizeof(origin), g_teamSpawnLastApplied[teamId].origin);
+            PrintLabDummyConsoleLine(
+                "team spawn last applied: team=%s round=%d player=%s entindex=%d userid=%d source=%s candidate=%s origin=%s yaw=%.1f%s%s%s%s%s%s",
+                GetConfiguredTeamRoundName(teamId),
+                g_teamSpawnLastApplied[teamId].roundNumber,
+                g_teamSpawnLastApplied[teamId].playerName[0] != '\0' ? g_teamSpawnLastApplied[teamId].playerName : "unknown",
+                g_teamSpawnLastApplied[teamId].playerEntIndex,
+                g_teamSpawnLastApplied[teamId].playerUserId,
+                g_teamSpawnLastApplied[teamId].source[0] != '\0' ? g_teamSpawnLastApplied[teamId].source : "unknown",
+                g_teamSpawnLastApplied[teamId].candidate[0] != '\0' ? g_teamSpawnLastApplied[teamId].candidate : "n/a",
+                origin,
+                g_teamSpawnLastApplied[teamId].angles.y,
+                g_teamSpawnLastApplied[teamId].spotName[0] != '\0' ? " spot=" : "",
+                g_teamSpawnLastApplied[teamId].spotName[0] != '\0' ? g_teamSpawnLastApplied[teamId].spotName : "",
+                g_teamSpawnLastApplied[teamId].spotStorage[0] != '\0' ? " storage=" : "",
+                g_teamSpawnLastApplied[teamId].spotStorage[0] != '\0' ? g_teamSpawnLastApplied[teamId].spotStorage : "",
+                g_teamSpawnLastApplied[teamId].reason[0] != '\0' ? " reason=" : "",
+                g_teamSpawnLastApplied[teamId].reason[0] != '\0' ? g_teamSpawnLastApplied[teamId].reason : "");
+        }
+        else
+        {
+            PrintLabDummyConsoleLine("team spawn last applied: team=%s none", GetConfiguredTeamRoundName(teamId));
+        }
+
+        if (g_teamSpawnLastFailure[teamId].reason[0] != '\0')
+        {
+            PrintLabDummyConsoleLine(
+                "team spawn last failure: team=%s at=%s code=%s source=%s candidate=%s%s%s%s%s reason=%s",
+                GetConfiguredTeamRoundName(teamId),
+                g_teamSpawnLastFailureAt[teamId][0] != '\0' ? g_teamSpawnLastFailureAt[teamId] : "unknown",
+                g_teamSpawnLastFailure[teamId].code[0] != '\0' ? g_teamSpawnLastFailure[teamId].code : "unknown",
+                g_teamSpawnLastFailure[teamId].source[0] != '\0' ? g_teamSpawnLastFailure[teamId].source : "unknown",
+                g_teamSpawnLastFailure[teamId].candidate[0] != '\0' ? g_teamSpawnLastFailure[teamId].candidate : "n/a",
+                g_teamSpawnLastFailure[teamId].spotName[0] != '\0' ? " spot=" : "",
+                g_teamSpawnLastFailure[teamId].spotName[0] != '\0' ? g_teamSpawnLastFailure[teamId].spotName : "",
+                g_teamSpawnLastFailure[teamId].spotStorage[0] != '\0' ? " storage=" : "",
+                g_teamSpawnLastFailure[teamId].spotStorage[0] != '\0' ? g_teamSpawnLastFailure[teamId].spotStorage : "",
+                g_teamSpawnLastFailure[teamId].reason);
+        }
+        else
+        {
+            PrintLabDummyConsoleLine("team spawn last failure: team=%s none", GetConfiguredTeamRoundName(teamId));
+        }
+    }
+}
+
 void PrintTeamStatus()
 {
     UpdateRoundPopulationSnapshot();
@@ -2569,8 +2933,10 @@ void PrintTeamStatus()
 
     if (!TeamRoundSpawnModeSupported())
     {
-        PrintLabDummyConsoleLine("team spawn note: manual team spawn spots are not implemented in this pass; dm_spawns remains the active behavior.");
+        PrintLabDummyConsoleLine("team spawn note: configured spawn_mode \"%s\" is unsupported; dm_spawns remains the active behavior.", GetConfiguredTeamRoundSpawnMode());
     }
+
+    PrintTeamSpawnStatus();
 
     bool anyPlayers = false;
     if (gpGlobals != NULL)
@@ -2716,6 +3082,230 @@ void ExpTeamFakeClearCommand()
         kickedClients,
         kickedClients == 1 ? "" : "s");
     PrintTeamStatus();
+}
+
+bool TryGetTeamSpawnCommandArgs(
+    int teamArgIndex,
+    int nameArgIndex,
+    int *pTeamId,
+    char *spotName,
+    size_t spotNameSize,
+    bool useDefaultIfEmpty,
+    char *failureReason,
+    size_t failureReasonSize)
+{
+    if (pTeamId == NULL || spotName == NULL || spotNameSize == 0)
+    {
+        return false;
+    }
+
+    *pTeamId = kExpRoundTeamNone;
+    spotName[0] = '\0';
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    if (!TryResolveRoundTeamId(CMD_ARGV(teamArgIndex), pTeamId))
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "unknown team \"%s\". Use team1/team2 or %s/%s.",
+                CMD_ARGV(teamArgIndex),
+                GetConfiguredTeamRoundName(kExpRoundTeam1),
+                GetConfiguredTeamRoundName(kExpRoundTeam2));
+        }
+        return false;
+    }
+
+    char requestedName[kMaxLabDummySpotNameLength];
+    BuildCommandArgumentString(nameArgIndex, requestedName, sizeof(requestedName));
+    return TryResolveTeamSpawnSpotName(requestedName, spotName, spotNameSize, useDefaultIfEmpty, failureReason, failureReasonSize);
+}
+
+void ExpTeamSpawnMarkCommand()
+{
+    RefreshFutureHooksMapState();
+
+    if (CMD_ARGC() < 2)
+    {
+        PrintLabDummyConsoleLine("usage: exp_team_spawn_mark <team> [name]");
+        return;
+    }
+
+    int teamId = kExpRoundTeamNone;
+    char spotName[kMaxLabDummySpotNameLength];
+    char failureReason[kMaxLabDummySpotFileFailureLength];
+    if (!TryGetTeamSpawnCommandArgs(1, 2, &teamId, spotName, sizeof(spotName), true, failureReason, sizeof(failureReason)))
+    {
+        PrintLabDummyConsoleLine("team spawn mark failed: %s", failureReason);
+        return;
+    }
+
+    CBasePlayer *pPlayer = FindFirstManagedPlayerOnRoundTeam(teamId, true);
+    if (pPlayer == NULL || pPlayer->pev == NULL)
+    {
+        PrintLabDummyConsoleLine(
+            "team spawn mark failed: no live player on %s is available to mark a spawn spot",
+            GetConfiguredTeamRoundName(teamId));
+        return;
+    }
+
+    Vector markedOrigin = pPlayer->pev->origin;
+    Vector markedAngles = pPlayer->pev->v_angle;
+    markedAngles.x = 0.0f;
+    markedAngles.z = 0.0f;
+
+    TeamSpawnSavedSpotRecord *spot = UpsertTeamSpawnSavedSpot(teamId, spotName, markedOrigin, markedAngles, failureReason, sizeof(failureReason));
+    if (spot == NULL)
+    {
+        PrintLabDummyConsoleLine("team spawn mark failed: %s", failureReason);
+        return;
+    }
+
+    strncpy_s(g_teamSpawnActiveSpotNames[teamId], sizeof(g_teamSpawnActiveSpotNames[teamId]), spot->name, _TRUNCATE);
+    const bool savedToDisk = SaveTeamSpawnSpotsForCurrentMap(failureReason, sizeof(failureReason));
+    LogTeamSpawnEvent(
+        "team_spawn_mark",
+        pPlayer,
+        teamId,
+        GetConfiguredTeamRoundName(teamId),
+        markedOrigin,
+        markedAngles,
+        kTeamSpawnSourceSavedSpot,
+        "mark",
+        spot->name,
+        kTeamSpawnSpotStorageSession,
+        savedToDisk ? "" : failureReason);
+
+    char origin[64];
+    FormatVector3(origin, sizeof(origin), markedOrigin);
+    PrintLabDummyConsoleLine(
+        "saved %s team spawn \"%s\" for map %s: origin=%s yaw=%.1f active=%s disk=%s",
+        GetConfiguredTeamRoundName(teamId),
+        spot->name,
+        GetCurrentMapName(),
+        origin,
+        markedAngles.y,
+        g_teamSpawnActiveSpotNames[teamId],
+        savedToDisk ? g_teamSpawnSpotsPath : failureReason);
+}
+
+void ExpTeamSpawnUnmarkCommand()
+{
+    RefreshFutureHooksMapState();
+
+    if (CMD_ARGC() < 3)
+    {
+        PrintLabDummyConsoleLine("usage: exp_team_spawn_unmark <team> <name>");
+        return;
+    }
+
+    int teamId = kExpRoundTeamNone;
+    char spotName[kMaxLabDummySpotNameLength];
+    char failureReason[kMaxLabDummySpotFileFailureLength];
+    if (!TryGetTeamSpawnCommandArgs(1, 2, &teamId, spotName, sizeof(spotName), false, failureReason, sizeof(failureReason)))
+    {
+        PrintLabDummyConsoleLine("team spawn unmark failed: %s", failureReason);
+        return;
+    }
+
+    TeamSpawnSavedSpotRecord removedSpot = {};
+    if (!RemoveTeamSpawnSavedSpot(teamId, spotName, &removedSpot, failureReason, sizeof(failureReason)))
+    {
+        PrintLabDummyConsoleLine("team spawn unmark failed: %s", failureReason);
+        return;
+    }
+
+    const bool savedToDisk = SaveTeamSpawnSpotsForCurrentMap(failureReason, sizeof(failureReason));
+    LogTeamSpawnEvent(
+        "team_spawn_unmark",
+        FindFirstManagedPlayerOnRoundTeam(teamId, false),
+        teamId,
+        GetConfiguredTeamRoundName(teamId),
+        removedSpot.origin,
+        removedSpot.angles,
+        kTeamSpawnSourceSavedSpot,
+        "unmark",
+        removedSpot.name,
+        GetTeamSpawnSpotStorageLabel(&removedSpot),
+        savedToDisk ? "" : failureReason);
+    PrintLabDummyConsoleLine(
+        "cleared %s team spawn \"%s\" for map %s. active=%s disk=%s",
+        GetConfiguredTeamRoundName(teamId),
+        removedSpot.name,
+        GetCurrentMapName(),
+        g_teamSpawnActiveSpotNames[teamId][0] != '\0' ? g_teamSpawnActiveSpotNames[teamId] : "none",
+        savedToDisk ? g_teamSpawnSpotsPath : failureReason);
+}
+
+void ExpTeamSpawnListCommand()
+{
+    RefreshFutureHooksMapState();
+    PrintTeamSpawnStatus();
+}
+
+void ExpTeamSpawnUseCommand()
+{
+    RefreshFutureHooksMapState();
+
+    if (CMD_ARGC() < 3)
+    {
+        PrintLabDummyConsoleLine("usage: exp_team_spawn_use <team> <name>");
+        return;
+    }
+
+    int teamId = kExpRoundTeamNone;
+    char spotName[kMaxLabDummySpotNameLength];
+    char failureReason[kMaxLabDummySpotFileFailureLength];
+    if (!TryGetTeamSpawnCommandArgs(1, 2, &teamId, spotName, sizeof(spotName), false, failureReason, sizeof(failureReason)))
+    {
+        PrintLabDummyConsoleLine("team spawn use failed: %s", failureReason);
+        return;
+    }
+
+    const TeamSpawnSavedSpotRecord *spot = FindTeamSpawnSavedSpotConst(teamId, spotName);
+    if (spot == NULL)
+    {
+        PrintLabDummyConsoleLine(
+            "team spawn use failed: %s team spawn \"%s\" was not found for map %s",
+            GetConfiguredTeamRoundName(teamId),
+            spotName,
+            GetCurrentMapName());
+        PrintTeamSpawnStatus();
+        return;
+    }
+
+    strncpy_s(g_teamSpawnActiveSpotNames[teamId], sizeof(g_teamSpawnActiveSpotNames[teamId]), spot->name, _TRUNCATE);
+    const bool savedToDisk = SaveTeamSpawnSpotsForCurrentMap(failureReason, sizeof(failureReason));
+    LogTeamSpawnEvent(
+        "team_spawn_use",
+        FindFirstManagedPlayerOnRoundTeam(teamId, false),
+        teamId,
+        GetConfiguredTeamRoundName(teamId),
+        spot->origin,
+        spot->angles,
+        kTeamSpawnSourceSavedSpot,
+        "selected_active_spot",
+        spot->name,
+        GetTeamSpawnSpotStorageLabel(spot),
+        savedToDisk ? "" : failureReason);
+    PrintLabDummyConsoleLine(
+        "active %s team spawn is now \"%s\" for map %s. Use exp_round_restart to respawn players there. disk=%s",
+        GetConfiguredTeamRoundName(teamId),
+        spot->name,
+        GetCurrentMapName(),
+        savedToDisk ? g_teamSpawnSpotsPath : failureReason);
+}
+
+void ExpTeamSpawnStatusCommand()
+{
+    RefreshFutureHooksMapState();
+    PrintTeamSpawnStatus();
 }
 
 bool TryResolveLabDummySpotName(
@@ -4315,6 +4905,1106 @@ bool TryGetLabDummySpotCommandName(int firstArgIndex, char *spotName, size_t spo
     return TryResolveLabDummySpotName(requestedName, spotName, spotNameSize, useDefaultIfEmpty, failureReason, failureReasonSize);
 }
 
+bool TryResolveTeamSpawnSpotName(
+    const char *requestedName,
+    char *buffer,
+    size_t bufferSize,
+    bool useDefaultIfEmpty,
+    char *failureReason,
+    size_t failureReasonSize)
+{
+    if (buffer == NULL || bufferSize == 0)
+    {
+        return false;
+    }
+
+    buffer[0] = '\0';
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    char trimmedName[kMaxLabDummySpotNameLength];
+    TrimCfgRequestString(requestedName, trimmedName, sizeof(trimmedName));
+    if (trimmedName[0] == '\0' && useDefaultIfEmpty)
+    {
+        strncpy_s(trimmedName, sizeof(trimmedName), kDefaultLabDummySpotName, _TRUNCATE);
+    }
+
+    if (trimmedName[0] == '\0')
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "team spawn spot name cannot be empty");
+        }
+        return false;
+    }
+
+    if (strlen(trimmedName) >= bufferSize)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "team spawn spot name \"%s\" is too long (max %u characters)",
+                trimmedName,
+                (unsigned int)(bufferSize - 1));
+        }
+        return false;
+    }
+
+    for (const char *cursor = trimmedName; *cursor != '\0'; ++cursor)
+    {
+        const unsigned char ch = (unsigned char)(*cursor);
+        if (ch < 32 || *cursor == '"' || *cursor == '\\' || *cursor == '/')
+        {
+            if (failureReason != NULL && failureReasonSize > 0)
+            {
+                _snprintf_s(
+                    failureReason,
+                    failureReasonSize,
+                    _TRUNCATE,
+                    "team spawn spot name \"%s\" contains unsupported characters",
+                    trimmedName);
+            }
+            return false;
+        }
+    }
+
+    strncpy_s(buffer, bufferSize, trimmedName, _TRUNCATE);
+    return true;
+}
+
+bool TryBuildTeamSpawnSpotsDirectoryPath(char *buffer, size_t bufferSize, char *failureReason, size_t failureReasonSize)
+{
+    if (buffer == NULL || bufferSize == 0)
+    {
+        return false;
+    }
+
+    buffer[0] = '\0';
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    char modRoot[kMaxLiveCfgPathLength];
+    if (!TryGetLiveModRootPath(modRoot, sizeof(modRoot)))
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "could not resolve the active hlserver_testbed mod root from hl.dll");
+        }
+        return false;
+    }
+
+    _snprintf_s(buffer, bufferSize, _TRUNCATE, "%s\\%s", modRoot, kTeamSpawnSpotsDirectoryName);
+    return buffer[0] != '\0';
+}
+
+bool TryBuildCurrentTeamSpawnSpotsPath(char *buffer, size_t bufferSize, char *failureReason, size_t failureReasonSize)
+{
+    if (buffer == NULL || bufferSize == 0)
+    {
+        return false;
+    }
+
+    buffer[0] = '\0';
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    const char *mapName = GetCurrentMapName();
+    if (!IsSafeLabDummyMapFileName(mapName))
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "could not resolve a safe team-spawn file name for map \"%s\"",
+                GetValueOrFallback(mapName, ""));
+        }
+        return false;
+    }
+
+    char directoryPath[kMaxLiveCfgPathLength];
+    if (!TryBuildTeamSpawnSpotsDirectoryPath(directoryPath, sizeof(directoryPath), failureReason, failureReasonSize))
+    {
+        return false;
+    }
+
+    _snprintf_s(buffer, bufferSize, _TRUNCATE, "%s\\%s.json", directoryPath, mapName);
+    return buffer[0] != '\0';
+}
+
+int FindTeamSpawnSavedSpotIndex(int teamId, const char *spotName)
+{
+    teamId = NormalizeRoundTeamId(teamId);
+    if (teamId == kExpRoundTeamNone || spotName == NULL || spotName[0] == '\0')
+    {
+        return -1;
+    }
+
+    for (int spotIndex = 0; spotIndex < g_teamSpawnSavedSpotCounts[teamId]; ++spotIndex)
+    {
+        const TeamSpawnSavedSpotRecord &spot = g_teamSpawnSavedSpots[teamId][spotIndex];
+        if (spot.valid && StringEqualsIgnoreCase(spot.name, spotName))
+        {
+            return spotIndex;
+        }
+    }
+
+    return -1;
+}
+
+TeamSpawnSavedSpotRecord *FindTeamSpawnSavedSpot(int teamId, const char *spotName)
+{
+    const int spotIndex = FindTeamSpawnSavedSpotIndex(teamId, spotName);
+    return spotIndex >= 0 ? &g_teamSpawnSavedSpots[teamId][spotIndex] : NULL;
+}
+
+const TeamSpawnSavedSpotRecord *FindTeamSpawnSavedSpotConst(int teamId, const char *spotName)
+{
+    const int spotIndex = FindTeamSpawnSavedSpotIndex(teamId, spotName);
+    return spotIndex >= 0 ? &g_teamSpawnSavedSpots[teamId][spotIndex] : NULL;
+}
+
+const TeamSpawnSavedSpotRecord *GetActiveTeamSpawnSavedSpot(int teamId)
+{
+    teamId = NormalizeRoundTeamId(teamId);
+    return teamId != kExpRoundTeamNone && g_teamSpawnActiveSpotNames[teamId][0] != '\0'
+        ? FindTeamSpawnSavedSpotConst(teamId, g_teamSpawnActiveSpotNames[teamId])
+        : NULL;
+}
+
+const TeamSpawnSavedSpotRecord *GetDefaultTeamSpawnSavedSpot(int teamId)
+{
+    return FindTeamSpawnSavedSpotConst(teamId, kDefaultLabDummySpotName);
+}
+
+void BuildTeamSpawnNamesSummary(int teamId, char *buffer, size_t bufferSize)
+{
+    if (buffer == NULL || bufferSize == 0)
+    {
+        return;
+    }
+
+    buffer[0] = '\0';
+    teamId = NormalizeRoundTeamId(teamId);
+    if (teamId == kExpRoundTeamNone)
+    {
+        return;
+    }
+
+    for (int spotIndex = 0; spotIndex < g_teamSpawnSavedSpotCounts[teamId]; ++spotIndex)
+    {
+        const TeamSpawnSavedSpotRecord &spot = g_teamSpawnSavedSpots[teamId][spotIndex];
+        if (!spot.valid)
+        {
+            continue;
+        }
+
+        if (buffer[0] != '\0')
+        {
+            strncat_s(buffer, bufferSize, ", ", _TRUNCATE);
+        }
+
+        strncat_s(buffer, bufferSize, spot.name, _TRUNCATE);
+    }
+}
+
+void SetTeamSpawnFailureInfo(
+    TeamSpawnFailureInfo *failure,
+    int teamId,
+    const char *code,
+    const char *source,
+    const char *candidate,
+    const char *reason,
+    const char *spotName,
+    const char *spotStorage)
+{
+    if (failure == NULL)
+    {
+        return;
+    }
+
+    ClearTeamSpawnFailureInfo(failure);
+    failure->teamId = NormalizeRoundTeamId(teamId);
+    strncpy_s(failure->code, sizeof(failure->code), code != NULL ? code : "", _TRUNCATE);
+    strncpy_s(failure->source, sizeof(failure->source), source != NULL ? source : "", _TRUNCATE);
+    strncpy_s(failure->candidate, sizeof(failure->candidate), candidate != NULL ? candidate : "", _TRUNCATE);
+    strncpy_s(failure->reason, sizeof(failure->reason), reason != NULL ? reason : "", _TRUNCATE);
+    strncpy_s(failure->spotName, sizeof(failure->spotName), spotName != NULL ? spotName : "", _TRUNCATE);
+    strncpy_s(failure->spotStorage, sizeof(failure->spotStorage), spotStorage != NULL ? spotStorage : "", _TRUNCATE);
+}
+
+void RememberTeamSpawnFailure(int teamId, const TeamSpawnFailureInfo &failure)
+{
+    teamId = NormalizeRoundTeamId(teamId);
+    if (teamId == kExpRoundTeamNone)
+    {
+        return;
+    }
+
+    g_teamSpawnLastFailure[teamId] = failure;
+    FormatFutureGameplayTimestamp(g_teamSpawnLastFailureAt[teamId], sizeof(g_teamSpawnLastFailureAt[teamId]));
+}
+
+void RememberTeamSpawnApplied(CBasePlayer *pPlayer, const TeamSpawnSelection &selection, const char *reason)
+{
+    const int teamId = NormalizeRoundTeamId(selection.teamId);
+    if (teamId == kExpRoundTeamNone)
+    {
+        return;
+    }
+
+    TeamSpawnRuntimeStatus &status = g_teamSpawnLastApplied[teamId];
+    ClearTeamSpawnRuntimeStatus(&status);
+    status.valid = true;
+    status.teamId = teamId;
+    status.roundNumber = g_expRoundState.roundNumber;
+    status.origin = selection.origin;
+    status.angles = selection.angles;
+    strncpy_s(status.playerName, sizeof(status.playerName), GetSafePlayerName(pPlayer), _TRUNCATE);
+    status.playerEntIndex = GetPlayerEntityIndex(pPlayer);
+    status.playerUserId = GetPlayerUserId(pPlayer);
+    strncpy_s(status.source, sizeof(status.source), selection.source, _TRUNCATE);
+    strncpy_s(status.candidate, sizeof(status.candidate), selection.candidate, _TRUNCATE);
+    strncpy_s(status.spotName, sizeof(status.spotName), selection.spotName, _TRUNCATE);
+    strncpy_s(status.spotStorage, sizeof(status.spotStorage), selection.spotStorage, _TRUNCATE);
+    strncpy_s(status.reason, sizeof(status.reason), reason != NULL ? reason : "", _TRUNCATE);
+}
+
+TeamSpawnSavedSpotRecord *UpsertTeamSpawnSavedSpot(
+    int teamId,
+    const char *spotName,
+    const Vector &origin,
+    const Vector &angles,
+    char *failureReason,
+    size_t failureReasonSize)
+{
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    teamId = NormalizeRoundTeamId(teamId);
+    if (teamId == kExpRoundTeamNone)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "team spawn team id is invalid");
+        }
+        return NULL;
+    }
+
+    int spotIndex = FindTeamSpawnSavedSpotIndex(teamId, spotName);
+    if (spotIndex < 0)
+    {
+        if (g_teamSpawnSavedSpotCounts[teamId] >= ARRAYSIZE(g_teamSpawnSavedSpots[teamId]))
+        {
+            if (failureReason != NULL && failureReasonSize > 0)
+            {
+                _snprintf_s(
+                    failureReason,
+                    failureReasonSize,
+                    _TRUNCATE,
+                    "cannot store %s spawn spot \"%s\": this team already has %u saved spots",
+                    GetConfiguredTeamRoundName(teamId),
+                    GetValueOrFallback(spotName, ""),
+                    (unsigned int)ARRAYSIZE(g_teamSpawnSavedSpots[teamId]));
+            }
+            return NULL;
+        }
+
+        spotIndex = g_teamSpawnSavedSpotCounts[teamId]++;
+        ClearTeamSpawnSavedSpotRecord(&g_teamSpawnSavedSpots[teamId][spotIndex]);
+    }
+
+    TeamSpawnSavedSpotRecord *spot = &g_teamSpawnSavedSpots[teamId][spotIndex];
+    char timestamp[kMaxLabDummySpotTimestampLength];
+    FormatFutureGameplayTimestamp(timestamp, sizeof(timestamp));
+
+    char createdAt[kMaxLabDummySpotTimestampLength];
+    strncpy_s(createdAt, sizeof(createdAt), spot->createdAt[0] != '\0' ? spot->createdAt : timestamp, _TRUNCATE);
+    char note[kMaxLabDummySpotNoteLength];
+    strncpy_s(note, sizeof(note), spot->note, _TRUNCATE);
+
+    Vector normalizedAngles = angles;
+    normalizedAngles.x = 0.0f;
+    normalizedAngles.z = 0.0f;
+    StoreTeamSpawnSavedSpotRecord(
+        spot,
+        teamId,
+        spotName,
+        origin,
+        normalizedAngles,
+        createdAt,
+        timestamp,
+        note,
+        false);
+    return spot;
+}
+
+bool RemoveTeamSpawnSavedSpot(int teamId, const char *spotName, TeamSpawnSavedSpotRecord *removedSpot, char *failureReason, size_t failureReasonSize)
+{
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    teamId = NormalizeRoundTeamId(teamId);
+    const int spotIndex = FindTeamSpawnSavedSpotIndex(teamId, spotName);
+    if (teamId == kExpRoundTeamNone || spotIndex < 0)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "%s spawn spot \"%s\" does not exist for map %s",
+                GetConfiguredTeamRoundName(teamId),
+                GetValueOrFallback(spotName, ""),
+                GetCurrentMapName());
+        }
+        return false;
+    }
+
+    if (removedSpot != NULL)
+    {
+        *removedSpot = g_teamSpawnSavedSpots[teamId][spotIndex];
+    }
+
+    for (int index = spotIndex; index + 1 < g_teamSpawnSavedSpotCounts[teamId]; ++index)
+    {
+        g_teamSpawnSavedSpots[teamId][index] = g_teamSpawnSavedSpots[teamId][index + 1];
+    }
+
+    if (g_teamSpawnSavedSpotCounts[teamId] > 0)
+    {
+        --g_teamSpawnSavedSpotCounts[teamId];
+        ClearTeamSpawnSavedSpotRecord(&g_teamSpawnSavedSpots[teamId][g_teamSpawnSavedSpotCounts[teamId]]);
+    }
+
+    if (StringEqualsIgnoreCase(g_teamSpawnActiveSpotNames[teamId], spotName))
+    {
+        g_teamSpawnActiveSpotNames[teamId][0] = '\0';
+    }
+
+    return true;
+}
+
+bool TryParseTeamSpawnSpotObject(LabDummyJsonCursor *cursor, TeamSpawnSavedSpotRecord *spot, std::string *failureReason)
+{
+    if (spot == NULL)
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor != NULL ? cursor->position : 0, "team spawn spot destination is missing");
+    }
+
+    ClearTeamSpawnSavedSpotRecord(spot);
+    if (!TryConsumeLabDummyJsonChar(cursor, '{'))
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor != NULL ? cursor->position : 0, "expected '{' for team spawn spot");
+    }
+
+    bool hasName = false;
+    bool hasOrigin = false;
+    bool hasYaw = false;
+    bool hasTeam = false;
+
+    SkipLabDummyJsonWhitespace(cursor);
+    if (TryConsumeLabDummyJsonChar(cursor, '}'))
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor->position, "team spawn spot object is missing required fields");
+    }
+
+    while (cursor != NULL && cursor->position < cursor->length)
+    {
+        std::string key;
+        if (!TryParseLabDummyJsonString(cursor, &key, failureReason))
+        {
+            return false;
+        }
+
+        if (!TryConsumeLabDummyJsonChar(cursor, ':'))
+        {
+            return SetLabDummyJsonParseFailure(failureReason, cursor->position, "expected ':' after team spawn key");
+        }
+
+        if (key == "team")
+        {
+            std::string teamValue;
+            if (!TryParseLabDummyJsonString(cursor, &teamValue, failureReason))
+            {
+                return false;
+            }
+
+            if (StringEqualsIgnoreCase(teamValue.c_str(), "team1"))
+            {
+                spot->teamId = kExpRoundTeam1;
+            }
+            else if (StringEqualsIgnoreCase(teamValue.c_str(), "team2"))
+            {
+                spot->teamId = kExpRoundTeam2;
+            }
+            else
+            {
+                return SetLabDummyJsonParseFailure(failureReason, cursor->position, "team spawn spot has unknown team id");
+            }
+
+            hasTeam = true;
+        }
+        else if (key == "name")
+        {
+            std::string name;
+            if (!TryParseLabDummyJsonString(cursor, &name, failureReason))
+            {
+                return false;
+            }
+
+            strncpy_s(spot->name, sizeof(spot->name), name.c_str(), _TRUNCATE);
+            hasName = true;
+        }
+        else if (key == "origin")
+        {
+            if (!TryParseLabDummyJsonVector3(cursor, &spot->origin, failureReason))
+            {
+                return false;
+            }
+
+            hasOrigin = true;
+        }
+        else if (key == "yaw")
+        {
+            double yawValue = 0.0;
+            if (!TryParseLabDummyJsonNumber(cursor, &yawValue, failureReason))
+            {
+                return false;
+            }
+
+            spot->angles = Vector(0.0f, (float)yawValue, 0.0f);
+            hasYaw = true;
+        }
+        else if (key == "created_at")
+        {
+            std::string createdAt;
+            if (!TryParseLabDummyJsonString(cursor, &createdAt, failureReason))
+            {
+                return false;
+            }
+
+            strncpy_s(spot->createdAt, sizeof(spot->createdAt), createdAt.c_str(), _TRUNCATE);
+        }
+        else if (key == "updated_at")
+        {
+            std::string updatedAt;
+            if (!TryParseLabDummyJsonString(cursor, &updatedAt, failureReason))
+            {
+                return false;
+            }
+
+            strncpy_s(spot->updatedAt, sizeof(spot->updatedAt), updatedAt.c_str(), _TRUNCATE);
+        }
+        else if (key == "note")
+        {
+            std::string note;
+            if (!TryParseLabDummyJsonString(cursor, &note, failureReason))
+            {
+                return false;
+            }
+
+            strncpy_s(spot->note, sizeof(spot->note), note.c_str(), _TRUNCATE);
+        }
+        else
+        {
+            if (!TrySkipLabDummyJsonValue(cursor, failureReason))
+            {
+                return false;
+            }
+        }
+
+        if (TryConsumeLabDummyJsonChar(cursor, '}'))
+        {
+            break;
+        }
+
+        if (!TryConsumeLabDummyJsonChar(cursor, ','))
+        {
+            return SetLabDummyJsonParseFailure(failureReason, cursor->position, "expected ',' or '}' in team spawn spot object");
+        }
+    }
+
+    if (!hasName || !hasOrigin || !hasYaw || !hasTeam)
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor->position, "team spawn spot object is missing team, name, origin, or yaw");
+    }
+
+    spot->valid = true;
+    spot->loadedFromDisk = true;
+    return true;
+}
+
+bool TryParseTeamSpawnFileText(
+    const std::string &jsonText,
+    std::vector<TeamSpawnSavedSpotRecord> *team1Spots,
+    std::vector<TeamSpawnSavedSpotRecord> *team2Spots,
+    std::string *team1ActiveSpotName,
+    std::string *team2ActiveSpotName,
+    std::string *failureReason)
+{
+    if (team1Spots == NULL || team2Spots == NULL || team1ActiveSpotName == NULL || team2ActiveSpotName == NULL)
+    {
+        return false;
+    }
+
+    team1Spots->clear();
+    team2Spots->clear();
+    team1ActiveSpotName->clear();
+    team2ActiveSpotName->clear();
+    if (failureReason != NULL)
+    {
+        failureReason->clear();
+    }
+
+    LabDummyJsonCursor cursor = {jsonText.c_str(), jsonText.length(), 0};
+    if (!TryConsumeLabDummyJsonChar(&cursor, '{'))
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor.position, "expected a JSON object at the root");
+    }
+
+    SkipLabDummyJsonWhitespace(&cursor);
+    if (TryConsumeLabDummyJsonChar(&cursor, '}'))
+    {
+        return true;
+    }
+
+    while (cursor.position < cursor.length)
+    {
+        std::string key;
+        if (!TryParseLabDummyJsonString(&cursor, &key, failureReason))
+        {
+            return false;
+        }
+
+        if (!TryConsumeLabDummyJsonChar(&cursor, ':'))
+        {
+            return SetLabDummyJsonParseFailure(failureReason, cursor.position, "expected ':' after root key");
+        }
+
+        if (key == "teams")
+        {
+            if (!TryConsumeLabDummyJsonChar(&cursor, '['))
+            {
+                return SetLabDummyJsonParseFailure(failureReason, cursor.position, "expected '[' for teams array");
+            }
+
+            SkipLabDummyJsonWhitespace(&cursor);
+            if (!TryConsumeLabDummyJsonChar(&cursor, ']'))
+            {
+                while (true)
+                {
+                    if (!TryConsumeLabDummyJsonChar(&cursor, '{'))
+                    {
+                        return SetLabDummyJsonParseFailure(failureReason, cursor.position, "expected '{' for team spawn team object");
+                    }
+
+                    int teamId = kExpRoundTeamNone;
+                    std::string activeSpotName;
+                    std::vector<TeamSpawnSavedSpotRecord> teamSpots;
+
+                    SkipLabDummyJsonWhitespace(&cursor);
+                    if (TryConsumeLabDummyJsonChar(&cursor, '}'))
+                    {
+                        return SetLabDummyJsonParseFailure(failureReason, cursor.position, "team spawn team object is missing required fields");
+                    }
+
+                    while (cursor.position < cursor.length)
+                    {
+                        std::string teamKey;
+                        if (!TryParseLabDummyJsonString(&cursor, &teamKey, failureReason))
+                        {
+                            return false;
+                        }
+
+                        if (!TryConsumeLabDummyJsonChar(&cursor, ':'))
+                        {
+                            return SetLabDummyJsonParseFailure(failureReason, cursor.position, "expected ':' after team object key");
+                        }
+
+                        if (teamKey == "id")
+                        {
+                            std::string idValue;
+                            if (!TryParseLabDummyJsonString(&cursor, &idValue, failureReason))
+                            {
+                                return false;
+                            }
+
+                            if (StringEqualsIgnoreCase(idValue.c_str(), "team1"))
+                            {
+                                teamId = kExpRoundTeam1;
+                            }
+                            else if (StringEqualsIgnoreCase(idValue.c_str(), "team2"))
+                            {
+                                teamId = kExpRoundTeam2;
+                            }
+                            else
+                            {
+                                return SetLabDummyJsonParseFailure(failureReason, cursor.position, "team spawn file has unknown team bucket id");
+                            }
+                        }
+                        else if (teamKey == "active_spot")
+                        {
+                            if (!TryParseLabDummyJsonString(&cursor, &activeSpotName, failureReason))
+                            {
+                                return false;
+                            }
+                        }
+                        else if (teamKey == "spots")
+                        {
+                            if (!TryConsumeLabDummyJsonChar(&cursor, '['))
+                            {
+                                return SetLabDummyJsonParseFailure(failureReason, cursor.position, "expected '[' for team spots array");
+                            }
+
+                            SkipLabDummyJsonWhitespace(&cursor);
+                            if (!TryConsumeLabDummyJsonChar(&cursor, ']'))
+                            {
+                                while (true)
+                                {
+                                    TeamSpawnSavedSpotRecord spot = {};
+                                    if (!TryParseTeamSpawnSpotObject(&cursor, &spot, failureReason))
+                                    {
+                                        return false;
+                                    }
+
+                                    if (spot.teamId == kExpRoundTeamNone)
+                                    {
+                                        spot.teamId = teamId;
+                                    }
+
+                                    if (teamId != kExpRoundTeamNone && spot.teamId != teamId)
+                                    {
+                                        return SetLabDummyJsonParseFailure(failureReason, cursor.position, "team spawn spot team does not match its containing team bucket");
+                                    }
+
+                                    for (size_t existingIndex = 0; existingIndex < teamSpots.size(); ++existingIndex)
+                                    {
+                                        if (StringEqualsIgnoreCase(teamSpots[existingIndex].name, spot.name))
+                                        {
+                                            char duplicateMessage[256];
+                                            _snprintf_s(
+                                                duplicateMessage,
+                                                sizeof(duplicateMessage),
+                                                _TRUNCATE,
+                                                "duplicate team spawn spot \"%s\" was found in %s",
+                                                spot.name,
+                                                GetRoundTeamBucketKey(teamId));
+                                            return SetLabDummyJsonParseFailure(failureReason, cursor.position, duplicateMessage);
+                                        }
+                                    }
+
+                                    teamSpots.push_back(spot);
+                                    if (TryConsumeLabDummyJsonChar(&cursor, ']'))
+                                    {
+                                        break;
+                                    }
+
+                                    if (!TryConsumeLabDummyJsonChar(&cursor, ','))
+                                    {
+                                        return SetLabDummyJsonParseFailure(failureReason, cursor.position, "expected ',' or ']' in team spots array");
+                                    }
+                                }
+                            }
+                        }
+                        else
+                        {
+                            if (!TrySkipLabDummyJsonValue(&cursor, failureReason))
+                            {
+                                return false;
+                            }
+                        }
+
+                        if (TryConsumeLabDummyJsonChar(&cursor, '}'))
+                        {
+                            break;
+                        }
+
+                        if (!TryConsumeLabDummyJsonChar(&cursor, ','))
+                        {
+                            return SetLabDummyJsonParseFailure(failureReason, cursor.position, "expected ',' or '}' in team object");
+                        }
+                    }
+
+                    if (teamId == kExpRoundTeamNone)
+                    {
+                        return SetLabDummyJsonParseFailure(failureReason, cursor.position, "team spawn file team object is missing id");
+                    }
+
+                    if (teamId == kExpRoundTeam1)
+                    {
+                        *team1Spots = teamSpots;
+                        *team1ActiveSpotName = activeSpotName;
+                    }
+                    else
+                    {
+                        *team2Spots = teamSpots;
+                        *team2ActiveSpotName = activeSpotName;
+                    }
+
+                    if (TryConsumeLabDummyJsonChar(&cursor, ']'))
+                    {
+                        break;
+                    }
+
+                    if (!TryConsumeLabDummyJsonChar(&cursor, ','))
+                    {
+                        return SetLabDummyJsonParseFailure(failureReason, cursor.position, "expected ',' or ']' in teams array");
+                    }
+                }
+            }
+        }
+        else
+        {
+            if (!TrySkipLabDummyJsonValue(&cursor, failureReason))
+            {
+                return false;
+            }
+        }
+
+        if (TryConsumeLabDummyJsonChar(&cursor, '}'))
+        {
+            break;
+        }
+
+        if (!TryConsumeLabDummyJsonChar(&cursor, ','))
+        {
+            return SetLabDummyJsonParseFailure(failureReason, cursor.position, "expected ',' or '}' in root object");
+        }
+    }
+
+    SkipLabDummyJsonWhitespace(&cursor);
+    if (cursor.position != cursor.length)
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor.position, "unexpected trailing content after JSON object");
+    }
+
+    return true;
+}
+
+bool SaveTeamSpawnSpotsForCurrentMap(char *failureReason, size_t failureReasonSize)
+{
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    char filePath[kMaxLiveCfgPathLength];
+    if (!TryBuildCurrentTeamSpawnSpotsPath(filePath, sizeof(filePath), failureReason, failureReasonSize))
+    {
+        return false;
+    }
+
+    strncpy_s(g_teamSpawnSpotsPath, sizeof(g_teamSpawnSpotsPath), filePath, _TRUNCATE);
+
+    for (int teamId = kExpRoundTeam1; teamId <= kExpRoundTeam2; ++teamId)
+    {
+        if (g_teamSpawnActiveSpotNames[teamId][0] != '\0' && FindTeamSpawnSavedSpotIndex(teamId, g_teamSpawnActiveSpotNames[teamId]) < 0)
+        {
+            g_teamSpawnActiveSpotNames[teamId][0] = '\0';
+        }
+    }
+
+    if (g_teamSpawnSavedSpotCounts[kExpRoundTeam1] <= 0 && g_teamSpawnSavedSpotCounts[kExpRoundTeam2] <= 0)
+    {
+        if (DeleteFileA(filePath) || GetLastError() == ERROR_FILE_NOT_FOUND)
+        {
+            return true;
+        }
+
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "could not remove empty team-spawns file %s (win32=%lu)",
+                filePath,
+                (unsigned long)GetLastError());
+        }
+        return false;
+    }
+
+    char directoryPath[kMaxLiveCfgPathLength];
+    if (!TryBuildTeamSpawnSpotsDirectoryPath(directoryPath, sizeof(directoryPath), failureReason, failureReasonSize))
+    {
+        return false;
+    }
+
+    if (!TryEnsureLabDummyDirectoryExists(directoryPath, failureReason, failureReasonSize))
+    {
+        return false;
+    }
+
+    std::string jsonText;
+    jsonText += "{\n";
+    jsonText += "  \"map\": \"";
+    jsonText += EscapeLabDummyJsonString(GetCurrentMapName());
+    jsonText += "\",\n";
+    jsonText += "  \"teams\": [\n";
+
+    for (int teamId = kExpRoundTeam1; teamId <= kExpRoundTeam2; ++teamId)
+    {
+        jsonText += "    {\n";
+        jsonText += "      \"id\": \"";
+        jsonText += GetRoundTeamBucketKey(teamId);
+        jsonText += "\",\n";
+        jsonText += "      \"name\": \"";
+        jsonText += EscapeLabDummyJsonString(GetConfiguredTeamRoundName(teamId));
+        jsonText += "\",\n";
+        jsonText += "      \"active_spot\": \"";
+        jsonText += EscapeLabDummyJsonString(g_teamSpawnActiveSpotNames[teamId]);
+        jsonText += "\",\n";
+        jsonText += "      \"spots\": [\n";
+
+        for (int spotIndex = 0; spotIndex < g_teamSpawnSavedSpotCounts[teamId]; ++spotIndex)
+        {
+            const TeamSpawnSavedSpotRecord &spot = g_teamSpawnSavedSpots[teamId][spotIndex];
+            if (!spot.valid)
+            {
+                continue;
+            }
+
+            char numberBuffer[96];
+            _snprintf_s(
+                numberBuffer,
+                sizeof(numberBuffer),
+                _TRUNCATE,
+                "          \"origin\": [%.3f, %.3f, %.3f],\n          \"yaw\": %.3f,\n",
+                spot.origin.x,
+                spot.origin.y,
+                spot.origin.z,
+                spot.angles.y);
+
+            jsonText += "        {\n";
+            jsonText += "          \"team\": \"";
+            jsonText += GetRoundTeamBucketKey(teamId);
+            jsonText += "\",\n";
+            jsonText += "          \"name\": \"";
+            jsonText += EscapeLabDummyJsonString(spot.name);
+            jsonText += "\",\n";
+            jsonText += numberBuffer;
+            jsonText += "          \"created_at\": \"";
+            jsonText += EscapeLabDummyJsonString(spot.createdAt);
+            jsonText += "\",\n";
+            jsonText += "          \"updated_at\": \"";
+            jsonText += EscapeLabDummyJsonString(spot.updatedAt);
+            jsonText += "\"";
+            if (spot.note[0] != '\0')
+            {
+                jsonText += ",\n          \"note\": \"";
+                jsonText += EscapeLabDummyJsonString(spot.note);
+                jsonText += "\"";
+            }
+            jsonText += "\n        }";
+            if (spotIndex + 1 < g_teamSpawnSavedSpotCounts[teamId])
+            {
+                jsonText += ",";
+            }
+            jsonText += "\n";
+        }
+
+        jsonText += "      ]\n";
+        jsonText += "    }";
+        if (teamId != kExpRoundTeam2)
+        {
+            jsonText += ",";
+        }
+        jsonText += "\n";
+    }
+
+    jsonText += "  ]\n";
+    jsonText += "}\n";
+
+    char tempPath[kMaxLiveCfgPathLength];
+    _snprintf_s(tempPath, sizeof(tempPath), _TRUNCATE, "%s.tmp", filePath);
+
+    FILE *file = NULL;
+    if (fopen_s(&file, tempPath, "wb") != 0 || file == NULL)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(failureReason, failureReasonSize, _TRUNCATE, "could not write temporary team-spawns file %s", tempPath);
+        }
+        return false;
+    }
+
+    const size_t bytesWritten = fwrite(jsonText.data(), 1, jsonText.length(), file);
+    fclose(file);
+    if (bytesWritten != jsonText.length())
+    {
+        DeleteFileA(tempPath);
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "could not fully write team-spawns file %s (expected %u bytes, wrote %u)",
+                tempPath,
+                (unsigned int)jsonText.length(),
+                (unsigned int)bytesWritten);
+        }
+        return false;
+    }
+
+    if (!MoveFileExA(tempPath, filePath, MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED))
+    {
+        const DWORD error = GetLastError();
+        DeleteFileA(tempPath);
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "could not finalize team-spawns file %s (win32=%lu)",
+                filePath,
+                (unsigned long)error);
+        }
+        return false;
+    }
+
+    return true;
+}
+
+void LoadTeamSpawnSpotsForCurrentMap()
+{
+    ClearAllTeamSpawnSavedSpots();
+
+    char filePath[kMaxLiveCfgPathLength];
+    char failureReason[kMaxLabDummySpotFileFailureLength];
+    if (!TryBuildCurrentTeamSpawnSpotsPath(filePath, sizeof(filePath), failureReason, sizeof(failureReason)))
+    {
+        strncpy_s(g_teamSpawnSpotsLoadFailure, sizeof(g_teamSpawnSpotsLoadFailure), failureReason, _TRUNCATE);
+        PrintLabDummyConsoleLine("team spawn spots load failed: %s", failureReason);
+        return;
+    }
+
+    strncpy_s(g_teamSpawnSpotsPath, sizeof(g_teamSpawnSpotsPath), filePath, _TRUNCATE);
+    if (!FileExists(filePath))
+    {
+        return;
+    }
+
+    std::string fileContents;
+    if (!TryReadLabDummySpotsFile(filePath, &fileContents, failureReason, sizeof(failureReason)))
+    {
+        strncpy_s(g_teamSpawnSpotsLoadFailure, sizeof(g_teamSpawnSpotsLoadFailure), failureReason, _TRUNCATE);
+        PrintLabDummyConsoleLine("team spawn spots load failed for map %s: %s", GetCurrentMapName(), failureReason);
+        return;
+    }
+
+    std::vector<TeamSpawnSavedSpotRecord> loadedTeam1Spots;
+    std::vector<TeamSpawnSavedSpotRecord> loadedTeam2Spots;
+    std::string team1ActiveSpotName;
+    std::string team2ActiveSpotName;
+    std::string parseFailure;
+    if (!TryParseTeamSpawnFileText(fileContents, &loadedTeam1Spots, &loadedTeam2Spots, &team1ActiveSpotName, &team2ActiveSpotName, &parseFailure))
+    {
+        strncpy_s(g_teamSpawnSpotsLoadFailure, sizeof(g_teamSpawnSpotsLoadFailure), parseFailure.c_str(), _TRUNCATE);
+        PrintLabDummyConsoleLine("team spawn spots load failed for map %s: %s", GetCurrentMapName(), parseFailure.c_str());
+        return;
+    }
+
+    if (loadedTeam1Spots.size() > kMaxTeamSpawnSpotsPerTeam || loadedTeam2Spots.size() > kMaxTeamSpawnSpotsPerTeam)
+    {
+        _snprintf_s(
+            g_teamSpawnSpotsLoadFailure,
+            sizeof(g_teamSpawnSpotsLoadFailure),
+            _TRUNCATE,
+            "team spawn file has too many entries (team1=%u team2=%u max=%u)",
+            (unsigned int)loadedTeam1Spots.size(),
+            (unsigned int)loadedTeam2Spots.size(),
+            (unsigned int)kMaxTeamSpawnSpotsPerTeam);
+        PrintLabDummyConsoleLine("team spawn spots load failed for map %s: %s", GetCurrentMapName(), g_teamSpawnSpotsLoadFailure);
+        return;
+    }
+
+    for (size_t spotIndex = 0; spotIndex < loadedTeam1Spots.size(); ++spotIndex)
+    {
+        g_teamSpawnSavedSpots[kExpRoundTeam1][spotIndex] = loadedTeam1Spots[spotIndex];
+    }
+    for (size_t spotIndex = 0; spotIndex < loadedTeam2Spots.size(); ++spotIndex)
+    {
+        g_teamSpawnSavedSpots[kExpRoundTeam2][spotIndex] = loadedTeam2Spots[spotIndex];
+    }
+
+    g_teamSpawnSavedSpotCounts[kExpRoundTeam1] = (int)loadedTeam1Spots.size();
+    g_teamSpawnSavedSpotCounts[kExpRoundTeam2] = (int)loadedTeam2Spots.size();
+    g_teamSpawnSpotsLoadFailure[0] = '\0';
+
+    if (!team1ActiveSpotName.empty())
+    {
+        if (FindTeamSpawnSavedSpotIndex(kExpRoundTeam1, team1ActiveSpotName.c_str()) >= 0)
+        {
+            strncpy_s(g_teamSpawnActiveSpotNames[kExpRoundTeam1], sizeof(g_teamSpawnActiveSpotNames[kExpRoundTeam1]), team1ActiveSpotName.c_str(), _TRUNCATE);
+        }
+        else
+        {
+            _snprintf_s(
+                g_teamSpawnSpotsLoadFailure,
+                sizeof(g_teamSpawnSpotsLoadFailure),
+                _TRUNCATE,
+                "active team1 spawn \"%s\" was not found in %s; cleared active selection",
+                team1ActiveSpotName.c_str(),
+                filePath);
+        }
+    }
+
+    if (!team2ActiveSpotName.empty())
+    {
+        if (FindTeamSpawnSavedSpotIndex(kExpRoundTeam2, team2ActiveSpotName.c_str()) >= 0)
+        {
+            strncpy_s(g_teamSpawnActiveSpotNames[kExpRoundTeam2], sizeof(g_teamSpawnActiveSpotNames[kExpRoundTeam2]), team2ActiveSpotName.c_str(), _TRUNCATE);
+        }
+        else if (g_teamSpawnSpotsLoadFailure[0] == '\0')
+        {
+            _snprintf_s(
+                g_teamSpawnSpotsLoadFailure,
+                sizeof(g_teamSpawnSpotsLoadFailure),
+                _TRUNCATE,
+                "active team2 spawn \"%s\" was not found in %s; cleared active selection",
+                team2ActiveSpotName.c_str(),
+                filePath);
+        }
+    }
+
+    if (g_teamSpawnSavedSpotCounts[kExpRoundTeam1] > 0 || g_teamSpawnSavedSpotCounts[kExpRoundTeam2] > 0)
+    {
+        PrintLabDummyConsoleLine(
+            "loaded persisted team spawn spots for map %s from %s: %s=%d active=%s | %s=%d active=%s",
+            GetCurrentMapName(),
+            filePath,
+            GetConfiguredTeamRoundName(kExpRoundTeam1),
+            g_teamSpawnSavedSpotCounts[kExpRoundTeam1],
+            g_teamSpawnActiveSpotNames[kExpRoundTeam1][0] != '\0' ? g_teamSpawnActiveSpotNames[kExpRoundTeam1] : "none",
+            GetConfiguredTeamRoundName(kExpRoundTeam2),
+            g_teamSpawnSavedSpotCounts[kExpRoundTeam2],
+            g_teamSpawnActiveSpotNames[kExpRoundTeam2][0] != '\0' ? g_teamSpawnActiveSpotNames[kExpRoundTeam2] : "none");
+    }
+
+    if (g_teamSpawnSpotsLoadFailure[0] != '\0')
+    {
+        PrintLabDummyConsoleLine("team spawn spots load warning: %s", g_teamSpawnSpotsLoadFailure);
+    }
+}
+
 bool TryResolveLiveCfgSelection(const char *requestedPath, ResolvedLiveCfgSelection *pSelection, char *failureReason, size_t failureReasonSize)
 {
     if (failureReason != NULL && failureReasonSize > 0)
@@ -4696,7 +6386,9 @@ void RefreshFutureHooksMapState()
     strncpy_s(g_futureHooksMapName, sizeof(g_futureHooksMapName), currentMapName, _TRUNCATE);
     ClearRoundRuntimeState();
     ResetGlockLabDummyState();
+    ClearAllTeamSpawnSavedSpots();
     LoadLabDummySpotsForCurrentMap();
+    LoadTeamSpawnSpotsForCurrentMap();
 }
 
 bool IsLabDummyClassname(const char *classname)
@@ -4827,6 +6519,382 @@ void ClearAllLabDummyEntities(const char *reason)
 {
     RemoveLabDummyEntities(reason);
     ClearGlockLabDummyRuntimeState();
+}
+
+void ApplyPlayerSpawnTransform(CBasePlayer *pPlayer, const Vector &origin, const Vector &angles)
+{
+    if (pPlayer == NULL || pPlayer->pev == NULL)
+    {
+        return;
+    }
+
+    UTIL_SetOrigin(pPlayer->pev, origin);
+    pPlayer->pev->origin = origin;
+    pPlayer->pev->v_angle = angles;
+    pPlayer->pev->velocity = g_vecZero;
+    pPlayer->pev->basevelocity = g_vecZero;
+    pPlayer->pev->angles = angles;
+    pPlayer->pev->punchangle = g_vecZero;
+    pPlayer->pev->fixangle = TRUE;
+}
+
+bool TryBuildTeamSpawnCandidateTransform(
+    const TeamSpawnSavedSpotRecord &spot,
+    CBasePlayer *pPlayer,
+    const TeamSpawnPlacementCandidate &candidate,
+    Vector *pOrigin,
+    Vector *pAngles,
+    char *candidateLabel,
+    size_t candidateLabelSize,
+    char *failureCode,
+    size_t failureCodeSize,
+    char *failureReason,
+    size_t failureReasonSize)
+{
+    Vector referenceAngles = spot.angles;
+    referenceAngles.x = 0.0f;
+    referenceAngles.z = 0.0f;
+    UTIL_MakeVectors(referenceAngles);
+
+    Vector desiredOrigin = spot.origin +
+        (gpGlobals->v_forward * candidate.forwardOffset) +
+        (gpGlobals->v_right * candidate.rightOffset);
+    desiredOrigin.z += candidate.upOffset;
+
+    strncpy_s(candidateLabel, candidateLabelSize, candidate.label != NULL ? candidate.label : "candidate", _TRUNCATE);
+    edict_t *ignoreEdict = pPlayer != NULL ? pPlayer->edict() : NULL;
+
+    TraceResult exactHullTrace;
+    UTIL_TraceHull(desiredOrigin, desiredOrigin, dont_ignore_monsters, human_hull, ignoreEdict, &exactHullTrace);
+    if (!exactHullTrace.fStartSolid && !exactHullTrace.fAllSolid)
+    {
+        *pOrigin = desiredOrigin;
+        *pAngles = referenceAngles;
+        failureCode[0] = '\0';
+        failureReason[0] = '\0';
+        return true;
+    }
+
+    TraceResult groundTrace;
+    UTIL_TraceLine(
+        desiredOrigin + Vector(0.0f, 0.0f, 36.0f),
+        desiredOrigin - Vector(0.0f, 0.0f, 72.0f),
+        ignore_monsters,
+        ignoreEdict,
+        &groundTrace);
+
+    if (groundTrace.fStartSolid || groundTrace.fAllSolid)
+    {
+        strcpy_s(failureCode, failureCodeSize, "blocked_ground");
+        strcpy_s(failureReason, failureReasonSize, "ground trace started inside solid space");
+        return false;
+    }
+
+    if (groundTrace.flFraction == 1.0f)
+    {
+        strcpy_s(failureCode, failureCodeSize, "no_floor");
+        strcpy_s(failureReason, failureReasonSize, "no floor was found below the saved team spawn");
+        return false;
+    }
+
+    Vector spawnOrigin = groundTrace.vecEndPos + Vector(0.0f, 0.0f, 1.0f);
+    TraceResult hullTrace;
+    UTIL_TraceHull(spawnOrigin, spawnOrigin, dont_ignore_monsters, human_hull, ignoreEdict, &hullTrace);
+    if (hullTrace.fStartSolid || hullTrace.fAllSolid)
+    {
+        strcpy_s(failureCode, failureCodeSize, "blocked_hull");
+        strcpy_s(failureReason, failureReasonSize, "the player standing hull is blocked at the saved team spawn");
+        return false;
+    }
+
+    *pOrigin = spawnOrigin;
+    *pAngles = referenceAngles;
+    failureCode[0] = '\0';
+    failureReason[0] = '\0';
+    return true;
+}
+
+bool TryResolveNamedTeamSpawnSelection(
+    const TeamSpawnSavedSpotRecord *spot,
+    CBasePlayer *pPlayer,
+    TeamSpawnSelection *selection,
+    TeamSpawnFailureInfo *failure)
+{
+    if (spot == NULL || !spot->valid)
+    {
+        SetTeamSpawnFailureInfo(failure, kExpRoundTeamNone, "saved_spot_missing", kTeamSpawnSourceSavedSpot, "", "the requested saved team spawn spot is missing", "", "");
+        return false;
+    }
+
+    TeamSpawnFailureInfo lastCandidateFailure = {};
+    for (int candidateIndex = 0; candidateIndex < ARRAYSIZE(kTeamSpawnPlacementCandidates); ++candidateIndex)
+    {
+        Vector resolvedOrigin = g_vecZero;
+        Vector resolvedAngles = g_vecZero;
+        char candidateLabel[64];
+        char failureCode[64];
+        char failureReason[192];
+        if (TryBuildTeamSpawnCandidateTransform(
+                *spot,
+                pPlayer,
+                kTeamSpawnPlacementCandidates[candidateIndex],
+                &resolvedOrigin,
+                &resolvedAngles,
+                candidateLabel,
+                sizeof(candidateLabel),
+                failureCode,
+                sizeof(failureCode),
+                failureReason,
+                sizeof(failureReason)))
+        {
+            memset(selection, 0, sizeof(*selection));
+            selection->valid = true;
+            selection->teamId = spot->teamId;
+            selection->origin = resolvedOrigin;
+            selection->angles = resolvedAngles;
+            strncpy_s(selection->source, sizeof(selection->source), kTeamSpawnSourceSavedSpot, _TRUNCATE);
+            strncpy_s(selection->candidate, sizeof(selection->candidate), candidateLabel, _TRUNCATE);
+            strncpy_s(selection->spotName, sizeof(selection->spotName), spot->name, _TRUNCATE);
+            strncpy_s(selection->spotStorage, sizeof(selection->spotStorage), GetTeamSpawnSpotStorageLabel(spot), _TRUNCATE);
+            return true;
+        }
+
+        char details[512];
+        _snprintf_s(
+            details,
+            sizeof(details),
+            _TRUNCATE,
+            "saved team spawn \"%s\" for %s failed candidate %s: %s",
+            spot->name,
+            GetConfiguredTeamRoundName(spot->teamId),
+            candidateLabel,
+            failureReason);
+        SetTeamSpawnFailureInfo(
+            &lastCandidateFailure,
+            spot->teamId,
+            failureCode,
+            kTeamSpawnSourceSavedSpot,
+            candidateLabel,
+            details,
+            spot->name,
+            GetTeamSpawnSpotStorageLabel(spot));
+    }
+
+    if (lastCandidateFailure.reason[0] == '\0')
+    {
+        SetTeamSpawnFailureInfo(
+            &lastCandidateFailure,
+            spot->teamId,
+            "no_valid_candidate",
+            kTeamSpawnSourceSavedSpot,
+            "",
+            "no valid candidate was found around the saved team spawn spot",
+            spot->name,
+            GetTeamSpawnSpotStorageLabel(spot));
+    }
+
+    if (failure != NULL)
+    {
+        *failure = lastCandidateFailure;
+    }
+    return false;
+}
+
+bool TrySelectPreferredTeamSpawnSelection(
+    int teamId,
+    CBasePlayer *pPlayer,
+    TeamSpawnSelection *selection,
+    TeamSpawnFailureInfo *failure,
+    bool *usedDefaultFallback)
+{
+    if (selection == NULL)
+    {
+        return false;
+    }
+
+    memset(selection, 0, sizeof(*selection));
+    if (failure != NULL)
+    {
+        ClearTeamSpawnFailureInfo(failure);
+    }
+    if (usedDefaultFallback != NULL)
+    {
+        *usedDefaultFallback = false;
+    }
+
+    teamId = NormalizeRoundTeamId(teamId);
+    if (teamId == kExpRoundTeamNone)
+    {
+        SetTeamSpawnFailureInfo(failure, kExpRoundTeamNone, "missing_team", kTeamSpawnSourceSavedSpot, "", "no valid round team is assigned for this player spawn", "", "");
+        return false;
+    }
+
+    TeamSpawnFailureInfo activeFailure = {};
+    if (g_teamSpawnActiveSpotNames[teamId][0] != '\0')
+    {
+        const TeamSpawnSavedSpotRecord *activeSpot = GetActiveTeamSpawnSavedSpot(teamId);
+        if (activeSpot != NULL && TryResolveNamedTeamSpawnSelection(activeSpot, pPlayer, selection, &activeFailure))
+        {
+            return true;
+        }
+
+        if (activeSpot == NULL)
+        {
+            char details[512];
+            _snprintf_s(
+                details,
+                sizeof(details),
+                _TRUNCATE,
+                "active %s team spawn \"%s\" is selected for map %s but is not available",
+                GetConfiguredTeamRoundName(teamId),
+                g_teamSpawnActiveSpotNames[teamId],
+                GetCurrentMapName());
+            SetTeamSpawnFailureInfo(
+                &activeFailure,
+                teamId,
+                "saved_spot_missing",
+                kTeamSpawnSourceSavedSpot,
+                "",
+                details,
+                g_teamSpawnActiveSpotNames[teamId],
+                "");
+        }
+    }
+
+    const TeamSpawnSavedSpotRecord *defaultSpot = GetDefaultTeamSpawnSavedSpot(teamId);
+    if (defaultSpot != NULL &&
+        (g_teamSpawnActiveSpotNames[teamId][0] == '\0' || !StringEqualsIgnoreCase(g_teamSpawnActiveSpotNames[teamId], defaultSpot->name)))
+    {
+        TeamSpawnFailureInfo defaultFailure = {};
+        if (TryResolveNamedTeamSpawnSelection(defaultSpot, pPlayer, selection, &defaultFailure))
+        {
+            if (usedDefaultFallback != NULL)
+            {
+                *usedDefaultFallback = true;
+            }
+            return true;
+        }
+
+        if (defaultFailure.reason[0] != '\0')
+        {
+            activeFailure = defaultFailure;
+        }
+    }
+
+    if (activeFailure.reason[0] != '\0')
+    {
+        if (failure != NULL)
+        {
+            *failure = activeFailure;
+        }
+        return false;
+    }
+
+    if (g_teamSpawnSavedSpotCounts[teamId] > 0)
+    {
+        char details[512];
+        _snprintf_s(
+            details,
+            sizeof(details),
+            _TRUNCATE,
+            "no active %s team spawn is selected and no \"%s\" fallback spot is available",
+            GetConfiguredTeamRoundName(teamId),
+            kDefaultLabDummySpotName);
+        SetTeamSpawnFailureInfo(failure, teamId, "saved_spot_missing", kTeamSpawnSourceSavedSpot, "", details, "", "");
+    }
+    else
+    {
+        char details[512];
+        _snprintf_s(
+            details,
+            sizeof(details),
+            _TRUNCATE,
+            "no saved team spawn spot is marked for %s on map %s",
+            GetConfiguredTeamRoundName(teamId),
+            GetCurrentMapName());
+        SetTeamSpawnFailureInfo(failure, teamId, "saved_spot_missing", kTeamSpawnSourceSavedSpot, "", details, "", "");
+    }
+
+    return false;
+}
+
+void ApplyTeamRoundPlayerSpawnOverrideInternal(CBasePlayer *pPlayer)
+{
+    if (pPlayer == NULL || pPlayer->pev == NULL)
+    {
+        return;
+    }
+
+    RefreshFutureHooksMapState();
+    if (!ExpRoundModeEnabled() || !TeamRoundModeConfigured() || !TeamRoundManualSpawnsConfigured())
+    {
+        return;
+    }
+
+    const int teamId = GetAssignedRoundTeamId(pPlayer);
+    if (teamId == kExpRoundTeamNone)
+    {
+        return;
+    }
+
+    TeamSpawnSelection selection = {};
+    TeamSpawnFailureInfo failure = {};
+    bool usedDefaultFallback = false;
+    if (TrySelectPreferredTeamSpawnSelection(teamId, pPlayer, &selection, &failure, &usedDefaultFallback))
+    {
+        ApplyPlayerSpawnTransform(pPlayer, selection.origin, selection.angles);
+        RememberTeamSpawnApplied(pPlayer, selection, usedDefaultFallback ? "default_spot_fallback" : "");
+        ClearTeamSpawnFailureInfo(&g_teamSpawnLastFailure[teamId]);
+        g_teamSpawnLastFailureAt[teamId][0] = '\0';
+        LogTeamSpawnEvent(
+            "team_spawn_applied",
+            pPlayer,
+            teamId,
+            GetConfiguredTeamRoundName(teamId),
+            selection.origin,
+            selection.angles,
+            selection.source,
+            selection.candidate,
+            selection.spotName,
+            selection.spotStorage,
+            usedDefaultFallback ? "default_spot_fallback" : "");
+        return;
+    }
+
+    RememberTeamSpawnFailure(teamId, failure);
+    LogTeamSpawnEvent(
+        "team_spawn_failed",
+        pPlayer,
+        teamId,
+        GetConfiguredTeamRoundName(teamId),
+        pPlayer->pev->origin,
+        pPlayer->pev->angles,
+        failure.source,
+        failure.candidate,
+        failure.spotName,
+        failure.spotStorage,
+        failure.reason);
+
+    TeamSpawnSelection fallbackSelection = {};
+    fallbackSelection.valid = true;
+    fallbackSelection.teamId = teamId;
+    fallbackSelection.origin = pPlayer->pev->origin;
+    fallbackSelection.angles = pPlayer->pev->angles;
+    strncpy_s(fallbackSelection.source, sizeof(fallbackSelection.source), kTeamSpawnSourceDmSpawn, _TRUNCATE);
+    strncpy_s(fallbackSelection.candidate, sizeof(fallbackSelection.candidate), "game_rules_fallback", _TRUNCATE);
+    RememberTeamSpawnApplied(pPlayer, fallbackSelection, failure.reason);
+    LogTeamSpawnEvent(
+        "team_spawn_applied",
+        pPlayer,
+        teamId,
+        GetConfiguredTeamRoundName(teamId),
+        fallbackSelection.origin,
+        fallbackSelection.angles,
+        fallbackSelection.source,
+        fallbackSelection.candidate,
+        "",
+        "",
+        failure.reason);
 }
 
 edict_t *GetLabDummyPlacementIgnoreEdict(CBasePlayer *pAnchorPlayer)
@@ -6333,6 +8401,11 @@ void RegisterFutureGameplayCommands()
     g_engfuncs.pfnAddServerCommand((char *)"exp_team_status", ExpTeamStatusCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_team_fake_add", ExpTeamFakeAddCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_team_fake_clear", ExpTeamFakeClearCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_team_spawn_mark", ExpTeamSpawnMarkCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_team_spawn_unmark", ExpTeamSpawnUnmarkCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_team_spawn_list", ExpTeamSpawnListCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_team_spawn_use", ExpTeamSpawnUseCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_team_spawn_status", ExpTeamSpawnStatusCommand);
 }
 
 void MaintainMp5LabLoadout()
@@ -6445,6 +8518,11 @@ void MaintainShotgunLabLoadout()
         pPlayer->SelectItem("weapon_shotgun");
     }
 }
+}
+
+void FutureGameplayApplyPlayerSpawnOverride(CBasePlayer *pPlayer)
+{
+    ApplyTeamRoundPlayerSpawnOverrideInternal(pPlayer);
 }
 
 void RegisterFutureGameplayCvars()

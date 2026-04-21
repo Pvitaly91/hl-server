@@ -1249,6 +1249,61 @@ void LogGlockLabDummyClear(CBaseEntity *pDummy, const char *reason)
     WriteTelemetryLine(telemetryLine.c_str());
 }
 
+void LogTeamSpawnEvent(
+    const char *event,
+    CBasePlayer *pPlayer,
+    int teamId,
+    const char *teamName,
+    const Vector &origin,
+    const Vector &angles,
+    const char *source,
+    const char *candidate,
+    const char *spotName,
+    const char *spotStorage,
+    const char *reason)
+{
+    if (!ExpDebugWeaponLogEnabled())
+    {
+        return;
+    }
+
+    EnsureWeaponDebugLogOpen();
+
+    char timestamp[64];
+    char originValue[64];
+    char line[2048];
+    FormatTimestamp(timestamp, sizeof(timestamp));
+    FormatVector3(originValue, sizeof(originValue), origin);
+
+    _snprintf_s(
+        line,
+        sizeof(line),
+        _TRUNCATE,
+        "[weaponlog] type=%s ts=%s map=%s player=\"%s\" entindex=%d userid=%d team_id=%d team=\"%s\" origin=\"%s\" yaw=%.1f source=\"%s\" candidate=\"%s\" round_active=%d team_mode=%d spawn_mode=\"%s\"",
+        event != NULL && event[0] != '\0' ? event : "team_spawn_event",
+        timestamp,
+        SanitizeLogValue(GetSafeMapName()).c_str(),
+        GetSafePlayerName(pPlayer).c_str(),
+        GetPlayerEntityIndex(pPlayer),
+        GetPlayerUserId(pPlayer),
+        teamId,
+        SanitizeLogValue(teamName).c_str(),
+        originValue,
+        angles.y,
+        SanitizeLogValue(source).c_str(),
+        SanitizeLogValue(candidate).c_str(),
+        ExpRoundModeActive() ? 1 : 0,
+        ExpTeamRoundModeEnabled() ? 1 : 0,
+        SanitizeLogValue(ExpTeamRoundSpawnMode()).c_str());
+
+    std::string telemetryLine = line;
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "weapon_under_test", ExpWeaponUnderTest());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "spot_name", spotName);
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "spot_storage", spotStorage);
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "reason", reason);
+    WriteTelemetryLine(telemetryLine.c_str());
+}
+
 void LogAcceptedGlockPrimaryShot(CBasePlayer *pPlayer, const GlockAcceptedShotTelemetry &telemetry)
 {
     if (!ExpDebugWeaponLogEnabled())
