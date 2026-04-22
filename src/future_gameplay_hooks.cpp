@@ -97,6 +97,10 @@ const size_t kMaxMatchConfigPackModeLength = 64;
 const size_t kMaxMatchConfigPackTagsLength = 128;
 const size_t kMaxMatchConfigPackNotesLength = 256;
 const size_t kMaxMatchConfigPackFileSize = 64 * 1024;
+const float kDefaultMatchRoundsToWin = 3.0f;
+const float kDefaultMatchMaxRounds = 5.0f;
+const float kDefaultMatchHalftimeAfterRound = 2.0f;
+const float kDefaultMatchEndDelay = 5.0f;
 
 struct LiveCfgState
 {
@@ -351,6 +355,25 @@ struct ExpRoundRuntimeState
     char lastEndReason[64];
 };
 
+struct ExpMatchRuntimeState
+{
+    bool active;
+    bool ended;
+    bool halftimeOccurred;
+    bool halftimePending;
+    bool sideSwapActive;
+    int matchNumber;
+    int currentRoundNumber;
+    int completedRounds;
+    int logicalTeam1Score;
+    int logicalTeam2Score;
+    int logicalTeamForPhysicalTeam[3];
+    int winnerLogicalTeamId;
+    char logicalTeamNames[3][64];
+    char winnerName[64];
+    char endReason[64];
+};
+
 struct ExpRoundPlayerSnapshot
 {
     int connectedPlayers;
@@ -507,6 +530,16 @@ cvar_t sv_exp_team_round_team1_health = {"sv_exp_team_round_team1_health", "-1.0
 cvar_t sv_exp_team_round_team2_health = {"sv_exp_team_round_team2_health", "-1.0", FCVAR_SERVER};
 cvar_t sv_exp_team_round_team1_armor = {"sv_exp_team_round_team1_armor", "-1.0", FCVAR_SERVER};
 cvar_t sv_exp_team_round_team2_armor = {"sv_exp_team_round_team2_armor", "-1.0", FCVAR_SERVER};
+cvar_t sv_exp_match_mode = {"sv_exp_match_mode", "0", FCVAR_SERVER};
+cvar_t sv_exp_match_rounds_to_win = {"sv_exp_match_rounds_to_win", "3", FCVAR_SERVER};
+cvar_t sv_exp_match_max_rounds = {"sv_exp_match_max_rounds", "5", FCVAR_SERVER};
+cvar_t sv_exp_match_enable_halftime = {"sv_exp_match_enable_halftime", "1", FCVAR_SERVER};
+cvar_t sv_exp_match_halftime_after_round = {"sv_exp_match_halftime_after_round", "2", FCVAR_SERVER};
+cvar_t sv_exp_match_side_swap = {"sv_exp_match_side_swap", "1", FCVAR_SERVER};
+cvar_t sv_exp_match_reset_money_on_halftime = {"sv_exp_match_reset_money_on_halftime", "1", FCVAR_SERVER};
+cvar_t sv_exp_match_reset_loadout_on_halftime = {"sv_exp_match_reset_loadout_on_halftime", "1", FCVAR_SERVER};
+cvar_t sv_exp_match_auto_restart_after_end = {"sv_exp_match_auto_restart_after_end", "0", FCVAR_SERVER};
+cvar_t sv_exp_match_end_delay = {"sv_exp_match_end_delay", "5.0", FCVAR_SERVER};
 cvar_t sv_exp_buy_mode = {"sv_exp_buy_mode", "0", FCVAR_SERVER};
 cvar_t sv_exp_buy_freeze_only = {"sv_exp_buy_freeze_only", "1", FCVAR_SERVER};
 cvar_t sv_exp_buy_team_shared_catalog = {"sv_exp_buy_team_shared_catalog", "1", FCVAR_SERVER};
@@ -582,6 +615,7 @@ float g_glockLabDummyRetryTime = 0.0f;
 char g_futureHooksMapName[64] = "";
 LiveCfgState g_liveCfgState = {};
 ExpRoundRuntimeState g_expRoundState = {};
+ExpMatchRuntimeState g_expMatchState = {};
 ExpRoundTeamAssignment g_expRoundTeamAssignments[kMaxRoundTeamPlayerSlots] = {};
 ExpRoundFakeClientRecord g_expRoundFakeClientRecords[kMaxRoundTeamPlayerSlots] = {};
 ExpBuyPlayerState g_expBuyPlayerStates[kMaxRoundTeamPlayerSlots] = {};
@@ -592,9 +626,11 @@ void PrintRoundStatus();
 void PrintTeamStatus();
 void PrintTeamSpawnStatus();
 void PrintBuyStatus();
+void PrintMatchStatus();
 void RefreshFutureHooksMapState();
 bool IsRoundManagedPlayer(CBasePlayer *pPlayer);
 bool IsRoundFakeClient(CBasePlayer *pPlayer);
+int NormalizeRoundTeamId(int teamId);
 void UpdateRoundPopulationSnapshot();
 void TrimCfgRequestString(const char *input, char *buffer, size_t bufferSize);
 bool EnsureLabDummyMonsterSpawningEnabled(LabDummyFailureInfo *failure, const LabDummySpawnSelection *selection);
@@ -622,6 +658,38 @@ bool TryParseMatchConfigPackFileText(const std::string &jsonText, const char *fa
 bool LoadMatchConfigPackFile(const char *filePath, const char *fallbackName, MatchConfigPackRecord *pack, char *failureReason, size_t failureReasonSize);
 bool LoadMatchConfigPackByName(const char *packName, MatchConfigPackRecord *pack, char *failureReason, size_t failureReasonSize);
 bool EnumerateMatchConfigPacks(std::vector<MatchConfigPackRecord> *packs, char *failureReason, size_t failureReasonSize);
+void ClearMatchRuntimeState();
+bool MatchModeConfigured();
+bool MatchModeOperational();
+bool MatchHalftimeEnabled();
+bool MatchSideSwapConfigured();
+bool MatchResetMoneyOnHalftimeConfigured();
+bool MatchResetLoadoutOnHalftimeConfigured();
+bool MatchAutoRestartAfterEndConfigured();
+int MatchRoundsToWin();
+int MatchMaxRounds();
+int MatchHalftimeAfterRound();
+float MatchEndDelaySeconds();
+int GetMatchLogicalTeamIdForPhysicalTeam(int physicalTeamId);
+int GetMatchPhysicalTeamIdForLogicalTeam(int logicalTeamId);
+const char *GetMatchLogicalTeamName(int logicalTeamId);
+int GetMatchLogicalTeamScore(int logicalTeamId);
+void ResetMatchBuyMoneyForAllPlayers(const char *reason);
+void ResetMatchEquipmentSelectionsForAllPlayers();
+void LogMatchStateTransition(const char *event, const char *reason);
+void InitializeMatchRuntimeState(bool incrementMatchNumber, const char *reason);
+void ApplyMatchPhysicalToLogicalMapping(const int newMapping[3], const char *reason);
+void ApplyMatchSideSwap(const char *reason);
+void RestoreMatchDefaultSides(const char *reason);
+void StopMatchModeInternal(bool restoreDefaultSides, const char *reason, bool printMessage);
+bool MatchEndConditionReached();
+void FinalizeMatchRoundResult(int winnerTeamId, const char *reason);
+void HandleMatchHalftimeIfNeeded();
+void HandleMatchStateTransitionAfterRoundEnd();
+bool ShouldHoldForMatchEnd();
+void BeginOrRestartMatch(const char *reason, bool emitRoundRestartEvent, bool incrementMatchNumber);
+const char *GetBuyTeamNameForPlayer(CBasePlayer *pPlayer);
+void BeginRoundFreeze(bool emitRestartEvent, const char *reason);
 bool IsBuyItemTokenSupported(const char *weaponToken);
 const char *GetResolvedBuyItemToken(const char *weaponToken);
 bool TryResolveDefaultBuyPlayer(CBasePlayer **ppPlayer, char *failureReason, size_t failureReasonSize);
@@ -1132,6 +1200,176 @@ const char *GetConfiguredTeamRoundName(int teamId)
     }
 
     return "none";
+}
+
+void CopyConfiguredTeamNamesIntoMatchState()
+{
+    strncpy_s(
+        g_expMatchState.logicalTeamNames[kExpRoundTeam1],
+        sizeof(g_expMatchState.logicalTeamNames[kExpRoundTeam1]),
+        GetConfiguredTeamRoundName(kExpRoundTeam1),
+        _TRUNCATE);
+    strncpy_s(
+        g_expMatchState.logicalTeamNames[kExpRoundTeam2],
+        sizeof(g_expMatchState.logicalTeamNames[kExpRoundTeam2]),
+        GetConfiguredTeamRoundName(kExpRoundTeam2),
+        _TRUNCATE);
+}
+
+void SetDefaultMatchPhysicalToLogicalMapping(int mapping[3])
+{
+    if (mapping == NULL)
+    {
+        return;
+    }
+
+    mapping[kExpRoundTeam1] = kExpRoundTeam1;
+    mapping[kExpRoundTeam2] = kExpRoundTeam2;
+}
+
+bool IsDefaultMatchPhysicalToLogicalMapping(const int mapping[3])
+{
+    return mapping != NULL &&
+        mapping[kExpRoundTeam1] == kExpRoundTeam1 &&
+        mapping[kExpRoundTeam2] == kExpRoundTeam2;
+}
+
+void ClearMatchRuntimeState()
+{
+    memset(&g_expMatchState, 0, sizeof(g_expMatchState));
+    SetDefaultMatchPhysicalToLogicalMapping(g_expMatchState.logicalTeamForPhysicalTeam);
+    CopyConfiguredTeamNamesIntoMatchState();
+}
+
+bool MatchModeConfigured()
+{
+    return sv_exp_match_mode.value != 0.0f;
+}
+
+bool MatchModeOperational()
+{
+    return MatchModeConfigured() && TeamRoundModeConfigured();
+}
+
+bool MatchHalftimeEnabled()
+{
+    return sv_exp_match_enable_halftime.value != 0.0f;
+}
+
+bool MatchSideSwapConfigured()
+{
+    return sv_exp_match_side_swap.value != 0.0f;
+}
+
+bool MatchResetMoneyOnHalftimeConfigured()
+{
+    return sv_exp_match_reset_money_on_halftime.value != 0.0f;
+}
+
+bool MatchResetLoadoutOnHalftimeConfigured()
+{
+    return sv_exp_match_reset_loadout_on_halftime.value != 0.0f;
+}
+
+bool MatchAutoRestartAfterEndConfigured()
+{
+    return sv_exp_match_auto_restart_after_end.value != 0.0f;
+}
+
+int MatchRoundsToWin()
+{
+    return (int)ClampFloat(sv_exp_match_rounds_to_win.value, 1.0f, 1000.0f);
+}
+
+int MatchMaxRounds()
+{
+    const int roundsToWin = MatchRoundsToWin();
+    const int configured = (int)ClampFloat(sv_exp_match_max_rounds.value, 1.0f, 1000.0f);
+    return configured >= roundsToWin ? configured : roundsToWin;
+}
+
+int MatchHalftimeAfterRound()
+{
+    const int maxRounds = MatchMaxRounds();
+    if (maxRounds <= 1)
+    {
+        return 1;
+    }
+
+    return (int)ClampFloat(
+        sv_exp_match_halftime_after_round.value,
+        1.0f,
+        (float)(maxRounds - 1));
+}
+
+float MatchEndDelaySeconds()
+{
+    return GetPositiveOrDefaultCvarValue(sv_exp_match_end_delay, kDefaultMatchEndDelay);
+}
+
+int GetMatchLogicalTeamIdForPhysicalTeam(int physicalTeamId)
+{
+    const int normalizedPhysicalTeamId = NormalizeRoundTeamId(physicalTeamId);
+    if (normalizedPhysicalTeamId == kExpRoundTeamNone)
+    {
+        return kExpRoundTeamNone;
+    }
+
+    const int logicalTeamId = NormalizeRoundTeamId(g_expMatchState.logicalTeamForPhysicalTeam[normalizedPhysicalTeamId]);
+    return logicalTeamId != kExpRoundTeamNone ? logicalTeamId : normalizedPhysicalTeamId;
+}
+
+int GetMatchPhysicalTeamIdForLogicalTeam(int logicalTeamId)
+{
+    const int normalizedLogicalTeamId = NormalizeRoundTeamId(logicalTeamId);
+    if (normalizedLogicalTeamId == kExpRoundTeamNone)
+    {
+        return kExpRoundTeamNone;
+    }
+
+    for (int physicalTeamId = kExpRoundTeam1; physicalTeamId <= kExpRoundTeam2; ++physicalTeamId)
+    {
+        if (GetMatchLogicalTeamIdForPhysicalTeam(physicalTeamId) == normalizedLogicalTeamId)
+        {
+            return physicalTeamId;
+        }
+    }
+
+    return normalizedLogicalTeamId;
+}
+
+const char *GetMatchLogicalTeamName(int logicalTeamId)
+{
+    const int normalizedLogicalTeamId = NormalizeRoundTeamId(logicalTeamId);
+    if (normalizedLogicalTeamId == kExpRoundTeamNone)
+    {
+        return "none";
+    }
+
+    if (g_expMatchState.logicalTeamNames[normalizedLogicalTeamId][0] != '\0')
+    {
+        return g_expMatchState.logicalTeamNames[normalizedLogicalTeamId];
+    }
+
+    return normalizedLogicalTeamId == kExpRoundTeam2
+        ? GetConfiguredTeamRoundName(kExpRoundTeam2)
+        : GetConfiguredTeamRoundName(kExpRoundTeam1);
+}
+
+int GetMatchLogicalTeamScore(int logicalTeamId)
+{
+    const int normalizedLogicalTeamId = NormalizeRoundTeamId(logicalTeamId);
+    if (normalizedLogicalTeamId == kExpRoundTeam1)
+    {
+        return g_expMatchState.logicalTeam1Score;
+    }
+
+    if (normalizedLogicalTeamId == kExpRoundTeam2)
+    {
+        return g_expMatchState.logicalTeam2Score;
+    }
+
+    return 0;
 }
 
 int NormalizeRoundTeamId(int teamId)
@@ -2314,6 +2552,84 @@ void ResetBuySelectionsForNewFreeze()
     }
 }
 
+void ResetMatchBuyMoneyForAllPlayers(const char *reason)
+{
+    if (!BuyModeConfigured() || gpGlobals == NULL)
+    {
+        return;
+    }
+
+    EnsureBuyStateForAllManagedPlayers();
+    for (int playerIndex = 1; playerIndex <= gpGlobals->maxClients; ++playerIndex)
+    {
+        CBaseEntity *pEntity = UTIL_PlayerByIndex(playerIndex);
+        if (pEntity == NULL || !pEntity->IsPlayer() || pEntity->pev == NULL)
+        {
+            continue;
+        }
+
+        CBasePlayer *pPlayer = (CBasePlayer *)pEntity;
+        if (!IsRoundManagedPlayer(pPlayer))
+        {
+            continue;
+        }
+
+        ExpBuyPlayerState *state = GetBuyPlayerState(pPlayer);
+        if (state == NULL)
+        {
+            continue;
+        }
+
+        const int moneyBefore = state->money;
+        state->money = ClampBuyMoney(BuyStartMoney());
+        LogBuyEvent(
+            "buy_money_reset",
+            pPlayer,
+            GetBuyTeamNameForPlayer(pPlayer),
+            GetRoundStateName(g_expRoundState.state),
+            IsBuyPhaseOpen(),
+            state->selectedWeapon,
+            0,
+            moneyBefore,
+            state->money,
+            true,
+            reason);
+    }
+}
+
+void ResetMatchEquipmentSelectionsForAllPlayers()
+{
+    if (gpGlobals == NULL)
+    {
+        return;
+    }
+
+    EnsureBuyStateForAllManagedPlayers();
+    for (int playerIndex = 1; playerIndex <= gpGlobals->maxClients; ++playerIndex)
+    {
+        CBaseEntity *pEntity = UTIL_PlayerByIndex(playerIndex);
+        if (pEntity == NULL || !pEntity->IsPlayer() || pEntity->pev == NULL)
+        {
+            continue;
+        }
+
+        CBasePlayer *pPlayer = (CBasePlayer *)pEntity;
+        if (!IsRoundManagedPlayer(pPlayer))
+        {
+            continue;
+        }
+
+        ExpBuyPlayerState *state = GetBuyPlayerState(pPlayer);
+        if (state == NULL)
+        {
+            continue;
+        }
+
+        ResetBuyStateSelections(state);
+        state->money = ClampBuyMoney(state->money);
+    }
+}
+
 const char *GetSelectedBuyWeaponForPlayer(CBasePlayer *pPlayer)
 {
     ExpBuyPlayerState *state = GetBuyPlayerState(pPlayer);
@@ -3358,6 +3674,303 @@ void ApplyRoundBuyRewards(CBasePlayer *pWinner, int winnerTeamId, const char *re
     }
 }
 
+void LogMatchStateTransition(const char *event, const char *reason)
+{
+    LogMatchEvent(event, reason);
+}
+
+void ApplyMatchPhysicalToLogicalMapping(const int newMapping[3], const char *reason)
+{
+    int oldMapping[3] = {};
+    oldMapping[kExpRoundTeam1] = GetMatchLogicalTeamIdForPhysicalTeam(kExpRoundTeam1);
+    oldMapping[kExpRoundTeam2] = GetMatchLogicalTeamIdForPhysicalTeam(kExpRoundTeam2);
+
+    if (gpGlobals != NULL)
+    {
+        for (int playerIndex = 1; playerIndex <= gpGlobals->maxClients; ++playerIndex)
+        {
+            CBaseEntity *pEntity = UTIL_PlayerByIndex(playerIndex);
+            if (pEntity == NULL || !pEntity->IsPlayer() || pEntity->pev == NULL)
+            {
+                continue;
+            }
+
+            CBasePlayer *pPlayer = (CBasePlayer *)pEntity;
+            if (!IsRoundManagedPlayer(pPlayer))
+            {
+                continue;
+            }
+
+            const int currentPhysicalTeamId = GetAssignedRoundTeamId(pPlayer);
+            const int currentLogicalTeamId = currentPhysicalTeamId == kExpRoundTeamNone
+                ? kExpRoundTeamNone
+                : NormalizeRoundTeamId(oldMapping[currentPhysicalTeamId]);
+            if (currentLogicalTeamId == kExpRoundTeamNone)
+            {
+                continue;
+            }
+
+            int targetPhysicalTeamId = kExpRoundTeamNone;
+            for (int physicalTeamId = kExpRoundTeam1; physicalTeamId <= kExpRoundTeam2; ++physicalTeamId)
+            {
+                if (NormalizeRoundTeamId(newMapping[physicalTeamId]) == currentLogicalTeamId)
+                {
+                    targetPhysicalTeamId = physicalTeamId;
+                    break;
+                }
+            }
+
+            if (targetPhysicalTeamId != kExpRoundTeamNone && targetPhysicalTeamId != currentPhysicalTeamId)
+            {
+                AssignRoundTeamToPlayer(pPlayer, targetPhysicalTeamId);
+            }
+        }
+    }
+
+    g_expMatchState.logicalTeamForPhysicalTeam[kExpRoundTeam1] = NormalizeRoundTeamId(newMapping[kExpRoundTeam1]);
+    g_expMatchState.logicalTeamForPhysicalTeam[kExpRoundTeam2] = NormalizeRoundTeamId(newMapping[kExpRoundTeam2]);
+    if (g_expMatchState.logicalTeamForPhysicalTeam[kExpRoundTeam1] == kExpRoundTeamNone ||
+        g_expMatchState.logicalTeamForPhysicalTeam[kExpRoundTeam2] == kExpRoundTeamNone)
+    {
+        SetDefaultMatchPhysicalToLogicalMapping(g_expMatchState.logicalTeamForPhysicalTeam);
+    }
+
+    g_expMatchState.sideSwapActive = !IsDefaultMatchPhysicalToLogicalMapping(g_expMatchState.logicalTeamForPhysicalTeam);
+    UpdateRoundPopulationSnapshot();
+    (void)reason;
+}
+
+void ApplyMatchSideSwap(const char *reason)
+{
+    int swappedMapping[3] = {};
+    swappedMapping[kExpRoundTeam1] = kExpRoundTeam2;
+    swappedMapping[kExpRoundTeam2] = kExpRoundTeam1;
+    ApplyMatchPhysicalToLogicalMapping(swappedMapping, reason);
+}
+
+void RestoreMatchDefaultSides(const char *reason)
+{
+    int defaultMapping[3] = {};
+    SetDefaultMatchPhysicalToLogicalMapping(defaultMapping);
+    ApplyMatchPhysicalToLogicalMapping(defaultMapping, reason);
+}
+
+void StopMatchModeInternal(bool restoreDefaultSides, const char *reason, bool printMessage)
+{
+    if (restoreDefaultSides && g_expMatchState.sideSwapActive)
+    {
+        RestoreMatchDefaultSides(reason != NULL ? reason : "match_stop");
+    }
+
+    if (printMessage)
+    {
+        PrintLabDummyConsoleLine(
+            "match mode disabled: active=%s ended=%s score=%s:%d %s:%d reason=%s",
+            g_expMatchState.active ? "yes" : "no",
+            g_expMatchState.ended ? "yes" : "no",
+            GetMatchLogicalTeamName(kExpRoundTeam1),
+            g_expMatchState.logicalTeam1Score,
+            GetMatchLogicalTeamName(kExpRoundTeam2),
+            g_expMatchState.logicalTeam2Score,
+            GetValueOrFallback(reason, "match_mode_off"));
+    }
+
+    ClearMatchRuntimeState();
+}
+
+void InitializeMatchRuntimeState(bool incrementMatchNumber, const char *reason)
+{
+    if (g_expMatchState.sideSwapActive)
+    {
+        RestoreMatchDefaultSides("match_initialize");
+    }
+
+    const int previousMatchNumber = g_expMatchState.matchNumber;
+    ClearMatchRuntimeState();
+    g_expMatchState.active = true;
+    g_expMatchState.ended = false;
+    g_expMatchState.halftimeOccurred = false;
+    g_expMatchState.halftimePending = false;
+    g_expMatchState.sideSwapActive = false;
+    g_expMatchState.matchNumber = incrementMatchNumber || previousMatchNumber <= 0 ? previousMatchNumber + 1 : previousMatchNumber;
+    CopyConfiguredTeamNamesIntoMatchState();
+    SetDefaultMatchPhysicalToLogicalMapping(g_expMatchState.logicalTeamForPhysicalTeam);
+
+    if (BuyModeConfigured())
+    {
+        ResetMatchBuyMoneyForAllPlayers(reason != NULL ? reason : "match_start");
+    }
+
+    UpdateRoundPopulationSnapshot();
+}
+
+bool MatchEndConditionReached()
+{
+    if (!g_expMatchState.active)
+    {
+        return false;
+    }
+
+    if (g_expMatchState.logicalTeam1Score >= MatchRoundsToWin() ||
+        g_expMatchState.logicalTeam2Score >= MatchRoundsToWin())
+    {
+        return true;
+    }
+
+    return g_expMatchState.completedRounds >= MatchMaxRounds();
+}
+
+void FinalizeMatchRoundResult(int winnerTeamId, const char *reason)
+{
+    if (!MatchModeOperational() || !g_expMatchState.active)
+    {
+        return;
+    }
+
+    ++g_expMatchState.completedRounds;
+
+    const int logicalWinnerTeamId = GetMatchLogicalTeamIdForPhysicalTeam(winnerTeamId);
+    if (logicalWinnerTeamId == kExpRoundTeam1)
+    {
+        ++g_expMatchState.logicalTeam1Score;
+    }
+    else if (logicalWinnerTeamId == kExpRoundTeam2)
+    {
+        ++g_expMatchState.logicalTeam2Score;
+    }
+
+    if (MatchEndConditionReached())
+    {
+        g_expMatchState.active = false;
+        g_expMatchState.ended = true;
+        g_expMatchState.halftimePending = false;
+
+        if (g_expMatchState.logicalTeam1Score > g_expMatchState.logicalTeam2Score)
+        {
+            g_expMatchState.winnerLogicalTeamId = kExpRoundTeam1;
+        }
+        else if (g_expMatchState.logicalTeam2Score > g_expMatchState.logicalTeam1Score)
+        {
+            g_expMatchState.winnerLogicalTeamId = kExpRoundTeam2;
+        }
+        else
+        {
+            g_expMatchState.winnerLogicalTeamId = kExpRoundTeamNone;
+        }
+
+        if (g_expMatchState.winnerLogicalTeamId != kExpRoundTeamNone)
+        {
+            strncpy_s(
+                g_expMatchState.winnerName,
+                sizeof(g_expMatchState.winnerName),
+                GetMatchLogicalTeamName(g_expMatchState.winnerLogicalTeamId),
+                _TRUNCATE);
+        }
+        else
+        {
+            strncpy_s(g_expMatchState.winnerName, sizeof(g_expMatchState.winnerName), "draw", _TRUNCATE);
+        }
+
+        strncpy_s(
+            g_expMatchState.endReason,
+            sizeof(g_expMatchState.endReason),
+            MatchRoundsToWin() > 0 &&
+                (g_expMatchState.logicalTeam1Score >= MatchRoundsToWin() || g_expMatchState.logicalTeam2Score >= MatchRoundsToWin())
+                ? "rounds_to_win"
+                : (g_expMatchState.winnerLogicalTeamId == kExpRoundTeamNone ? "max_rounds_draw" : "max_rounds"),
+            _TRUNCATE);
+        LogMatchStateTransition("match_end", reason != NULL ? reason : g_expMatchState.endReason);
+        return;
+    }
+
+    if (MatchHalftimeEnabled() &&
+        !g_expMatchState.halftimeOccurred &&
+        g_expMatchState.completedRounds >= MatchHalftimeAfterRound())
+    {
+        g_expMatchState.halftimePending = true;
+    }
+
+    LogMatchStateTransition("match_score", reason != NULL ? reason : "round_completed");
+}
+
+void HandleMatchHalftimeIfNeeded()
+{
+    if (!g_expMatchState.halftimePending)
+    {
+        return;
+    }
+
+    g_expMatchState.halftimePending = false;
+    g_expMatchState.halftimeOccurred = true;
+
+    if (MatchSideSwapConfigured())
+    {
+        ApplyMatchSideSwap("halftime_side_swap");
+        LogMatchStateTransition("match_side_swap", "halftime");
+    }
+
+    if (MatchResetMoneyOnHalftimeConfigured())
+    {
+        ResetMatchBuyMoneyForAllPlayers("halftime_reset");
+    }
+
+    if (MatchResetLoadoutOnHalftimeConfigured())
+    {
+        ResetMatchEquipmentSelectionsForAllPlayers();
+    }
+
+    PrintLabDummyConsoleLine(
+        "match halftime: completed_rounds=%d score=%s:%d %s:%d side_swap=%s money_reset=%s loadout_reset=%s",
+        g_expMatchState.completedRounds,
+        GetMatchLogicalTeamName(kExpRoundTeam1),
+        g_expMatchState.logicalTeam1Score,
+        GetMatchLogicalTeamName(kExpRoundTeam2),
+        g_expMatchState.logicalTeam2Score,
+        MatchSideSwapConfigured() ? "yes" : "no",
+        MatchResetMoneyOnHalftimeConfigured() ? "yes" : "no",
+        MatchResetLoadoutOnHalftimeConfigured() ? "yes" : "no");
+    LogMatchStateTransition("match_halftime", "halftime");
+}
+
+bool ShouldHoldForMatchEnd()
+{
+    return MatchModeConfigured() && g_expMatchState.ended;
+}
+
+void HandleMatchStateTransitionAfterRoundEnd()
+{
+    if (!ShouldHoldForMatchEnd())
+    {
+        return;
+    }
+
+    if (g_expRoundState.nextTransitionAt > 0.0f && gpGlobals->time < g_expRoundState.nextTransitionAt)
+    {
+        return;
+    }
+
+    if (MatchAutoRestartAfterEndConfigured())
+    {
+        InitializeMatchRuntimeState(true, "match_auto_restart");
+        BeginRoundFreeze(true, "match_auto_restart");
+        LogMatchStateTransition("match_restart", "auto_restart_after_end");
+        return;
+    }
+
+    if (g_expRoundState.nextTransitionAt > 0.0f)
+    {
+        g_expRoundState.nextTransitionAt = 0.0f;
+        PrintLabDummyConsoleLine("match end hold complete: use exp_match_restart to reset the match or exp_match_stop to return to plain rounds.");
+    }
+}
+
+void BeginOrRestartMatch(const char *reason, bool emitRoundRestartEvent, bool incrementMatchNumber)
+{
+    InitializeMatchRuntimeState(incrementMatchNumber, reason);
+    BeginRoundFreeze(emitRoundRestartEvent, reason);
+    LogMatchStateTransition(emitRoundRestartEvent ? "match_restart" : "match_start", reason);
+}
+
 int SlayRoundPlayers(bool slayAllPlayers, int teamFilter)
 {
     if (gpGlobals == NULL)
@@ -3450,6 +4063,29 @@ void BeginRoundFreeze(bool emitRestartEvent, const char *reason)
         AutoAssignRoundTeams(false);
     }
 
+    if ((!MatchModeConfigured() || !TeamRoundModeConfigured()) &&
+        (g_expMatchState.active || g_expMatchState.ended || g_expMatchState.sideSwapActive))
+    {
+        StopMatchModeInternal(true, !TeamRoundModeConfigured() ? "team_round_disabled" : "match_cvar_disabled", false);
+    }
+
+    if (MatchModeOperational())
+    {
+        if (g_expMatchState.ended)
+        {
+            PrintLabDummyConsoleLine(
+                "match freeze blocked: match %d has ended. Use exp_match_restart or exp_match_stop.",
+                g_expMatchState.matchNumber);
+            return;
+        }
+
+        if (!g_expMatchState.active)
+        {
+            InitializeMatchRuntimeState(true, reason != NULL ? reason : "auto_match_start");
+            LogMatchStateTransition("match_start", reason != NULL ? reason : "auto_match_start");
+        }
+    }
+
     const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
     if (!RoundTeamsReady(snapshot))
     {
@@ -3464,6 +4100,10 @@ void BeginRoundFreeze(bool emitRestartEvent, const char *reason)
 
     ApplyRoundFriendlyFireSetting();
     ++g_expRoundState.roundNumber;
+    if (MatchModeOperational() && g_expMatchState.active)
+    {
+        g_expMatchState.currentRoundNumber = g_expMatchState.completedRounds + 1;
+    }
     ResetBuySelectionsForNewFreeze();
     RespawnAllPlayersForRound();
     SetRoundState(kExpRoundStateFreezeTime, ExpRoundFreezeTimeSeconds());
@@ -3504,6 +4144,22 @@ void BeginRoundFreeze(bool emitRestartEvent, const char *reason)
             BuyWinReward(),
             BuyLossReward(),
             BuyTeamSharedCatalog() ? "yes" : "no");
+    }
+
+    if (MatchModeConfigured())
+    {
+        PrintLabDummyConsoleLine(
+            "match freeze detail: configured=%s active=%s match=%d round_in_match=%d score=%s:%d %s:%d halftime=%s swapped=%s",
+            MatchModeOperational() ? "ready" : "blocked",
+            g_expMatchState.active ? "yes" : "no",
+            g_expMatchState.matchNumber,
+            g_expMatchState.currentRoundNumber,
+            GetMatchLogicalTeamName(kExpRoundTeam1),
+            g_expMatchState.logicalTeam1Score,
+            GetMatchLogicalTeamName(kExpRoundTeam2),
+            g_expMatchState.logicalTeam2Score,
+            g_expMatchState.halftimeOccurred ? "yes" : "no",
+            g_expMatchState.sideSwapActive ? "yes" : "no");
     }
 
     LogRoundEvent("round_start", GetRoundStateName(g_expRoundState.state), g_expRoundState.roundNumber, g_expRoundState.connectedPlayers, g_expRoundState.alivePlayers, NULL, reason);
@@ -3551,7 +4207,8 @@ void EndRound(CBasePlayer *pWinner, int winnerTeamId, const char *reason)
 {
     ApplyRoundBuyRewards(pWinner, winnerTeamId, reason);
     StoreRoundWinner(pWinner, winnerTeamId, reason);
-    SetRoundState(kExpRoundStateRoundEnd, kRoundEndHoldSeconds);
+    FinalizeMatchRoundResult(winnerTeamId, reason);
+    SetRoundState(kExpRoundStateRoundEnd, ShouldHoldForMatchEnd() ? MatchEndDelaySeconds() : kRoundEndHoldSeconds);
     PrintLabDummyConsoleLine(
         "round %d ended: winner=%s winner_team=%s reason=%s connected=%d alive=%d restart_in=%.1fs",
         g_expRoundState.roundNumber,
@@ -3560,7 +4217,33 @@ void EndRound(CBasePlayer *pWinner, int winnerTeamId, const char *reason)
         g_expRoundState.lastEndReason[0] != '\0' ? g_expRoundState.lastEndReason : "unknown",
         g_expRoundState.connectedPlayers,
         g_expRoundState.alivePlayers,
-        ExpRoundRestartDelaySeconds());
+        ShouldHoldForMatchEnd() ? MatchEndDelaySeconds() : ExpRoundRestartDelaySeconds());
+
+    if (MatchModeConfigured())
+    {
+        PrintLabDummyConsoleLine(
+            "match score: match=%d round_in_match=%d %s=%d %s=%d halftime_pending=%s halftime_done=%s swapped=%s ended=%s",
+            g_expMatchState.matchNumber,
+            g_expMatchState.completedRounds,
+            GetMatchLogicalTeamName(kExpRoundTeam1),
+            g_expMatchState.logicalTeam1Score,
+            GetMatchLogicalTeamName(kExpRoundTeam2),
+            g_expMatchState.logicalTeam2Score,
+            g_expMatchState.halftimePending ? "yes" : "no",
+            g_expMatchState.halftimeOccurred ? "yes" : "no",
+            g_expMatchState.sideSwapActive ? "yes" : "no",
+            g_expMatchState.ended ? "yes" : "no");
+
+        if (g_expMatchState.ended)
+        {
+            PrintLabDummyConsoleLine(
+                "match ended: winner=%s reason=%s auto_restart=%s next_match_in=%.1fs",
+                g_expMatchState.winnerName[0] != '\0' ? g_expMatchState.winnerName : "draw",
+                g_expMatchState.endReason[0] != '\0' ? g_expMatchState.endReason : "match_end",
+                MatchAutoRestartAfterEndConfigured() ? "yes" : "no",
+                MatchEndDelaySeconds());
+        }
+    }
     LogRoundEvent("round_end", GetRoundStateName(g_expRoundState.state), g_expRoundState.roundNumber, g_expRoundState.connectedPlayers, g_expRoundState.alivePlayers, pWinner, reason);
 }
 
@@ -3648,6 +4331,7 @@ void StopRoundMode(bool respawnDeadPlayers, const char *reason, bool printMessag
         RespawnDeadPlayersForDeathmatch();
     }
 
+    StopMatchModeInternal(true, reason, false);
     ClearRoundRuntimeState();
     ClearAllBuyPlayerStates();
     if (printMessage)
@@ -3691,6 +4375,12 @@ void EnsureRoundModeState()
 void UpdateRoundModeFrame()
 {
     EnsureRoundModeState();
+    if ((!MatchModeConfigured() || !TeamRoundModeConfigured()) &&
+        (g_expMatchState.active || g_expMatchState.ended || g_expMatchState.sideSwapActive))
+    {
+        StopMatchModeInternal(true, !TeamRoundModeConfigured() ? "team_round_disabled" : "match_cvar_disabled", false);
+    }
+
     if (g_expRoundState.state == kExpRoundStateDisabled)
     {
         return;
@@ -3712,6 +4402,11 @@ void UpdateRoundModeFrame()
         g_expRoundState.team1AlivePlayers = snapshot.team1AlivePlayers;
         g_expRoundState.team2AlivePlayers = snapshot.team2AlivePlayers;
         g_expRoundState.unassignedAlivePlayers = snapshot.unassignedAlivePlayers;
+        if (ShouldHoldForMatchEnd())
+        {
+            return;
+        }
+
         if (RoundTeamsReady(snapshot))
         {
             BeginRoundFreeze(false, "players_ready");
@@ -3760,6 +4455,12 @@ void UpdateRoundModeFrame()
         g_expRoundState.team1AlivePlayers = snapshot.team1AlivePlayers;
         g_expRoundState.team2AlivePlayers = snapshot.team2AlivePlayers;
         g_expRoundState.unassignedAlivePlayers = snapshot.unassignedAlivePlayers;
+        if (ShouldHoldForMatchEnd())
+        {
+            HandleMatchStateTransitionAfterRoundEnd();
+            return;
+        }
+
         if (!RoundTeamsReady(snapshot))
         {
             BeginRoundWaiting(GetRoundWaitingReasonForSnapshot(snapshot), false);
@@ -3768,6 +4469,7 @@ void UpdateRoundModeFrame()
 
         if (g_expRoundState.nextTransitionAt > 0.0f && gpGlobals->time >= g_expRoundState.nextTransitionAt)
         {
+            HandleMatchHalftimeIfNeeded();
             BeginRoundRestartPending(g_expRoundState.lastEndReason);
         }
         return;
@@ -3857,6 +4559,8 @@ void PrintRoundStatus()
         GetConfiguredTeamRoundSpawnMode(),
         GetResolvedTeamRoundSpawnMode());
 
+    PrintMatchStatus();
+
     if (TeamRoundModeConfigured())
     {
         PrintLabDummyConsoleLine(
@@ -3916,6 +4620,7 @@ void PrintRoundStatus()
     }
 
     PrintLabDummyConsoleLine("commands: exp_round_start | exp_round_restart | exp_round_status | exp_round_stop | exp_round_slay [all|team1|team2]");
+    PrintLabDummyConsoleLine("match commands: exp_match_start | exp_match_stop | exp_match_restart | exp_match_status | exp_match_swap");
     PrintLabDummyConsoleLine("team commands: exp_team_join <player> <team> | exp_team_autoassign | exp_team_status | exp_team_fake_add <team> [name] | exp_team_fake_clear");
     PrintLabDummyConsoleLine("team spawn commands: exp_team_spawn_mark <team> [name] | exp_team_spawn_unmark <team> <name> | exp_team_spawn_list | exp_team_spawn_use <team> <name> | exp_team_spawn_status");
     PrintLabDummyConsoleLine("buy commands: exp_buy_list | exp_buy_status | exp_buy <item> [player] | exp_buy_clear [player] | exp_buy_grant [player] | exp_buy_setmoney <player> <amount> | exp_armor_status [player]");
@@ -4347,6 +5052,13 @@ void ExpRoundStartCommand()
         return;
     }
 
+    if (MatchModeConfigured() && g_expMatchState.ended)
+    {
+        PrintLabDummyConsoleLine("round start blocked: the current match has ended. Use exp_match_restart or exp_match_stop.");
+        PrintMatchStatus();
+        return;
+    }
+
     if (g_expRoundState.state == kExpRoundStateFreezeTime ||
         g_expRoundState.state == kExpRoundStateLive ||
         g_expRoundState.state == kExpRoundStateRoundEnd ||
@@ -4377,6 +5089,13 @@ void ExpRoundRestartCommand()
         return;
     }
 
+    if (MatchModeConfigured() && g_expMatchState.ended)
+    {
+        PrintLabDummyConsoleLine("round restart blocked: the current match has ended. Use exp_match_restart or exp_match_stop.");
+        PrintMatchStatus();
+        return;
+    }
+
     BeginRoundFreeze(true, "manual_restart");
     PrintRoundStatus();
 }
@@ -4398,6 +5117,149 @@ void ExpRoundStopCommand()
     CVAR_SET_FLOAT("sv_exp_round_mode", 0.0f);
     StopRoundMode(true, "command_stop", true);
     PrintRoundStatus();
+}
+
+void ExpMatchStartCommand()
+{
+    if (!TeamRoundModeConfigured())
+    {
+        PrintLabDummyConsoleLine("match start failed: enable sv_exp_team_round_mode 1 first.");
+        PrintMatchStatus();
+        return;
+    }
+
+    CVAR_SET_FLOAT("sv_exp_round_mode", 1.0f);
+    CVAR_SET_FLOAT("sv_exp_match_mode", 1.0f);
+    AutoAssignRoundTeams(false);
+
+    const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
+    if (!RoundTeamsReady(snapshot))
+    {
+        InitializeMatchRuntimeState(true, "match_waiting");
+        BeginRoundWaiting(GetRoundWaitingReasonForSnapshot(snapshot), true);
+        PrintMatchStatus();
+        PrintTeamStatus();
+        return;
+    }
+
+    if (g_expMatchState.active && !g_expMatchState.ended)
+    {
+        PrintLabDummyConsoleLine("match mode is already active. Use exp_match_restart to reset score and rounds.");
+        PrintMatchStatus();
+        return;
+    }
+
+    BeginOrRestartMatch("manual_match_start", false, true);
+    PrintMatchStatus();
+}
+
+void ExpMatchStopCommand()
+{
+    if (!MatchModeConfigured() && !g_expMatchState.active && !g_expMatchState.ended)
+    {
+        PrintLabDummyConsoleLine("match mode is already off.");
+        PrintMatchStatus();
+        return;
+    }
+
+    CVAR_SET_FLOAT("sv_exp_match_mode", 0.0f);
+    StopMatchModeInternal(true, "command_stop", true);
+
+    if (ExpRoundModeEnabled())
+    {
+        const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
+        if (RoundTeamsReady(snapshot))
+        {
+            BeginRoundFreeze(true, "match_stop");
+        }
+        else
+        {
+            BeginRoundWaiting(GetRoundWaitingReasonForSnapshot(snapshot), true);
+        }
+    }
+
+    PrintMatchStatus();
+    PrintRoundStatus();
+}
+
+void ExpMatchRestartCommand()
+{
+    if (!TeamRoundModeConfigured())
+    {
+        PrintLabDummyConsoleLine("match restart failed: enable sv_exp_team_round_mode 1 first.");
+        PrintMatchStatus();
+        return;
+    }
+
+    CVAR_SET_FLOAT("sv_exp_round_mode", 1.0f);
+    CVAR_SET_FLOAT("sv_exp_match_mode", 1.0f);
+    AutoAssignRoundTeams(false);
+
+    const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
+    if (!RoundTeamsReady(snapshot))
+    {
+        InitializeMatchRuntimeState(true, "match_waiting");
+        BeginRoundWaiting(GetRoundWaitingReasonForSnapshot(snapshot), true);
+        PrintMatchStatus();
+        PrintTeamStatus();
+        return;
+    }
+
+    BeginOrRestartMatch("manual_match_restart", true, true);
+    PrintMatchStatus();
+}
+
+void ExpMatchStatusCommand()
+{
+    PrintMatchStatus();
+    PrintTeamStatus();
+}
+
+void ExpMatchSwapCommand()
+{
+    if (!TeamRoundModeConfigured())
+    {
+        PrintLabDummyConsoleLine("match swap failed: team round mode is off.");
+        PrintMatchStatus();
+        return;
+    }
+
+    if (!MatchModeConfigured() && !g_expMatchState.active && !g_expMatchState.ended)
+    {
+        PrintLabDummyConsoleLine("match swap failed: match mode is off.");
+        PrintMatchStatus();
+        return;
+    }
+
+    if (!g_expMatchState.active && !g_expMatchState.ended)
+    {
+        InitializeMatchRuntimeState(false, "manual_swap_prepare");
+    }
+
+    ApplyMatchSideSwap("manual_match_swap");
+    LogMatchStateTransition("match_side_swap", "manual_swap");
+    PrintLabDummyConsoleLine(
+        "match side swap: %s now maps to %s and %s now maps to %s.",
+        GetConfiguredTeamRoundName(kExpRoundTeam1),
+        GetMatchLogicalTeamName(GetMatchLogicalTeamIdForPhysicalTeam(kExpRoundTeam1)),
+        GetConfiguredTeamRoundName(kExpRoundTeam2),
+        GetMatchLogicalTeamName(GetMatchLogicalTeamIdForPhysicalTeam(kExpRoundTeam2)));
+
+    if (ExpRoundModeEnabled())
+    {
+        const ExpRoundPlayerSnapshot snapshot = CollectRoundPlayerSnapshot();
+        if (RoundTeamsReady(snapshot))
+        {
+            BeginRoundFreeze(true, "manual_match_swap");
+        }
+        else
+        {
+            BeginRoundWaiting(GetRoundWaitingReasonForSnapshot(snapshot), true);
+        }
+    }
+
+    PrintMatchStatus();
+    PrintTeamStatus();
 }
 
 void ExpRoundSlayCommand()
@@ -4575,6 +5437,62 @@ void PrintTeamSpawnStatus()
     }
 }
 
+void PrintMatchStatus()
+{
+    const bool configured = MatchModeConfigured();
+    const bool operational = MatchModeOperational();
+
+    PrintLabDummyConsoleLine(
+        "match mode: configured=%s operational=%s active=%s ended=%s match=%d round_in_match=%d completed_rounds=%d",
+        configured ? "yes" : "no",
+        operational ? "yes" : "no",
+        g_expMatchState.active ? "yes" : "no",
+        g_expMatchState.ended ? "yes" : "no",
+        g_expMatchState.matchNumber,
+        g_expMatchState.currentRoundNumber,
+        g_expMatchState.completedRounds);
+    PrintLabDummyConsoleLine(
+        "match config: rounds_to_win=%d max_rounds=%d halftime=%s halftime_after_round=%d side_swap=%s reset_money_on_halftime=%s reset_loadout_on_halftime=%s auto_restart_after_end=%s end_delay=%.1fs",
+        MatchRoundsToWin(),
+        MatchMaxRounds(),
+        MatchHalftimeEnabled() ? "yes" : "no",
+        MatchHalftimeAfterRound(),
+        MatchSideSwapConfigured() ? "yes" : "no",
+        MatchResetMoneyOnHalftimeConfigured() ? "yes" : "no",
+        MatchResetLoadoutOnHalftimeConfigured() ? "yes" : "no",
+        MatchAutoRestartAfterEndConfigured() ? "yes" : "no",
+        MatchEndDelaySeconds());
+    PrintLabDummyConsoleLine(
+        "match score: %s=%d %s=%d mapping=%s=>%s %s=>%s halftime_occurred=%s swapped=%s",
+        GetMatchLogicalTeamName(kExpRoundTeam1),
+        g_expMatchState.logicalTeam1Score,
+        GetMatchLogicalTeamName(kExpRoundTeam2),
+        g_expMatchState.logicalTeam2Score,
+        GetConfiguredTeamRoundName(kExpRoundTeam1),
+        GetMatchLogicalTeamName(GetMatchLogicalTeamIdForPhysicalTeam(kExpRoundTeam1)),
+        GetConfiguredTeamRoundName(kExpRoundTeam2),
+        GetMatchLogicalTeamName(GetMatchLogicalTeamIdForPhysicalTeam(kExpRoundTeam2)),
+        g_expMatchState.halftimeOccurred ? "yes" : "no",
+        g_expMatchState.sideSwapActive ? "yes" : "no");
+
+    if (!TeamRoundModeConfigured())
+    {
+        PrintLabDummyConsoleLine("match note: team round mode is off, so match progression stays inactive even if sv_exp_match_mode is enabled.");
+    }
+
+    if (g_expMatchState.ended)
+    {
+        PrintLabDummyConsoleLine(
+            "match result: winner=%s reason=%s",
+            g_expMatchState.winnerName[0] != '\0' ? g_expMatchState.winnerName : "draw",
+            g_expMatchState.endReason[0] != '\0' ? g_expMatchState.endReason : "match_end");
+    }
+    else
+    {
+        PrintLabDummyConsoleLine("match result: in_progress");
+    }
+}
+
 void PrintTeamStatus()
 {
     UpdateRoundPopulationSnapshot();
@@ -4605,6 +5523,18 @@ void PrintTeamStatus()
         g_expRoundState.team2AlivePlayers,
         g_expRoundState.unassignedConnectedPlayers,
         g_expRoundState.unassignedAlivePlayers);
+    PrintLabDummyConsoleLine(
+        "team match mapping: %s=>%s %s=>%s score=%s:%d %s:%d halftime=%s swapped=%s",
+        GetConfiguredTeamRoundName(kExpRoundTeam1),
+        GetMatchLogicalTeamName(GetMatchLogicalTeamIdForPhysicalTeam(kExpRoundTeam1)),
+        GetConfiguredTeamRoundName(kExpRoundTeam2),
+        GetMatchLogicalTeamName(GetMatchLogicalTeamIdForPhysicalTeam(kExpRoundTeam2)),
+        GetMatchLogicalTeamName(kExpRoundTeam1),
+        g_expMatchState.logicalTeam1Score,
+        GetMatchLogicalTeamName(kExpRoundTeam2),
+        g_expMatchState.logicalTeam2Score,
+        g_expMatchState.halftimeOccurred ? "yes" : "no",
+        g_expMatchState.sideSwapActive ? "yes" : "no");
 
     if (!TeamRoundSpawnModeSupported())
     {
@@ -4632,13 +5562,15 @@ void PrintTeamStatus()
 
             anyPlayers = true;
             const int teamId = GetAssignedRoundTeamId(pPlayer);
+            const int logicalTeamId = GetMatchLogicalTeamIdForPhysicalTeam(teamId);
             PrintLabDummyConsoleLine(
-                "team player: name=%s entindex=%d userid=%d fake=%s team=%s alive=%s health=%.1f armor=%.1f",
+                "team player: name=%s entindex=%d userid=%d fake=%s team=%s logical=%s alive=%s health=%.1f armor=%.1f",
                 GetSafePlayerName(pPlayer),
                 GetPlayerEntityIndex(pPlayer),
                 GetPlayerUserId(pPlayer),
                 IsRoundFakeClient(pPlayer) ? "yes" : "no",
                 teamId == kExpRoundTeamNone ? "unassigned" : GetConfiguredTeamRoundName(teamId),
+                logicalTeamId == kExpRoundTeamNone ? "unassigned" : GetMatchLogicalTeamName(logicalTeamId),
                 (pPlayer->IsAlive() && pPlayer->pev->deadflag == DEAD_NO) ? "yes" : "no",
                 pPlayer->pev->health,
                 pPlayer->pev->armorvalue);
@@ -8584,6 +9516,7 @@ void RefreshFutureHooksMapState()
 
     strncpy_s(g_futureHooksMapName, sizeof(g_futureHooksMapName), currentMapName, _TRUNCATE);
     ClearRoundRuntimeState();
+    ClearMatchRuntimeState();
     ClearAllBuyPlayerStates();
     ResetGlockLabDummyState();
     ClearAllTeamSpawnSavedSpots();
@@ -10690,6 +11623,11 @@ void RegisterFutureGameplayCommands()
     g_engfuncs.pfnAddServerCommand((char *)"exp_round_status", ExpRoundStatusCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_round_stop", ExpRoundStopCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_round_slay", ExpRoundSlayCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_match_start", ExpMatchStartCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_match_stop", ExpMatchStopCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_match_restart", ExpMatchRestartCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_match_status", ExpMatchStatusCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_match_swap", ExpMatchSwapCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_team_join", ExpTeamJoinCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_team_autoassign", ExpTeamAutoassignCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_team_status", ExpTeamStatusCommand);
@@ -10924,6 +11862,16 @@ void RegisterFutureGameplayCvars()
     CVAR_REGISTER(&sv_exp_team_round_team2_health);
     CVAR_REGISTER(&sv_exp_team_round_team1_armor);
     CVAR_REGISTER(&sv_exp_team_round_team2_armor);
+    CVAR_REGISTER(&sv_exp_match_mode);
+    CVAR_REGISTER(&sv_exp_match_rounds_to_win);
+    CVAR_REGISTER(&sv_exp_match_max_rounds);
+    CVAR_REGISTER(&sv_exp_match_enable_halftime);
+    CVAR_REGISTER(&sv_exp_match_halftime_after_round);
+    CVAR_REGISTER(&sv_exp_match_side_swap);
+    CVAR_REGISTER(&sv_exp_match_reset_money_on_halftime);
+    CVAR_REGISTER(&sv_exp_match_reset_loadout_on_halftime);
+    CVAR_REGISTER(&sv_exp_match_auto_restart_after_end);
+    CVAR_REGISTER(&sv_exp_match_end_delay);
     CVAR_REGISTER(&sv_exp_buy_mode);
     CVAR_REGISTER(&sv_exp_buy_freeze_only);
     CVAR_REGISTER(&sv_exp_buy_team_shared_catalog);
@@ -11609,6 +12557,111 @@ float ExpTeamRoundTeam1Armor()
 float ExpTeamRoundTeam2Armor()
 {
     return GetResolvedRoundStartArmorForTeam(kExpRoundTeam2);
+}
+
+bool ExpMatchModeEnabled()
+{
+    return MatchModeConfigured();
+}
+
+float ExpMatchRoundsToWin()
+{
+    return (float)MatchRoundsToWin();
+}
+
+float ExpMatchMaxRounds()
+{
+    return (float)MatchMaxRounds();
+}
+
+bool ExpMatchEnableHalftime()
+{
+    return MatchHalftimeEnabled();
+}
+
+float ExpMatchHalftimeAfterRound()
+{
+    return (float)MatchHalftimeAfterRound();
+}
+
+bool ExpMatchSideSwapEnabled()
+{
+    return MatchSideSwapConfigured();
+}
+
+bool ExpMatchResetMoneyOnHalftime()
+{
+    return MatchResetMoneyOnHalftimeConfigured();
+}
+
+bool ExpMatchResetLoadoutOnHalftime()
+{
+    return MatchResetLoadoutOnHalftimeConfigured();
+}
+
+bool ExpMatchAutoRestartAfterEnd()
+{
+    return MatchAutoRestartAfterEndConfigured();
+}
+
+float ExpMatchEndDelaySeconds()
+{
+    return MatchEndDelaySeconds();
+}
+
+bool ExpMatchActive()
+{
+    return g_expMatchState.active;
+}
+
+bool ExpMatchEnded()
+{
+    return g_expMatchState.ended;
+}
+
+int ExpMatchNumber()
+{
+    return g_expMatchState.matchNumber;
+}
+
+int ExpMatchCurrentRoundNumber()
+{
+    return g_expMatchState.currentRoundNumber;
+}
+
+int ExpMatchScoreForLogicalTeam(int logicalTeamId)
+{
+    return GetMatchLogicalTeamScore(logicalTeamId);
+}
+
+const char *ExpMatchLogicalTeamName(int logicalTeamId)
+{
+    return GetMatchLogicalTeamName(logicalTeamId);
+}
+
+int ExpMatchLogicalTeamForPhysicalTeam(int physicalTeamId)
+{
+    return GetMatchLogicalTeamIdForPhysicalTeam(physicalTeamId);
+}
+
+bool ExpMatchHalftimeOccurred()
+{
+    return g_expMatchState.halftimeOccurred;
+}
+
+bool ExpMatchSideSwapActive()
+{
+    return g_expMatchState.sideSwapActive;
+}
+
+const char *ExpMatchWinnerName()
+{
+    return g_expMatchState.winnerName;
+}
+
+const char *ExpMatchEndReason()
+{
+    return g_expMatchState.endReason;
 }
 
 bool ExpBuyModeEnabled()

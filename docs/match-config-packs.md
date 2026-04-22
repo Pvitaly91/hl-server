@@ -62,6 +62,21 @@ The important design point is that packs still resolve to real cfg execution. Th
 - `exp_lab_apply`
 - cfg-driven live launch with `-CfgProfile` or `-CfgPath`
 
+Because the underlying runtime still consumes normal cfg files, packs can also carry newer match-progression cvars such as:
+
+- `sv_exp_match_mode`
+- `sv_exp_match_rounds_to_win`
+- `sv_exp_match_max_rounds`
+- `sv_exp_match_enable_halftime`
+- `sv_exp_match_halftime_after_round`
+- `sv_exp_match_side_swap`
+- `sv_exp_match_reset_money_on_halftime`
+- `sv_exp_match_reset_loadout_on_halftime`
+- `sv_exp_match_auto_restart_after_end`
+- `sv_exp_match_end_delay`
+
+That means packs can describe a whole reusable duel, team, buy, armor, or match-progression setup without any pack-system redesign.
+
 ## Commands
 
 The runtime adds three high-level commands:
@@ -108,6 +123,7 @@ They are meant as quick reusable starting points for the gameplay systems alread
 - deterministic loadouts
 - buy prototype
 - armor and helmet prototype
+- match progression when the referenced cfg includes `sv_exp_match_*`
 - live-lab target testing
 
 They are not claims of final balance.
@@ -134,6 +150,14 @@ The editor self-test now verifies this sidecar path too.
 3. Inspect the applied state with `exp_matchcfg_status` and `exp_cfg_status`.
 4. If you want to tweak the mode, open the editor project, change values, export a new cfg, and optionally export pack metadata from the editor.
 5. Reapply with either `exp_matchcfg_apply <name>` or `exp_cfg_apply <cfg>`.
+
+If you want a pack to represent a whole match instead of just a round/buy baseline:
+
+1. Export a cfg that already contains the desired `sv_exp_match_*` values.
+2. Point the pack JSON at that cfg.
+3. Apply it through `exp_matchcfg_apply <name>`.
+
+The pack layer does not need any special embedded match logic beyond that referenced cfg.
 
 ## Verified state
 

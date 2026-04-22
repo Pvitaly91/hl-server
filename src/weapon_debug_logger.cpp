@@ -951,7 +951,7 @@ void LogRoundEvent(const char *event, const char *state, int roundNumber, int co
         line,
         sizeof(line),
         _TRUNCATE,
-        "[weaponlog] type=round ts=%s map=%s event=%s state=%s round=%d connected_players=%d alive_players=%d team_mode=%d teamplay=%d team1_name=\"%s\" team2_name=\"%s\" team1_connected=%d team2_connected=%d unassigned_connected=%d team1_alive=%d team2_alive=%d unassigned_alive=%d winner=\"%s\" winner_team=\"%s\" winner_entindex=%d winner_userid=%d no_respawn=%d friendlyfire=%d loadout_mode=\"%s\" weapon_profile=\"%s\"",
+        "[weaponlog] type=round ts=%s map=%s event=%s state=%s round=%d connected_players=%d alive_players=%d team_mode=%d teamplay=%d team1_name=\"%s\" team2_name=\"%s\" team1_connected=%d team2_connected=%d unassigned_connected=%d team1_alive=%d team2_alive=%d unassigned_alive=%d winner=\"%s\" winner_team=\"%s\" winner_entindex=%d winner_userid=%d no_respawn=%d friendlyfire=%d loadout_mode=\"%s\" weapon_profile=\"%s\" match_mode=%d match_active=%d match_ended=%d match_number=%d match_round=%d match_team1=\"%s\" match_team2=\"%s\" match_team1_score=%d match_team2_score=%d match_halftime=%d match_swapped=%d match_slot_team1=\"%s\" match_slot_team2=\"%s\"",
         timestamp,
         SanitizeLogValue(GetSafeMapName()).c_str(),
         SanitizeLogValue(event).c_str(),
@@ -976,7 +976,74 @@ void LogRoundEvent(const char *event, const char *state, int roundNumber, int co
         ExpRoundNoRespawn() ? 1 : 0,
         ExpRoundFriendlyFireEnabled() ? 1 : 0,
         SanitizeLogValue(ExpRoundLoadoutMode()).c_str(),
-        SanitizeLogValue(ExpRoundWeaponProfile()[0] != '\0' ? ExpRoundWeaponProfile() : "none").c_str());
+        SanitizeLogValue(ExpRoundWeaponProfile()[0] != '\0' ? ExpRoundWeaponProfile() : "none").c_str(),
+        ExpMatchModeEnabled() ? 1 : 0,
+        ExpMatchActive() ? 1 : 0,
+        ExpMatchEnded() ? 1 : 0,
+        ExpMatchNumber(),
+        ExpMatchCurrentRoundNumber(),
+        SanitizeLogValue(ExpMatchLogicalTeamName(1)).c_str(),
+        SanitizeLogValue(ExpMatchLogicalTeamName(2)).c_str(),
+        ExpMatchScoreForLogicalTeam(1),
+        ExpMatchScoreForLogicalTeam(2),
+        ExpMatchHalftimeOccurred() ? 1 : 0,
+        ExpMatchSideSwapActive() ? 1 : 0,
+        SanitizeLogValue(ExpMatchLogicalTeamName(ExpMatchLogicalTeamForPhysicalTeam(1))).c_str(),
+        SanitizeLogValue(ExpMatchLogicalTeamName(ExpMatchLogicalTeamForPhysicalTeam(2))).c_str());
+
+    std::string telemetryLine = line;
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "reason", reason);
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "weapon_under_test", ExpWeaponUnderTest());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "session_tag", ExpSessionTag());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "cfg_active_profile", ExpActiveCfgProfile());
+    WriteTelemetryLine(telemetryLine.c_str());
+}
+
+void LogMatchEvent(const char *event, const char *reason)
+{
+    if (!ExpDebugWeaponLogEnabled())
+    {
+        return;
+    }
+
+    EnsureWeaponDebugLogOpen();
+
+    char timestamp[64];
+    char line[2048];
+    FormatTimestamp(timestamp, sizeof(timestamp));
+
+    _snprintf_s(
+        line,
+        sizeof(line),
+        _TRUNCATE,
+        "[weaponlog] type=match ts=%s map=%s event=%s configured=%d active=%d ended=%d match=%d round_in_match=%d rounds_to_win=%.0f max_rounds=%.0f halftime_enabled=%d halftime_after_round=%.0f halftime_occurred=%d side_swap_enabled=%d swapped=%d reset_money_on_halftime=%d reset_loadout_on_halftime=%d auto_restart_after_end=%d end_delay=%.1f logical_team1=\"%s\" logical_team2=\"%s\" logical_team1_score=%d logical_team2_score=%d slot_team1=\"%s\" slot_team2=\"%s\" winner=\"%s\" end_reason=\"%s\"",
+        timestamp,
+        SanitizeLogValue(GetSafeMapName()).c_str(),
+        SanitizeLogValue(event != NULL ? event : "match_event").c_str(),
+        ExpMatchModeEnabled() ? 1 : 0,
+        ExpMatchActive() ? 1 : 0,
+        ExpMatchEnded() ? 1 : 0,
+        ExpMatchNumber(),
+        ExpMatchCurrentRoundNumber(),
+        ExpMatchRoundsToWin(),
+        ExpMatchMaxRounds(),
+        ExpMatchEnableHalftime() ? 1 : 0,
+        ExpMatchHalftimeAfterRound(),
+        ExpMatchHalftimeOccurred() ? 1 : 0,
+        ExpMatchSideSwapEnabled() ? 1 : 0,
+        ExpMatchSideSwapActive() ? 1 : 0,
+        ExpMatchResetMoneyOnHalftime() ? 1 : 0,
+        ExpMatchResetLoadoutOnHalftime() ? 1 : 0,
+        ExpMatchAutoRestartAfterEnd() ? 1 : 0,
+        ExpMatchEndDelaySeconds(),
+        SanitizeLogValue(ExpMatchLogicalTeamName(1)).c_str(),
+        SanitizeLogValue(ExpMatchLogicalTeamName(2)).c_str(),
+        ExpMatchScoreForLogicalTeam(1),
+        ExpMatchScoreForLogicalTeam(2),
+        SanitizeLogValue(ExpMatchLogicalTeamName(ExpMatchLogicalTeamForPhysicalTeam(1))).c_str(),
+        SanitizeLogValue(ExpMatchLogicalTeamName(ExpMatchLogicalTeamForPhysicalTeam(2))).c_str(),
+        SanitizeLogValue(ExpMatchWinnerName()[0] != '\0' ? ExpMatchWinnerName() : "none").c_str(),
+        SanitizeLogValue(ExpMatchEndReason()[0] != '\0' ? ExpMatchEndReason() : "").c_str());
 
     std::string telemetryLine = line;
     AppendOptionalQuotedTelemetryField(&telemetryLine, "reason", reason);

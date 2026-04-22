@@ -17,6 +17,7 @@ The repository vendors a pinned snapshot of Valve's official Half-Life source ba
 - A managed same-root live mod at `Half-Life\hlserver_testbed` for client-attached sessions.
 - Server-only experimental Glock, MP5, 357, and shotgun paths for manual stock-client-compatible gameplay iteration without changing the stock client DLL.
 - A shared server-side tuning core for Glock, MP5, 357, and shotgun so future weapons can reuse the same spread and damage primitives instead of copying ad-hoc math per weapon.
+- A server-side round, team-round, buy, armor, and first-pass match-progression layer for live gameplay testing.
 
 It is not yet a gameplay conversion and it does not ship any proprietary game assets, Steam files, or HLDS binaries.
 
@@ -250,6 +251,11 @@ Live lab console commands:
 - `exp_matchcfg_list` prints the available match packs under `<HalfLifeRoot>\hlserver_testbed\match_packs\`.
 - `exp_matchcfg_apply <name>` resolves the pack metadata, applies the referenced cfg, and records the active pack metadata for later status/debugging.
 - `exp_matchcfg_status` prints the current active pack, pack metadata, and the match-pack directory scan state.
+- `exp_match_start` starts or rearms match progression when team round mode is enabled.
+- `exp_match_stop` disables match progression and returns the server to plain round flow.
+- `exp_match_restart` resets score, halftime, and side mapping, then starts a fresh match.
+- `exp_match_status` prints current score, halftime state, side mapping, and match-end state.
+- `exp_match_swap` manually swaps sides for local verification.
 - `exp_lab_apply <cfg_name_or_path>` applies the cfg and then respawns the current target with a single summary.
 - `exp_target_spawn` enables and spawns the standing dummy.
 - `exp_target_clear` removes the standing dummy and disables automatic respawn.
@@ -287,6 +293,16 @@ The repo now has a first server-side round loop for live duel testing plus a sim
 - optional two-team assignment with last-team-alive win logic
 
 It is not a full Counter-Strike ruleset yet. There is now a small server-side buy and equipment prototype for round mode, but there is still no client buy menu, no full economy tree, no full utility suite, and no polished join-in-progress flow in this pass. The armor and helmet logic is a deterministic server-side approximation for live testing, not a claim of exact CS armor parity.
+
+The same rules layer now also includes first-pass match progression for team rounds:
+
+- logical score tracking per team
+- rounds-to-win and max-rounds match end conditions
+- halftime
+- side swap
+- explicit match start, restart, stop, status, and manual swap commands
+
+The current side-swap model is explicit and server-side: halftime reassigns players into the opposite physical `alpha` / `bravo` buckets, so the existing per-team spawn slots and per-team loadout slots keep following those buckets after the swap.
 
 Main round cvars:
 
@@ -343,6 +359,16 @@ Additional team-round cvars:
 - `sv_exp_helmet_mode`
 - `sv_exp_helmet_start_enabled`
 - `sv_exp_helmet_headshot_protection`
+- `sv_exp_match_mode 0|1`
+- `sv_exp_match_rounds_to_win`
+- `sv_exp_match_max_rounds`
+- `sv_exp_match_enable_halftime 0|1`
+- `sv_exp_match_halftime_after_round`
+- `sv_exp_match_side_swap 0|1`
+- `sv_exp_match_reset_money_on_halftime 0|1`
+- `sv_exp_match_reset_loadout_on_halftime 0|1`
+- `sv_exp_match_auto_restart_after_end 0|1`
+- `sv_exp_match_end_delay`
 
 Recommended duel loop:
 
@@ -388,6 +414,32 @@ Recommended persisted team-spawn setup for a map:
    `exp_team_spawn_use bravo default`
 5. Restart the round with `exp_round_restart`.
 6. Use `exp_team_spawn_status` to confirm that round start used the saved team spawns and that the file under `<HalfLifeRoot>\hlserver_testbed\team_spawns\<map>.json` is loaded.
+
+Recommended match-progression loop:
+
+1. Apply a team cfg or match pack, for example `exp_matchcfg_apply team_mp5_buy`.
+2. Enable team round mode and short local timings when needed:
+   `sv_exp_round_freeze_time 1`
+   `sv_exp_round_restart_delay 1`
+   `sv_exp_team_round_spawn_mode manual_spots`
+3. Enable match progression:
+   `sv_exp_match_mode 1`
+   `sv_exp_match_rounds_to_win 2`
+   `sv_exp_match_max_rounds 2`
+   `sv_exp_match_enable_halftime 1`
+   `sv_exp_match_halftime_after_round 1`
+   `sv_exp_match_side_swap 1`
+4. Optionally reset halftime state aggressively for local testing:
+   `sv_exp_match_reset_money_on_halftime 1`
+   `sv_exp_match_reset_loadout_on_halftime 1`
+5. If you only have one human player, add the existing fake helper:
+   `exp_team_fake_add bravo`
+6. Use `exp_match_status` and `exp_team_status` to inspect the current score and side mapping.
+7. Run `exp_match_start`.
+8. After halftime, remember that players have been reassigned into the opposite physical `alpha` / `bravo` buckets, so saved team spawns and team loadouts follow those buckets automatically.
+9. Use `exp_match_restart` for a clean new scoreline or `exp_match_stop` to go back to plain rounds.
+
+One real client-attached session on `2026-04-22` verified the first full progression loop on `crossfire`: the real client `Poni` plus `bravo_fake` produced a round-1 score update to `alpha 1 - 0 bravo`, halftime triggered immediately after round 1, side swap reassigned the two players into the opposite physical `alpha` / `bravo` buckets, round 2 ended the match at logical score `alpha 2 - 0 bravo`, `exp_match_restart` reset the score into match 2, and a later `exp_match_stop` plus `sv_exp_team_round_mode 0` returned the server to plain round mode.
 
 Recommended simple buy-prototype loop:
 
