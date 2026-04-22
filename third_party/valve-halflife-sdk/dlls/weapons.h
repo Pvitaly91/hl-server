@@ -499,6 +499,8 @@ private:
 
 	int m_iShell;
 	float m_flLastAcceptedPrimaryShotTime;
+	float m_flPrimaryCadenceSpreadAccumulator;
+	int m_iPrimaryCadenceShotCount;
 	BOOL m_fPrimaryHoldBlockLogged;
 	
 

@@ -42,21 +42,6 @@ namespace
 {
 const float kMp5FallbackMaxSpeed = 270.0f;
 
-float ClampFloat(float value, float minimum, float maximum)
-{
-	if (value < minimum)
-	{
-		return minimum;
-	}
-
-	if (value > maximum)
-	{
-		return maximum;
-	}
-
-	return value;
-}
-
 float RecoverBurstAdditionalSpread(float currentSpread, float elapsedSeconds)
 {
 	return RecoverSharedAdditionalSpread(
@@ -224,6 +209,13 @@ void CMP5::PrimaryAttack()
 		const float flSpread = spreadResult.spread;
 		fFirstShotAccuracyApplied = spreadResult.firstShotAccuracyApplied ? TRUE : FALSE;
 		flMovementPenalty = spreadResult.movementPenalty;
+		const float flCadenceRecoveryApplied = fHasPreviousAcceptedShot
+			? (m_flPrimaryBurstSpreadAccumulator - flRecoveredBurstAddedSpread)
+			: 0.0f;
+		const float flNextBurstAddedSpread = GrowSharedAdditionalSpread(
+			flBurstAddedSpread,
+			ExpMP5PrimaryBurstGrowth(),
+			ExpMP5PrimaryBurstMaxAdditionalSpread());
 		flHorizontalSpeed = spreadState.horizontalSpeed;
 		flMaxSpeedForNormalization = spreadResult.normalizedMaxSpeed;
 		fGrounded = spreadState.grounded ? TRUE : FALSE;
@@ -242,6 +234,10 @@ void CMP5::PrimaryAttack()
 			acceptedTelemetry.baseSpread = spreadProfile.baseSpread;
 			acceptedTelemetry.movementPenalty = flMovementPenalty;
 			acceptedTelemetry.burstAddedSpread = flBurstAddedSpread;
+			acceptedTelemetry.recoveryApplied = flCadenceRecoveryApplied > 0.0f ? flCadenceRecoveryApplied : 0.0f;
+			acceptedTelemetry.shotGrowth = ExpMP5PrimaryBurstGrowth();
+			acceptedTelemetry.nextAdditionalSpread = flNextBurstAddedSpread;
+			acceptedTelemetry.speedRatio = spreadResult.speedRatio;
 			acceptedTelemetry.burstShotIndex = iBurstShotIndex;
 			acceptedTelemetry.horizontalSpeed = flHorizontalSpeed;
 			acceptedTelemetry.maxSpeedForNormalization = flMaxSpeedForNormalization;
@@ -252,10 +248,7 @@ void CMP5::PrimaryAttack()
 			acceptedTelemetry.clipAfterShot = m_iClip;
 
 			LogAcceptedMp5PrimaryShot(m_pPlayer, acceptedTelemetry);
-			m_flPrimaryBurstSpreadAccumulator = ClampFloat(
-				flBurstAddedSpread + ExpMP5PrimaryBurstGrowth(),
-				0.0f,
-				ExpMP5PrimaryBurstMaxAdditionalSpread());
+			m_flPrimaryBurstSpreadAccumulator = flNextBurstAddedSpread;
 			m_iPrimaryBurstShotCount = iBurstShotIndex;
 			m_flLastAcceptedPrimaryShotTime = gpGlobals->time;
 		}

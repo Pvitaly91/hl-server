@@ -55,6 +55,8 @@ void CGlock::Spawn( )
 
 	m_iDefaultAmmo = GLOCK_DEFAULT_GIVE;
 	m_flLastAcceptedPrimaryShotTime = -1.0f;
+	m_flPrimaryCadenceSpreadAccumulator = 0.0f;
+	m_iPrimaryCadenceShotCount = 0;
 	m_fPrimaryHoldBlockLogged = FALSE;
 
 	FallInit();// get ready to fall down.
@@ -132,15 +134,28 @@ void CGlock::PrimaryAttack( void )
 	m_fPrimaryHoldBlockLogged = FALSE;
 
 	const BOOL fHadAmmo = (m_iClip > 0);
+	const SharedWeaponSpreadProfile spreadProfile = BuildGlockPrimarySpreadProfile();
 	const BOOL fHasPreviousAcceptedShot = m_flLastAcceptedPrimaryShotTime >= 0.0f;
 	const float flTimeSincePreviousAcceptedShot = fHasPreviousAcceptedShot ? (gpGlobals->time - m_flLastAcceptedPrimaryShotTime) : 0.0f;
-	const SharedWeaponSpreadProfile spreadProfile = BuildGlockPrimarySpreadProfile();
+	const float flRecoveredCadenceAddedSpread = fHasPreviousAcceptedShot
+		? RecoverSharedAdditionalSpread(
+			m_flPrimaryCadenceSpreadAccumulator,
+			flTimeSincePreviousAcceptedShot,
+			spreadProfile.additionalSpreadRecoverySeconds,
+			spreadProfile.maxSpread)
+		: 0.0f;
+	const float flCadenceRecoveryApplied = fHasPreviousAcceptedShot
+		? (m_flPrimaryCadenceSpreadAccumulator - flRecoveredCadenceAddedSpread)
+		: 0.0f;
+	const int iCadenceShotIndex = (flRecoveredCadenceAddedSpread > 0.0001f && m_iPrimaryCadenceShotCount > 0)
+		? (m_iPrimaryCadenceShotCount + 1)
+		: 1;
 	const SharedWeaponSpreadState spreadState = BuildPlayerWeaponSpreadState(
 		m_pPlayer,
 		kGlockFallbackMaxSpeed,
 		fHasPreviousAcceptedShot != FALSE,
 		flTimeSincePreviousAcceptedShot,
-		0.0f);
+		flRecoveredCadenceAddedSpread);
 	const SharedWeaponSpreadResult spreadResult = ComputeSharedWeaponSpread(spreadProfile, spreadState);
 	const BOOL fGrounded = spreadState.grounded ? TRUE : FALSE;
 	const BOOL fDucking = spreadState.ducking ? TRUE : FALSE;
@@ -148,6 +163,11 @@ void CGlock::PrimaryAttack( void )
 	const float flMaxSpeedForNormalization = spreadResult.normalizedMaxSpeed;
 	const BOOL fFirstShotAccuracyApplied = spreadResult.firstShotAccuracyApplied ? TRUE : FALSE;
 	const float flMovementPenalty = spreadResult.movementPenalty;
+	const float flAdditionalSpread = spreadResult.additionalSpread;
+	const float flNextCadenceAddedSpread = GrowSharedAdditionalSpread(
+		flRecoveredCadenceAddedSpread,
+		ExpGlockPrimaryShotGrowth(),
+		spreadProfile.maxSpread);
 	const float flSpread = spreadResult.spread;
 
 	GlockFire( flSpread, 0.3, TRUE, TRUE );
@@ -161,15 +181,23 @@ void CGlock::PrimaryAttack( void )
 		acceptedTelemetry.spread = flSpread;
 		acceptedTelemetry.baseSpread = spreadProfile.baseSpread;
 		acceptedTelemetry.movementPenalty = flMovementPenalty;
+		acceptedTelemetry.additionalSpread = flAdditionalSpread;
+		acceptedTelemetry.recoveryApplied = flCadenceRecoveryApplied > 0.0f ? flCadenceRecoveryApplied : 0.0f;
+		acceptedTelemetry.shotGrowth = ExpGlockPrimaryShotGrowth();
+		acceptedTelemetry.nextAdditionalSpread = flNextCadenceAddedSpread;
+		acceptedTelemetry.speedRatio = spreadResult.speedRatio;
 		acceptedTelemetry.horizontalSpeed = flHorizontalSpeed;
 		acceptedTelemetry.maxSpeedForNormalization = flMaxSpeedForNormalization;
 		acceptedTelemetry.grounded = fGrounded != FALSE;
 		acceptedTelemetry.ducking = fDucking != FALSE;
 		acceptedTelemetry.hasPreviousAcceptedShot = fHasPreviousAcceptedShot != FALSE;
 		acceptedTelemetry.timeSincePreviousAcceptedShot = flTimeSincePreviousAcceptedShot;
+		acceptedTelemetry.cadenceShotIndex = iCadenceShotIndex;
 		acceptedTelemetry.clipAfterShot = m_iClip;
 
 		LogAcceptedGlockPrimaryShot(m_pPlayer, acceptedTelemetry);
+		m_flPrimaryCadenceSpreadAccumulator = flNextCadenceAddedSpread;
+		m_iPrimaryCadenceShotCount = iCadenceShotIndex;
 		m_flLastAcceptedPrimaryShotTime = gpGlobals->time;
 	}
 }
@@ -271,14 +299,22 @@ BOOL CGlock::QualifiesForFirstShotAccuracy( void ) const
 {
 	const BOOL fHasPreviousAcceptedShot = m_flLastAcceptedPrimaryShotTime >= 0.0f;
 	const float flTimeSincePreviousAcceptedShot = fHasPreviousAcceptedShot ? (gpGlobals->time - m_flLastAcceptedPrimaryShotTime) : 0.0f;
+	const SharedWeaponSpreadProfile spreadProfile = BuildGlockPrimarySpreadProfile();
+	const float flRecoveredCadenceAddedSpread = fHasPreviousAcceptedShot
+		? RecoverSharedAdditionalSpread(
+			m_flPrimaryCadenceSpreadAccumulator,
+			flTimeSincePreviousAcceptedShot,
+			spreadProfile.additionalSpreadRecoverySeconds,
+			spreadProfile.maxSpread)
+		: 0.0f;
 	const SharedWeaponSpreadResult spreadResult = ComputeSharedWeaponSpread(
-		BuildGlockPrimarySpreadProfile(),
+		spreadProfile,
 		BuildPlayerWeaponSpreadState(
 			m_pPlayer,
 			kGlockFallbackMaxSpeed,
 			fHasPreviousAcceptedShot != FALSE,
 			flTimeSincePreviousAcceptedShot,
-			0.0f));
+			flRecoveredCadenceAddedSpread));
 	return spreadResult.firstShotAccuracyApplied ? TRUE : FALSE;
 }
 
@@ -286,14 +322,22 @@ float CGlock::GetPrimaryFireSpread( void ) const
 {
 	const BOOL fHasPreviousAcceptedShot = m_flLastAcceptedPrimaryShotTime >= 0.0f;
 	const float flTimeSincePreviousAcceptedShot = fHasPreviousAcceptedShot ? (gpGlobals->time - m_flLastAcceptedPrimaryShotTime) : 0.0f;
+	const SharedWeaponSpreadProfile spreadProfile = BuildGlockPrimarySpreadProfile();
+	const float flRecoveredCadenceAddedSpread = fHasPreviousAcceptedShot
+		? RecoverSharedAdditionalSpread(
+			m_flPrimaryCadenceSpreadAccumulator,
+			flTimeSincePreviousAcceptedShot,
+			spreadProfile.additionalSpreadRecoverySeconds,
+			spreadProfile.maxSpread)
+		: 0.0f;
 	const SharedWeaponSpreadResult spreadResult = ComputeSharedWeaponSpread(
-		BuildGlockPrimarySpreadProfile(),
+		spreadProfile,
 		BuildPlayerWeaponSpreadState(
 			m_pPlayer,
 			kGlockFallbackMaxSpeed,
 			fHasPreviousAcceptedShot != FALSE,
 			flTimeSincePreviousAcceptedShot,
-			0.0f));
+			flRecoveredCadenceAddedSpread));
 	return spreadResult.spread;
 }
 

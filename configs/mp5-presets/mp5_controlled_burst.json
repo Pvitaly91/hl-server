@@ -1,6 +1,6 @@
 {
-  "name": "cs_burst",
-  "description": "Legacy alias for the controlled-burst MP5 preset. It rewards short bursts, grows inaccuracy quickly when you hold fire, and remains a stock-client-compatible server-side approximation.",
+  "name": "mp5_controlled_burst",
+  "description": "Experimental controlled-burst MP5 preset. Short bursts stay useful, held sprays bloom faster, and recovery is tuned for stock-client-compatible server-side testing rather than exact CS parity.",
   "cvars": {
     "sv_exp_mp5_primary_enabled": "1",
     "sv_exp_mp5_primary_base_spread": "0.0360",

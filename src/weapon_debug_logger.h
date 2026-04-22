@@ -13,12 +13,18 @@ struct GlockAcceptedShotTelemetry
     float spread;
     float baseSpread;
     float movementPenalty;
+    float additionalSpread;
+    float recoveryApplied;
+    float shotGrowth;
+    float nextAdditionalSpread;
+    float speedRatio;
     float horizontalSpeed;
     float maxSpeedForNormalization;
     bool grounded;
     bool ducking;
     bool hasPreviousAcceptedShot;
     float timeSincePreviousAcceptedShot;
+    int cadenceShotIndex;
     int clipAfterShot;
 };
 
@@ -37,6 +43,10 @@ struct Mp5AcceptedShotTelemetry
     float baseSpread;
     float movementPenalty;
     float burstAddedSpread;
+    float recoveryApplied;
+    float shotGrowth;
+    float nextAdditionalSpread;
+    float speedRatio;
     int burstShotIndex;
     float horizontalSpeed;
     float maxSpeedForNormalization;

@@ -666,6 +666,10 @@ bool BuildCfgLines(const ProjectDocument& document, std::vector<std::wstring>& l
             return false;
         }
         AddLine(lines, L"sv_exp_glock_primary_duck_penalty_scale", normalized);
+        if (!NormalizeFloatValue(document.glock.primaryShotGrowth, normalized, errorMessage, L"Glock shot growth")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_glock_primary_shot_growth", normalized);
         if (!NormalizeFloatValue(document.glock.primaryFirstShotSpeedThreshold, normalized, errorMessage, L"Glock first-shot speed threshold")) {
             return false;
         }

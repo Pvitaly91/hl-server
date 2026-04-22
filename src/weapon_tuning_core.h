@@ -13,7 +13,9 @@ struct SharedWeaponSpreadProfile
     bool firstShotAccuracyEnabled;
     float firstShotSpeedThreshold;
     float firstShotRecoverySeconds;
+    float additionalSpreadRecoverySeconds;
     float maxSpread;
+    bool duckScalesAdditionalSpread;
 };
 
 struct SharedWeaponSpreadState
@@ -81,6 +83,10 @@ float RecoverSharedAdditionalSpread(
     float currentSpread,
     float elapsedSeconds,
     float recoverySeconds,
+    float maxAdditionalSpread);
+float GrowSharedAdditionalSpread(
+    float currentSpread,
+    float growthPerShot,
     float maxAdditionalSpread);
 bool ApplySharedWeaponTraceDamage(
     CBaseEntity *pVictim,

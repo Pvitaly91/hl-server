@@ -57,6 +57,20 @@ The editor project now covers more than weapon tuning:
 
 The `General` page also shows a small "What This Config Will Affect" summary so you can see at a glance whether the current project enables round mode, team mode, buy mode, armor, helmet, and which main loadout it implies.
 
+For the current Glock and MP5 feel pass, the editor now uses more direct tuning labels on the weapon tabs:
+
+- `Shot growth per accepted shot`
+- `Recovery seconds to settle`
+- `Crouch stability scale`
+- `Max spread clamp`
+
+The recommended preset buttons and names for this pass are:
+
+- Glock: `glock_cs_like_soft`, `glock_cs_like_tight`
+- MP5: `mp5_controlled_burst`, `mp5_mobile_soft`
+
+The intent is to make it obvious that the editor is tuning cadence growth plus recovery, not forcing a hard server-only tap-fire gate as the only way to get a skillful pistol or SMG feel.
+
 The same `General` page now also carries optional match-pack metadata:
 
 - pack name

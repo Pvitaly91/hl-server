@@ -145,30 +145,31 @@ ProjectDocument CreateDefaultProject() {
     document.metadata.projectName = L"Untitled weapon project";
     document.exportSettings.cfgFileName = L"weapon-test.cfg";
 
-    document.glock.spreadRecovery = L"0.0";
-    document.glock.moveSpreadScale = L"0.0";
+    document.glock.spreadRecovery = L"0.8000";
+    document.glock.moveSpreadScale = L"1.0";
     document.glock.profileName = L"default";
     document.glock.primaryBaseSpread = L"0.01";
     document.glock.primaryGroundMovePenalty = L"0.08";
     document.glock.primaryAirMovePenalty = L"0.12";
-    document.glock.primaryDuckPenaltyScale = L"0.75";
-    document.glock.primaryFirstShotSpeedThreshold = L"40.0";
-    document.glock.primaryMaxSpread = L"0.2";
-    document.glock.primaryDamage = L"8.0";
-    document.glock.primaryHeadshotScale = L"3.0";
+    document.glock.primaryDuckPenaltyScale = L"0.60";
+    document.glock.primaryShotGrowth = L"0.0800";
+    document.glock.primaryFirstShotSpeedThreshold = L"45.0";
+    document.glock.primaryMaxSpread = L"0.1800";
+    document.glock.primaryDamage = L"10.0";
+    document.glock.primaryHeadshotScale = L"4.0";
 
     document.mp5.profileName = L"default";
-    document.mp5.primaryBaseSpread = L"0.0523";
-    document.mp5.primaryGroundMovePenalty = L"0.0200";
-    document.mp5.primaryAirMovePenalty = L"0.0400";
-    document.mp5.primaryDuckPenaltyScale = L"0.7000";
-    document.mp5.primaryBurstGrowth = L"0.0060";
-    document.mp5.primaryBurstMaxAdditionalSpread = L"0.0600";
-    document.mp5.primarySpreadRecovery = L"0.3000";
+    document.mp5.primaryBaseSpread = L"0.0380";
+    document.mp5.primaryGroundMovePenalty = L"0.0240";
+    document.mp5.primaryAirMovePenalty = L"0.0550";
+    document.mp5.primaryDuckPenaltyScale = L"0.6200";
+    document.mp5.primaryBurstGrowth = L"0.0140";
+    document.mp5.primaryBurstMaxAdditionalSpread = L"0.0950";
+    document.mp5.primarySpreadRecovery = L"0.8000";
     document.mp5.primaryFirstShotSpeedThreshold = L"30.0";
-    document.mp5.primaryMaxSpread = L"0.1200";
+    document.mp5.primaryMaxSpread = L"0.1250";
     document.mp5.primaryDamage = L"12.0";
-    document.mp5.primaryHeadshotScale = L"3.0";
+    document.mp5.primaryHeadshotScale = L"3.25";
     document.mp5.labAmmo = L"250";
 
     document.weapon357.profileName = L"default";
@@ -320,6 +321,7 @@ bool SaveProjectDocumentToFile(const ProjectDocument& document, const std::wstri
     SetString(glock, L"sv_exp_glock_primary_ground_move_penalty", document.glock.primaryGroundMovePenalty);
     SetString(glock, L"sv_exp_glock_primary_air_move_penalty", document.glock.primaryAirMovePenalty);
     SetString(glock, L"sv_exp_glock_primary_duck_penalty_scale", document.glock.primaryDuckPenaltyScale);
+    SetString(glock, L"sv_exp_glock_primary_shot_growth", document.glock.primaryShotGrowth);
     SetString(glock, L"sv_exp_glock_primary_first_shot_speed_threshold", document.glock.primaryFirstShotSpeedThreshold);
     SetString(glock, L"sv_exp_glock_primary_max_spread", document.glock.primaryMaxSpread);
     SetString(glock, L"sv_exp_glock_primary_damage", document.glock.primaryDamage);
@@ -513,6 +515,7 @@ bool LoadProjectDocumentFromFile(const std::wstring& path, ProjectDocument& docu
         loaded.glock.primaryGroundMovePenalty = ReadStringValue(*glock, L"sv_exp_glock_primary_ground_move_penalty", loaded.glock.primaryGroundMovePenalty);
         loaded.glock.primaryAirMovePenalty = ReadStringValue(*glock, L"sv_exp_glock_primary_air_move_penalty", loaded.glock.primaryAirMovePenalty);
         loaded.glock.primaryDuckPenaltyScale = ReadStringValue(*glock, L"sv_exp_glock_primary_duck_penalty_scale", loaded.glock.primaryDuckPenaltyScale);
+        loaded.glock.primaryShotGrowth = ReadStringValue(*glock, L"sv_exp_glock_primary_shot_growth", loaded.glock.primaryShotGrowth);
         loaded.glock.primaryFirstShotSpeedThreshold = ReadStringValue(*glock, L"sv_exp_glock_primary_first_shot_speed_threshold", loaded.glock.primaryFirstShotSpeedThreshold);
         loaded.glock.primaryMaxSpread = ReadStringValue(*glock, L"sv_exp_glock_primary_max_spread", loaded.glock.primaryMaxSpread);
         loaded.glock.primaryDamage = ReadStringValue(*glock, L"sv_exp_glock_primary_damage", loaded.glock.primaryDamage);

@@ -1,6 +1,6 @@
 {
-  "name": "cs_mobile",
-  "description": "Legacy alias for the softer mobile MP5 preset. It blooms less aggressively than the burst preset and remains a server-side stock-client-compatible approximation.",
+  "name": "mp5_mobile_soft",
+  "description": "Experimental softer mobile MP5 preset. It keeps movement penalties lighter and cadence bloom milder than the controlled-burst preset while remaining a server-side approximation on the stock Half-Life client.",
   "cvars": {
     "sv_exp_mp5_primary_enabled": "1",
     "sv_exp_mp5_primary_base_spread": "0.0440",

@@ -1,19 +1,20 @@
 {
   "name": "baseline",
-  "description": "Experimental MP5 tuning close to the current server-side baseline. This is a manual stock-client helper, not an authoritative CS value set.",
+  "description": "Recommended current server-side MP5 baseline. It rewards controlled bursts, lets long sprays bloom, and keeps stock-client compatibility without client-side recoil changes.",
   "cvars": {
-    "sv_exp_mp5_primary_base_spread": "0.0523",
-    "sv_exp_mp5_primary_ground_move_penalty": "0.0200",
-    "sv_exp_mp5_primary_air_move_penalty": "0.0400",
-    "sv_exp_mp5_primary_duck_penalty_scale": "0.7000",
-    "sv_exp_mp5_primary_burst_growth": "0.0060",
-    "sv_exp_mp5_primary_burst_max_additional_spread": "0.0600",
-    "sv_exp_mp5_primary_spread_recovery": "0.3000",
+    "sv_exp_mp5_primary_enabled": "1",
+    "sv_exp_mp5_primary_base_spread": "0.0380",
+    "sv_exp_mp5_primary_ground_move_penalty": "0.0240",
+    "sv_exp_mp5_primary_air_move_penalty": "0.0550",
+    "sv_exp_mp5_primary_duck_penalty_scale": "0.6200",
+    "sv_exp_mp5_primary_burst_growth": "0.0140",
+    "sv_exp_mp5_primary_burst_max_additional_spread": "0.0950",
+    "sv_exp_mp5_primary_spread_recovery": "0.8000",
     "sv_exp_mp5_primary_damage": "12.0",
-    "sv_exp_mp5_primary_headshot_scale": "3.0",
+    "sv_exp_mp5_primary_headshot_scale": "3.25",
     "sv_exp_mp5_primary_headshot_lethal": "0",
-    "sv_exp_mp5_primary_first_shot_accuracy": "0",
+    "sv_exp_mp5_primary_first_shot_accuracy": "1",
     "sv_exp_mp5_primary_first_shot_speed_threshold": "30.0",
-    "sv_exp_mp5_primary_max_spread": "0.1200"
+    "sv_exp_mp5_primary_max_spread": "0.1250"
   }
 }

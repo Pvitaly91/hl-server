@@ -21,6 +21,16 @@ The repository vendors a pinned snapshot of Valve's official Half-Life source ba
 
 It is not yet a gameplay conversion and it does not ship any proprietary game assets, Steam files, or HLDS binaries.
 
+## Weapon Feel Direction
+
+The current gameplay direction is intentionally narrower than "make full Counter-Strike in Half-Life."
+
+- The goal is to improve stock-client-compatible HLDM weapon feel on the server side.
+- Glock should reward careful single shots and punish rapid spam through cadence growth plus timed recovery, not by depending on a hard server-only tap-fire gate.
+- MP5 should reward controlled bursts, let long sprays bloom, and recover accuracy when the player pauses.
+- Movement, air state, crouch stability, and readable headshot damage are part of the tuning target.
+- Stock client compatibility is preserved, but client-side recoil and prediction are still only approximated because this repository does not ship a custom client DLL.
+
 ## Prerequisites
 
 - Windows 10/11
@@ -110,6 +120,20 @@ The editor now covers the full currently checked-in server config surface in one
 - armor, helmet, and first utility settings
 
 The `General` page now also shows a compact "What This Config Will Affect" summary so it is obvious whether the current project enables round mode, team round mode, buy mode, a specific main loadout, or armor and helmet support.
+
+For the current Glock and MP5 feel pass, the most important editor fields are now labeled more directly:
+
+- `Shot growth per accepted shot`
+- `Recovery seconds to settle`
+- `Crouch stability scale`
+- `Max spread clamp`
+
+The recommended preset names for this pass are:
+
+- `glock_cs_like_soft`
+- `glock_cs_like_tight`
+- `mp5_controlled_burst`
+- `mp5_mobile_soft`
 
 JSON vs CFG:
 

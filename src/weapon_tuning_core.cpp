@@ -307,7 +307,9 @@ SharedWeaponSpreadProfile BuildGlockPrimarySpreadProfile()
     profile.firstShotAccuracyEnabled = ExpFirstShotAccuracyEnabled();
     profile.firstShotSpeedThreshold = ExpGlockPrimaryFirstShotSpeedThreshold();
     profile.firstShotRecoverySeconds = ExpSpreadRecoverySeconds();
+    profile.additionalSpreadRecoverySeconds = ExpSpreadRecoverySeconds();
     profile.maxSpread = ExpGlockPrimaryMaxSpread();
+    profile.duckScalesAdditionalSpread = true;
     return profile;
 }
 
@@ -321,8 +323,10 @@ SharedWeaponSpreadProfile BuildMp5PrimarySpreadProfile()
     profile.movementPenaltyScale = 1.0f;
     profile.firstShotAccuracyEnabled = ExpMP5PrimaryFirstShotAccuracyEnabled();
     profile.firstShotSpeedThreshold = ExpMP5PrimaryFirstShotSpeedThreshold();
-    profile.firstShotRecoverySeconds = 0.0f;
+    profile.firstShotRecoverySeconds = ExpMP5PrimarySpreadRecoverySeconds();
+    profile.additionalSpreadRecoverySeconds = ExpMP5PrimarySpreadRecoverySeconds();
     profile.maxSpread = ExpMP5PrimaryMaxSpread();
+    profile.duckScalesAdditionalSpread = true;
     return profile;
 }
 
@@ -337,7 +341,9 @@ SharedWeaponSpreadProfile Build357PrimarySpreadProfile()
     profile.firstShotAccuracyEnabled = Exp357PrimaryFirstShotAccuracyEnabled();
     profile.firstShotSpeedThreshold = Exp357PrimaryFirstShotSpeedThreshold();
     profile.firstShotRecoverySeconds = Exp357PrimarySpreadRecoverySeconds();
+    profile.additionalSpreadRecoverySeconds = Exp357PrimarySpreadRecoverySeconds();
     profile.maxSpread = Exp357PrimaryMaxSpread();
+    profile.duckScalesAdditionalSpread = false;
     return profile;
 }
 
@@ -352,7 +358,9 @@ SharedWeaponSpreadProfile BuildShotgunPrimarySpreadProfile()
     profile.firstShotAccuracyEnabled = ExpShotgunPrimaryFirstShotAccuracyEnabled();
     profile.firstShotSpeedThreshold = ExpShotgunPrimaryFirstShotSpeedThreshold();
     profile.firstShotRecoverySeconds = ExpShotgunPrimarySpreadRecoverySeconds();
+    profile.additionalSpreadRecoverySeconds = ExpShotgunPrimarySpreadRecoverySeconds();
     profile.maxSpread = ExpShotgunPrimaryMaxSpread();
+    profile.duckScalesAdditionalSpread = false;
     return profile;
 }
 
@@ -451,6 +459,11 @@ SharedWeaponSpreadResult ComputeSharedWeaponSpread(
             }
         }
 
+        if (state.grounded && state.ducking && profile.duckScalesAdditionalSpread)
+        {
+            result.additionalSpread *= profile.duckPenaltyScale;
+        }
+
         result.spread = ClampSharedValue(
             profile.baseSpread + result.movementPenalty + result.additionalSpread,
             0.0f,
@@ -477,6 +490,25 @@ float RecoverSharedAdditionalSpread(
 
     const float recoveredSpread = currentSpread - ((maxAdditionalSpread / recoverySeconds) * elapsedSeconds);
     return recoveredSpread > 0.0f ? recoveredSpread : 0.0f;
+}
+
+float GrowSharedAdditionalSpread(
+    float currentSpread,
+    float growthPerShot,
+    float maxAdditionalSpread)
+{
+    if (maxAdditionalSpread <= 0.0f)
+    {
+        return 0.0f;
+    }
+
+    const float clampedCurrentSpread = ClampSharedValue(currentSpread, 0.0f, maxAdditionalSpread);
+    if (growthPerShot <= 0.0f)
+    {
+        return clampedCurrentSpread;
+    }
+
+    return ClampSharedValue(clampedCurrentSpread + growthPerShot, 0.0f, maxAdditionalSpread);
 }
 
 bool ApplySharedWeaponTraceDamage(

@@ -26,6 +26,7 @@ float ExpGlockPrimaryBaseSpread();
 float ExpGlockPrimaryGroundMovePenalty();
 float ExpGlockPrimaryAirMovePenalty();
 float ExpGlockPrimaryDuckPenaltyScale();
+float ExpGlockPrimaryShotGrowth();
 float ExpGlockPrimaryFirstShotSpeedThreshold();
 float ExpGlockPrimaryMaxSpread();
 float ExpGlockPrimaryDamage();

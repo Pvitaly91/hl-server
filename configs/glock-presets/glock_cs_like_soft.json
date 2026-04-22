@@ -1,6 +1,6 @@
 {
-  "name": "cs_mobile",
-  "description": "Legacy alias for the softer CS-like Glock preset. It favors careful single shots and lighter cadence bloom while remaining stock-client-compatible.",
+  "name": "glock_cs_like_soft",
+  "description": "Experimental softer Glock preset that rewards deliberate single shots and short pauses without using a hard server-only tap-fire gate. This is not a claim of exact Counter-Strike parity.",
   "cvars": {
     "sv_exp_pistol_tapfire": "0",
     "sv_exp_move_spread_scale": "1.0",

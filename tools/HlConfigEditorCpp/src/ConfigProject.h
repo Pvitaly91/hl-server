@@ -38,6 +38,7 @@ struct GlockConfig {
     std::wstring primaryGroundMovePenalty;
     std::wstring primaryAirMovePenalty;
     std::wstring primaryDuckPenaltyScale;
+    std::wstring primaryShotGrowth;
     std::wstring primaryFirstShotSpeedThreshold;
     std::wstring primaryMaxSpread;
     std::wstring primaryDamage;
@@ -184,7 +185,7 @@ struct ArmorEquipmentConfig {
 };
 
 struct ProjectDocument {
-    static constexpr int kSchemaVersion = 3;
+    static constexpr int kSchemaVersion = 4;
 
     int schemaVersion = kSchemaVersion;
     ProjectMetadata metadata;
