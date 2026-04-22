@@ -68,6 +68,11 @@ enum ControlId : int {
     IDC_GLOCK_PRIMARY_SHOT_GROWTH,
     IDC_GLOCK_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD,
     IDC_GLOCK_PRIMARY_MAX_SPREAD,
+    IDC_GLOCK_PATTERN_MODE,
+    IDC_GLOCK_PATTERN_SCALE_X,
+    IDC_GLOCK_PATTERN_SCALE_Y,
+    IDC_GLOCK_PATTERN_RESET_TIME,
+    IDC_GLOCK_PATTERN_MAX_INDEX,
     IDC_GLOCK_PRIMARY_DAMAGE,
     IDC_GLOCK_PRIMARY_HEADSHOT_SCALE,
     IDC_GLOCK_PRIMARY_HEADSHOT_LETHAL,
@@ -88,6 +93,11 @@ enum ControlId : int {
     IDC_MP5_PRIMARY_FIRST_SHOT_ACCURACY,
     IDC_MP5_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD,
     IDC_MP5_PRIMARY_MAX_SPREAD,
+    IDC_MP5_PATTERN_MODE,
+    IDC_MP5_PATTERN_SCALE_X,
+    IDC_MP5_PATTERN_SCALE_Y,
+    IDC_MP5_PATTERN_RESET_TIME,
+    IDC_MP5_PATTERN_MAX_INDEX,
     IDC_MP5_PRIMARY_DAMAGE,
     IDC_MP5_PRIMARY_HEADSHOT_SCALE,
     IDC_MP5_PRIMARY_HEADSHOT_LETHAL,
@@ -695,10 +705,10 @@ private:
             ApplyPreset([&] { hlcfg::ApplyGlockPreset(document_, L"default"); });
             return 0;
         case IDC_GLOCK_PRESET_CS_LIKE_SOFT:
-            ApplyPreset([&] { hlcfg::ApplyGlockPreset(document_, L"glock_cs_like_soft"); });
+            ApplyPreset([&] { hlcfg::ApplyGlockPreset(document_, L"glock_pattern_soft"); });
             return 0;
         case IDC_GLOCK_PRESET_CS_TIGHT:
-            ApplyPreset([&] { hlcfg::ApplyGlockPreset(document_, L"glock_cs_like_tight"); });
+            ApplyPreset([&] { hlcfg::ApplyGlockPreset(document_, L"glock_pattern_tight"); });
             return 0;
         case IDC_GLOCK_PRESET_HEADSHOT_TEST:
             ApplyPreset([&] { hlcfg::ApplyGlockPreset(document_, L"headshot_test"); });
@@ -707,10 +717,10 @@ private:
             ApplyPreset([&] { hlcfg::ApplyMp5Preset(document_, L"default"); });
             return 0;
         case IDC_MP5_PRESET_CS_BURST:
-            ApplyPreset([&] { hlcfg::ApplyMp5Preset(document_, L"mp5_controlled_burst"); });
+            ApplyPreset([&] { hlcfg::ApplyMp5Preset(document_, L"mp5_pattern_burst"); });
             return 0;
         case IDC_MP5_PRESET_CS_MOBILE:
-            ApplyPreset([&] { hlcfg::ApplyMp5Preset(document_, L"mp5_mobile_soft"); });
+            ApplyPreset([&] { hlcfg::ApplyMp5Preset(document_, L"mp5_pattern_mobile"); });
             return 0;
         case IDC_MP5_PRESET_SPRAY_TEST:
             ApplyPreset([&] { hlcfg::ApplyMp5Preset(document_, L"spray_test"); });
@@ -919,8 +929,8 @@ private:
         HWND page = pages_[1];
         CreateGroupBox(page, L"Editor Templates", 20, 20, 1040, 70);
         CreateButton(page, L"Default", IDC_GLOCK_PRESET_DEFAULT, 40, 45, 120, 24);
-        CreateButton(page, L"CS-Like Soft", IDC_GLOCK_PRESET_CS_LIKE_SOFT, 175, 45, 150, 24);
-        CreateButton(page, L"CS-Like Tight", IDC_GLOCK_PRESET_CS_TIGHT, 340, 45, 140, 24);
+        CreateButton(page, L"Pattern Soft", IDC_GLOCK_PRESET_CS_LIKE_SOFT, 175, 45, 150, 24);
+        CreateButton(page, L"Pattern Tight", IDC_GLOCK_PRESET_CS_TIGHT, 340, 45, 140, 24);
         CreateButton(page, L"Headshot Test", IDC_GLOCK_PRESET_HEADSHOT_TEST, 475, 45, 140, 24);
 
         CreateGroupBox(page, L"General Glock Settings", 20, 110, 500, 220);
@@ -928,11 +938,11 @@ private:
         CreateEdit(page, IDC_GLOCK_PROFILE_NAME, 220, 140, 260, 24);
         CreateCheckBox(page, L"Legacy tap-fire gate", IDC_GLOCK_TAP_FIRE, 40, 180, 180, 20);
         CreateCheckBox(page, L"First-shot accuracy", IDC_GLOCK_FIRST_SHOT_ACCURACY, 220, 180, 180, 20);
-        CreateLabel(page, L"Recovery seconds to settle", 40, 220, 170, 20);
+        CreateLabel(page, L"Recovery seconds to clear cadence bloom", 40, 220, 170, 20);
         CreateEdit(page, IDC_GLOCK_SPREAD_RECOVERY, 220, 215, 120, 24);
         CreateLabel(page, L"Movement penalty scale", 40, 255, 170, 20);
         CreateEdit(page, IDC_GLOCK_MOVE_SPREAD_SCALE, 220, 250, 120, 24);
-        CreateLabel(page, L"Recommended: leave the legacy tap-fire gate off and tune single-shot feel with shot growth plus recovery.", 40, 290, 440, 36);
+        CreateLabel(page, L"Recommended: leave the legacy tap-fire gate off. Tune single-shot feel with cadence bloom, recovery, and the learnable follow-up pattern.", 40, 290, 440, 36);
 
         CreateGroupBox(page, L"Primary Spread Model", 540, 110, 520, 290);
         CreateLabel(page, L"Base spread", 560, 145, 180, 20);
@@ -943,7 +953,7 @@ private:
         CreateEdit(page, IDC_GLOCK_PRIMARY_AIR_MOVE_PENALTY, 790, 210, 220, 24);
         CreateLabel(page, L"Crouch stability scale", 560, 250, 180, 20);
         CreateEdit(page, IDC_GLOCK_PRIMARY_DUCK_PENALTY_SCALE, 790, 245, 220, 24);
-        CreateLabel(page, L"Shot growth per accepted shot", 560, 285, 180, 20);
+        CreateLabel(page, L"Shot growth (cadence bloom per shot)", 560, 285, 180, 20);
         CreateEdit(page, IDC_GLOCK_PRIMARY_SHOT_GROWTH, 790, 280, 220, 24);
         CreateLabel(page, L"First-shot speed threshold", 560, 320, 180, 20);
         CreateEdit(page, IDC_GLOCK_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD, 790, 315, 220, 24);
@@ -956,14 +966,25 @@ private:
         CreateLabel(page, L"Headshot scale", 40, 420, 120, 20);
         CreateEdit(page, IDC_GLOCK_PRIMARY_HEADSHOT_SCALE, 220, 415, 120, 24);
         CreateCheckBox(page, L"Lethal headshot", IDC_GLOCK_PRIMARY_HEADSHOT_LETHAL, 40, 450, 160, 20);
+
+        CreateGroupBox(page, L"Deterministic Pattern Layer", 20, 500, 500, 190);
+        CreateCheckBox(page, L"Deterministic pattern mode", IDC_GLOCK_PATTERN_MODE, 40, 535, 220, 20);
+        CreateLabel(page, L"Horizontal pattern scale", 40, 570, 170, 20);
+        CreateEdit(page, IDC_GLOCK_PATTERN_SCALE_X, 220, 565, 120, 24);
+        CreateLabel(page, L"Vertical pattern scale", 40, 605, 170, 20);
+        CreateEdit(page, IDC_GLOCK_PATTERN_SCALE_Y, 220, 600, 120, 24);
+        CreateLabel(page, L"Pattern reset time", 40, 640, 170, 20);
+        CreateEdit(page, IDC_GLOCK_PATTERN_RESET_TIME, 220, 635, 120, 24);
+        CreateLabel(page, L"Pattern max index", 40, 675, 170, 20);
+        CreateEdit(page, IDC_GLOCK_PATTERN_MAX_INDEX, 220, 670, 120, 24);
     }
 
     void CreateMp5Page() {
         HWND page = pages_[2];
         CreateGroupBox(page, L"Editor Templates", 20, 20, 1040, 70);
         CreateButton(page, L"Default", IDC_MP5_PRESET_DEFAULT, 40, 45, 120, 24);
-        CreateButton(page, L"Controlled Burst", IDC_MP5_PRESET_CS_BURST, 175, 45, 150, 24);
-        CreateButton(page, L"Mobile Soft", IDC_MP5_PRESET_CS_MOBILE, 340, 45, 130, 24);
+        CreateButton(page, L"Pattern Burst", IDC_MP5_PRESET_CS_BURST, 175, 45, 150, 24);
+        CreateButton(page, L"Pattern Mobile", IDC_MP5_PRESET_CS_MOBILE, 340, 45, 130, 24);
         CreateButton(page, L"Spray Test", IDC_MP5_PRESET_SPRAY_TEST, 455, 45, 130, 24);
 
         CreateGroupBox(page, L"General MP5 Settings", 20, 110, 500, 235);
@@ -985,11 +1006,11 @@ private:
         CreateEdit(page, IDC_MP5_PRIMARY_AIR_MOVE_PENALTY, 790, 210, 220, 24);
         CreateLabel(page, L"Crouch stability scale", 560, 250, 180, 20);
         CreateEdit(page, IDC_MP5_PRIMARY_DUCK_PENALTY_SCALE, 790, 245, 220, 24);
-        CreateLabel(page, L"Shot growth per accepted shot", 560, 285, 180, 20);
+        CreateLabel(page, L"Burst growth (cadence bloom per shot)", 560, 285, 180, 20);
         CreateEdit(page, IDC_MP5_PRIMARY_BURST_GROWTH, 790, 280, 220, 24);
-        CreateLabel(page, L"Max extra spread from spray", 560, 320, 180, 20);
+        CreateLabel(page, L"Max extra spread from bloom", 560, 320, 180, 20);
         CreateEdit(page, IDC_MP5_PRIMARY_BURST_MAX_ADDITIONAL_SPREAD, 790, 315, 220, 24);
-        CreateLabel(page, L"Recovery seconds to settle", 560, 355, 180, 20);
+        CreateLabel(page, L"Recovery seconds to clear bloom", 560, 355, 180, 20);
         CreateEdit(page, IDC_MP5_PRIMARY_SPREAD_RECOVERY, 790, 350, 220, 24);
         CreateLabel(page, L"First-shot speed threshold", 560, 390, 180, 20);
         CreateEdit(page, IDC_MP5_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD, 790, 385, 220, 24);
@@ -1002,6 +1023,17 @@ private:
         CreateLabel(page, L"Headshot scale", 40, 435, 120, 20);
         CreateEdit(page, IDC_MP5_PRIMARY_HEADSHOT_SCALE, 220, 430, 120, 24);
         CreateCheckBox(page, L"Lethal headshot", IDC_MP5_PRIMARY_HEADSHOT_LETHAL, 360, 430, 120, 20);
+
+        CreateGroupBox(page, L"Deterministic Pattern Layer", 20, 500, 500, 190);
+        CreateCheckBox(page, L"Deterministic pattern mode", IDC_MP5_PATTERN_MODE, 40, 535, 220, 20);
+        CreateLabel(page, L"Horizontal pattern scale", 40, 570, 170, 20);
+        CreateEdit(page, IDC_MP5_PATTERN_SCALE_X, 220, 565, 120, 24);
+        CreateLabel(page, L"Vertical pattern scale", 40, 605, 170, 20);
+        CreateEdit(page, IDC_MP5_PATTERN_SCALE_Y, 220, 600, 120, 24);
+        CreateLabel(page, L"Pattern reset time", 40, 640, 170, 20);
+        CreateEdit(page, IDC_MP5_PATTERN_RESET_TIME, 220, 635, 120, 24);
+        CreateLabel(page, L"Pattern max index", 40, 675, 170, 20);
+        CreateEdit(page, IDC_MP5_PATTERN_MAX_INDEX, 220, 670, 120, 24);
     }
 
     void Create357Page() {
@@ -1668,9 +1700,13 @@ private:
         preview.glock.firstShotAccuracy = GetCheckValue(IDC_GLOCK_FIRST_SHOT_ACCURACY);
         preview.glock.spreadRecovery = GetTextValue(IDC_GLOCK_SPREAD_RECOVERY);
         preview.glock.primaryShotGrowth = GetTextValue(IDC_GLOCK_PRIMARY_SHOT_GROWTH);
+        preview.glock.patternMode = GetCheckValue(IDC_GLOCK_PATTERN_MODE);
+        preview.glock.patternResetTime = GetTextValue(IDC_GLOCK_PATTERN_RESET_TIME);
         preview.mp5.primaryFirstShotAccuracy = GetCheckValue(IDC_MP5_PRIMARY_FIRST_SHOT_ACCURACY);
         preview.mp5.primaryBurstGrowth = GetTextValue(IDC_MP5_PRIMARY_BURST_GROWTH);
         preview.mp5.primarySpreadRecovery = GetTextValue(IDC_MP5_PRIMARY_SPREAD_RECOVERY);
+        preview.mp5.patternMode = GetCheckValue(IDC_MP5_PATTERN_MODE);
+        preview.mp5.patternResetTime = GetTextValue(IDC_MP5_PATTERN_RESET_TIME);
         preview.roundMode.enabled = GetCheckValue(IDC_ROUND_MODE);
         preview.roundMode.loadoutMode = GetComboSelectionValue(IDC_ROUND_LOADOUT_MODE);
         preview.roundMode.weaponProfile = GetTextValue(IDC_ROUND_WEAPON_PROFILE);
@@ -1705,9 +1741,13 @@ private:
         if (weaponUnderTest == L"glock") {
             const double shotGrowth = ParseConfigDouble(preview.glock.primaryShotGrowth, 0.0);
             const double recoverySeconds = ParseConfigDouble(preview.glock.spreadRecovery, 0.0);
+            const double patternResetSeconds = ParseConfigDouble(preview.glock.patternResetTime, 0.0);
             weaponFeel = preview.glock.tapFire
                              ? L"legacy tap-fire gated"
                              : (preview.glock.firstShotAccuracy ? L"single-shot favored" : L"first-shot neutral");
+            if (preview.glock.patternMode) {
+                weaponFeel += L", learnable follow-up pattern";
+            }
             if (shotGrowth >= 0.020) {
                 weaponFeel += L", spam punished strongly";
             } else if (shotGrowth >= 0.012) {
@@ -1718,10 +1758,17 @@ private:
             } else if (recoverySeconds >= 0.500) {
                 weaponFeel += L", patient pacing rewarded";
             }
+            if (preview.glock.patternMode && patternResetSeconds > 0.0 && patternResetSeconds <= 0.400) {
+                weaponFeel += L", pattern resets quickly after a pause";
+            }
         } else if (weaponUnderTest == L"mp5") {
             const double burstGrowth = ParseConfigDouble(preview.mp5.primaryBurstGrowth, 0.0);
             const double recoverySeconds = ParseConfigDouble(preview.mp5.primarySpreadRecovery, 0.0);
+            const double patternResetSeconds = ParseConfigDouble(preview.mp5.patternResetTime, 0.0);
             weaponFeel = preview.mp5.primaryFirstShotAccuracy ? L"burst favored" : L"spray heavy";
+            if (preview.mp5.patternMode) {
+                weaponFeel += L", learnable early burst";
+            }
             if (burstGrowth >= 0.011) {
                 weaponFeel += L", short bursts beat spray";
             } else if (burstGrowth <= 0.007) {
@@ -1731,6 +1778,9 @@ private:
                 weaponFeel += L", quick reset";
             } else if (recoverySeconds >= 0.420) {
                 weaponFeel += L", recoil settles slowly";
+            }
+            if (preview.mp5.patternMode && patternResetSeconds > 0.0 && patternResetSeconds <= 0.320) {
+                weaponFeel += L", burst pattern resets quickly";
             }
         }
 
@@ -1795,6 +1845,11 @@ private:
         SetTextValue(IDC_GLOCK_PRIMARY_SHOT_GROWTH, document_.glock.primaryShotGrowth);
         SetTextValue(IDC_GLOCK_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD, document_.glock.primaryFirstShotSpeedThreshold);
         SetTextValue(IDC_GLOCK_PRIMARY_MAX_SPREAD, document_.glock.primaryMaxSpread);
+        Button_SetCheck(FindControl(IDC_GLOCK_PATTERN_MODE), document_.glock.patternMode ? BST_CHECKED : BST_UNCHECKED);
+        SetTextValue(IDC_GLOCK_PATTERN_SCALE_X, document_.glock.patternScaleX);
+        SetTextValue(IDC_GLOCK_PATTERN_SCALE_Y, document_.glock.patternScaleY);
+        SetTextValue(IDC_GLOCK_PATTERN_RESET_TIME, document_.glock.patternResetTime);
+        SetTextValue(IDC_GLOCK_PATTERN_MAX_INDEX, document_.glock.patternMaxIndex);
         SetTextValue(IDC_GLOCK_PRIMARY_DAMAGE, document_.glock.primaryDamage);
         SetTextValue(IDC_GLOCK_PRIMARY_HEADSHOT_SCALE, document_.glock.primaryHeadshotScale);
         Button_SetCheck(FindControl(IDC_GLOCK_PRIMARY_HEADSHOT_LETHAL), document_.glock.primaryHeadshotLethal ? BST_CHECKED : BST_UNCHECKED);
@@ -1811,6 +1866,11 @@ private:
         Button_SetCheck(FindControl(IDC_MP5_PRIMARY_FIRST_SHOT_ACCURACY), document_.mp5.primaryFirstShotAccuracy ? BST_CHECKED : BST_UNCHECKED);
         SetTextValue(IDC_MP5_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD, document_.mp5.primaryFirstShotSpeedThreshold);
         SetTextValue(IDC_MP5_PRIMARY_MAX_SPREAD, document_.mp5.primaryMaxSpread);
+        Button_SetCheck(FindControl(IDC_MP5_PATTERN_MODE), document_.mp5.patternMode ? BST_CHECKED : BST_UNCHECKED);
+        SetTextValue(IDC_MP5_PATTERN_SCALE_X, document_.mp5.patternScaleX);
+        SetTextValue(IDC_MP5_PATTERN_SCALE_Y, document_.mp5.patternScaleY);
+        SetTextValue(IDC_MP5_PATTERN_RESET_TIME, document_.mp5.patternResetTime);
+        SetTextValue(IDC_MP5_PATTERN_MAX_INDEX, document_.mp5.patternMaxIndex);
         SetTextValue(IDC_MP5_PRIMARY_DAMAGE, document_.mp5.primaryDamage);
         SetTextValue(IDC_MP5_PRIMARY_HEADSHOT_SCALE, document_.mp5.primaryHeadshotScale);
         Button_SetCheck(FindControl(IDC_MP5_PRIMARY_HEADSHOT_LETHAL), document_.mp5.primaryHeadshotLethal ? BST_CHECKED : BST_UNCHECKED);
@@ -1961,6 +2021,11 @@ private:
         document_.glock.primaryShotGrowth = GetTextValue(IDC_GLOCK_PRIMARY_SHOT_GROWTH);
         document_.glock.primaryFirstShotSpeedThreshold = GetTextValue(IDC_GLOCK_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD);
         document_.glock.primaryMaxSpread = GetTextValue(IDC_GLOCK_PRIMARY_MAX_SPREAD);
+        document_.glock.patternMode = GetCheckValue(IDC_GLOCK_PATTERN_MODE);
+        document_.glock.patternScaleX = GetTextValue(IDC_GLOCK_PATTERN_SCALE_X);
+        document_.glock.patternScaleY = GetTextValue(IDC_GLOCK_PATTERN_SCALE_Y);
+        document_.glock.patternResetTime = GetTextValue(IDC_GLOCK_PATTERN_RESET_TIME);
+        document_.glock.patternMaxIndex = GetTextValue(IDC_GLOCK_PATTERN_MAX_INDEX);
         document_.glock.primaryDamage = GetTextValue(IDC_GLOCK_PRIMARY_DAMAGE);
         document_.glock.primaryHeadshotScale = GetTextValue(IDC_GLOCK_PRIMARY_HEADSHOT_SCALE);
         document_.glock.primaryHeadshotLethal = GetCheckValue(IDC_GLOCK_PRIMARY_HEADSHOT_LETHAL);
@@ -1977,6 +2042,11 @@ private:
         document_.mp5.primaryFirstShotAccuracy = GetCheckValue(IDC_MP5_PRIMARY_FIRST_SHOT_ACCURACY);
         document_.mp5.primaryFirstShotSpeedThreshold = GetTextValue(IDC_MP5_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD);
         document_.mp5.primaryMaxSpread = GetTextValue(IDC_MP5_PRIMARY_MAX_SPREAD);
+        document_.mp5.patternMode = GetCheckValue(IDC_MP5_PATTERN_MODE);
+        document_.mp5.patternScaleX = GetTextValue(IDC_MP5_PATTERN_SCALE_X);
+        document_.mp5.patternScaleY = GetTextValue(IDC_MP5_PATTERN_SCALE_Y);
+        document_.mp5.patternResetTime = GetTextValue(IDC_MP5_PATTERN_RESET_TIME);
+        document_.mp5.patternMaxIndex = GetTextValue(IDC_MP5_PATTERN_MAX_INDEX);
         document_.mp5.primaryDamage = GetTextValue(IDC_MP5_PRIMARY_DAMAGE);
         document_.mp5.primaryHeadshotScale = GetTextValue(IDC_MP5_PRIMARY_HEADSHOT_SCALE);
         document_.mp5.primaryHeadshotLethal = GetCheckValue(IDC_MP5_PRIMARY_HEADSHOT_LETHAL);
@@ -2387,7 +2457,7 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
     glock.general.debugWeaponLogRejections = true;
     glock.exportSettings.exportFolder = exportRoot.wstring();
     glock.exportSettings.cfgFileName = L"editor_glock_simple.cfg";
-    hlcfg::ApplyGlockPreset(glock, L"glock_cs_like_tight");
+    hlcfg::ApplyGlockPreset(glock, L"glock_pattern_tight");
     glock.glock.profileName = L"editor_glock_simple";
     hlcfg::ApplyDummyPreset(glock, L"vest_headprotected");
 
@@ -2411,6 +2481,9 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
         !ValidateContains(glockExport.cfgText, L"sv_exp_session_tag \"editor_cfg_test\"") ||
         !ValidateContains(glockExport.cfgText, L"sv_exp_glock_profile_name \"editor_glock_simple\"") ||
         !ValidateContains(glockExport.cfgText, L"sv_exp_glock_primary_shot_growth 0.09") ||
+        !ValidateContains(glockExport.cfgText, L"sv_exp_glock_pattern_mode 1") ||
+        !ValidateContains(glockExport.cfgText, L"sv_exp_glock_pattern_scale_y 0.42") ||
+        !ValidateContains(glockExport.cfgText, L"sv_exp_glock_pattern_reset_time 0.32") ||
         !ValidateContains(glockExport.cfgText, L"sv_exp_glock_primary_headshot_lethal 1") ||
         !ValidateContains(glockExport.cfgText, L"sv_exp_glock_lab_target_profile_name \"vest_headprotected\"") ||
         glockExport.execCommand != L"exec editor_glock_simple.cfg" ||
@@ -2425,7 +2498,7 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
     mp5.general.debugWeaponLogRejections = true;
     mp5.exportSettings.exportFolder = exportRoot.wstring();
     mp5.exportSettings.cfgFileName = L"editor_mp5_simple.cfg";
-    hlcfg::ApplyMp5Preset(mp5, L"mp5_controlled_burst");
+    hlcfg::ApplyMp5Preset(mp5, L"mp5_pattern_burst");
     mp5.mp5.profileName = L"editor_mp5_simple";
     hlcfg::ApplyDummyPreset(mp5, L"vest");
     mp5.mp5.primaryBurstGrowth = L"0.0180";
@@ -2454,6 +2527,9 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
         !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_primary_enabled 1") ||
         !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_profile_name \"editor_mp5_simple\"") ||
         !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_primary_burst_growth 0.018") ||
+        !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_pattern_mode 1") ||
+        !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_pattern_scale_y 0.5") ||
+        !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_pattern_reset_time 0.26") ||
         !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_lab_loadout 1") ||
         !ValidateContains(mp5Export.cfgText, L"sv_exp_glock_lab_target_profile_name \"vest\"") ||
         mp5Export.execCommand != L"exec editor_mp5_simple.cfg" ||

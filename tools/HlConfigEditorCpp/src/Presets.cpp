@@ -18,6 +18,11 @@ void ApplyGlockDefaults(ProjectDocument& document) {
     document.glock.primaryShotGrowth = L"0.0800";
     document.glock.primaryFirstShotSpeedThreshold = L"45.0";
     document.glock.primaryMaxSpread = L"0.1800";
+    document.glock.patternMode = false;
+    document.glock.patternScaleX = L"0.2000";
+    document.glock.patternScaleY = L"0.3500";
+    document.glock.patternResetTime = L"0.3500";
+    document.glock.patternMaxIndex = L"5";
     document.glock.primaryDamage = L"10.0";
     document.glock.primaryHeadshotScale = L"4.0";
     document.glock.primaryHeadshotLethal = false;
@@ -37,6 +42,11 @@ void ApplyMp5Defaults(ProjectDocument& document) {
     document.mp5.primaryFirstShotAccuracy = true;
     document.mp5.primaryFirstShotSpeedThreshold = L"30.0";
     document.mp5.primaryMaxSpread = L"0.1250";
+    document.mp5.patternMode = false;
+    document.mp5.patternScaleX = L"0.2600";
+    document.mp5.patternScaleY = L"0.5500";
+    document.mp5.patternResetTime = L"0.2800";
+    document.mp5.patternMaxIndex = L"6";
     document.mp5.primaryDamage = L"12.0";
     document.mp5.primaryHeadshotScale = L"3.25";
     document.mp5.primaryHeadshotLethal = false;
@@ -173,12 +183,12 @@ void ApplyGlockPreset(ProjectDocument& document, const std::wstring& presetName)
         return;
     }
 
-    if (presetName == L"cs_like_soft" || presetName == L"glock_cs_like_soft" || presetName == L"cs_mobile") {
+    if (presetName == L"cs_like_soft" || presetName == L"glock_cs_like_soft" || presetName == L"cs_mobile" || presetName == L"glock_pattern_soft") {
         document.glock.tapFire = false;
         document.glock.firstShotAccuracy = true;
         document.glock.spreadRecovery = L"0.6500";
         document.glock.moveSpreadScale = L"1.0";
-        document.glock.profileName = L"glock_cs_like_soft";
+        document.glock.profileName = presetName == L"glock_pattern_soft" ? L"glock_pattern_soft" : L"glock_cs_like_soft";
         document.glock.primaryBaseSpread = L"0.0105";
         document.glock.primaryGroundMovePenalty = L"0.0650";
         document.glock.primaryAirMovePenalty = L"0.1000";
@@ -186,18 +196,23 @@ void ApplyGlockPreset(ProjectDocument& document, const std::wstring& presetName)
         document.glock.primaryShotGrowth = L"0.0550";
         document.glock.primaryFirstShotSpeedThreshold = L"60.0";
         document.glock.primaryMaxSpread = L"0.1750";
+        document.glock.patternMode = true;
+        document.glock.patternScaleX = L"0.1700";
+        document.glock.patternScaleY = L"0.2800";
+        document.glock.patternResetTime = L"0.4200";
+        document.glock.patternMaxIndex = L"4";
         document.glock.primaryDamage = L"10.0";
         document.glock.primaryHeadshotScale = L"3.75";
         document.glock.primaryHeadshotLethal = false;
         return;
     }
 
-    if (presetName == L"cs_tight" || presetName == L"glock_cs_like_tight") {
+    if (presetName == L"cs_tight" || presetName == L"glock_cs_like_tight" || presetName == L"glock_pattern_tight") {
         document.glock.tapFire = false;
         document.glock.firstShotAccuracy = true;
         document.glock.spreadRecovery = L"0.8500";
         document.glock.moveSpreadScale = L"1.0";
-        document.glock.profileName = L"glock_cs_like_tight";
+        document.glock.profileName = presetName == L"glock_pattern_tight" ? L"glock_pattern_tight" : L"glock_cs_like_tight";
         document.glock.primaryBaseSpread = L"0.0085";
         document.glock.primaryGroundMovePenalty = L"0.0950";
         document.glock.primaryAirMovePenalty = L"0.1450";
@@ -205,6 +220,11 @@ void ApplyGlockPreset(ProjectDocument& document, const std::wstring& presetName)
         document.glock.primaryShotGrowth = L"0.0900";
         document.glock.primaryFirstShotSpeedThreshold = L"35.0";
         document.glock.primaryMaxSpread = L"0.1650";
+        document.glock.patternMode = true;
+        document.glock.patternScaleX = L"0.2400";
+        document.glock.patternScaleY = L"0.4200";
+        document.glock.patternResetTime = L"0.3200";
+        document.glock.patternMaxIndex = L"5";
         document.glock.primaryDamage = L"10.0";
         document.glock.primaryHeadshotScale = L"4.25";
         document.glock.primaryHeadshotLethal = true;
@@ -224,6 +244,11 @@ void ApplyGlockPreset(ProjectDocument& document, const std::wstring& presetName)
         document.glock.primaryShotGrowth = L"0.0850";
         document.glock.primaryFirstShotSpeedThreshold = L"25.0";
         document.glock.primaryMaxSpread = L"0.14";
+        document.glock.patternMode = true;
+        document.glock.patternScaleX = L"0.2100";
+        document.glock.patternScaleY = L"0.3600";
+        document.glock.patternResetTime = L"0.3000";
+        document.glock.patternMaxIndex = L"5";
         document.glock.primaryDamage = L"11.0";
         document.glock.primaryHeadshotScale = L"4.5";
         document.glock.primaryHeadshotLethal = true;
@@ -240,8 +265,8 @@ void ApplyMp5Preset(ProjectDocument& document, const std::wstring& presetName) {
     document.mp5.primaryEnabled = true;
     document.mp5.labLoadout = true;
 
-    if (presetName == L"cs_burst" || presetName == L"mp5_controlled_burst") {
-        document.mp5.profileName = L"mp5_controlled_burst";
+    if (presetName == L"cs_burst" || presetName == L"mp5_controlled_burst" || presetName == L"mp5_pattern_burst") {
+        document.mp5.profileName = presetName == L"mp5_pattern_burst" ? L"mp5_pattern_burst" : L"mp5_controlled_burst";
         document.mp5.primaryBaseSpread = L"0.0360";
         document.mp5.primaryGroundMovePenalty = L"0.0240";
         document.mp5.primaryAirMovePenalty = L"0.0550";
@@ -252,13 +277,18 @@ void ApplyMp5Preset(ProjectDocument& document, const std::wstring& presetName) {
         document.mp5.primaryFirstShotAccuracy = true;
         document.mp5.primaryFirstShotSpeedThreshold = L"28.0";
         document.mp5.primaryMaxSpread = L"0.1250";
+        document.mp5.patternMode = true;
+        document.mp5.patternScaleX = L"0.2400";
+        document.mp5.patternScaleY = L"0.5000";
+        document.mp5.patternResetTime = L"0.2600";
+        document.mp5.patternMaxIndex = L"6";
         document.mp5.primaryDamage = L"12.0";
         document.mp5.primaryHeadshotScale = L"3.30";
         return;
     }
 
-    if (presetName == L"cs_mobile" || presetName == L"mp5_mobile_soft") {
-        document.mp5.profileName = L"mp5_mobile_soft";
+    if (presetName == L"cs_mobile" || presetName == L"mp5_mobile_soft" || presetName == L"mp5_pattern_mobile") {
+        document.mp5.profileName = presetName == L"mp5_pattern_mobile" ? L"mp5_pattern_mobile" : L"mp5_mobile_soft";
         document.mp5.primaryBaseSpread = L"0.0440";
         document.mp5.primaryGroundMovePenalty = L"0.0180";
         document.mp5.primaryAirMovePenalty = L"0.0400";
@@ -269,6 +299,11 @@ void ApplyMp5Preset(ProjectDocument& document, const std::wstring& presetName) {
         document.mp5.primaryFirstShotAccuracy = true;
         document.mp5.primaryFirstShotSpeedThreshold = L"40.0";
         document.mp5.primaryMaxSpread = L"0.1150";
+        document.mp5.patternMode = true;
+        document.mp5.patternScaleX = L"0.1800";
+        document.mp5.patternScaleY = L"0.3600";
+        document.mp5.patternResetTime = L"0.3200";
+        document.mp5.patternMaxIndex = L"5";
         document.mp5.primaryDamage = L"11.5";
         document.mp5.primaryHeadshotScale = L"3.0";
         return;

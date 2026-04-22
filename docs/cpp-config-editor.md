@@ -59,17 +59,22 @@ The `General` page also shows a small "What This Config Will Affect" summary so 
 
 For the current Glock and MP5 feel pass, the editor now uses more direct tuning labels on the weapon tabs:
 
-- `Shot growth per accepted shot`
-- `Recovery seconds to settle`
+- `Shot growth (cadence bloom per shot)` or `Burst growth (cadence bloom per shot)`
+- `Recovery seconds to clear cadence bloom`
 - `Crouch stability scale`
 - `Max spread clamp`
+- `Deterministic pattern mode`
+- `Horizontal pattern scale`
+- `Vertical pattern scale`
+- `Pattern reset time`
+- `Pattern max index`
 
 The recommended preset buttons and names for this pass are:
 
-- Glock: `glock_cs_like_soft`, `glock_cs_like_tight`
-- MP5: `mp5_controlled_burst`, `mp5_mobile_soft`
+- Glock: `glock_pattern_soft`, `glock_pattern_tight`
+- MP5: `mp5_pattern_burst`, `mp5_pattern_mobile`
 
-The intent is to make it obvious that the editor is tuning cadence growth plus recovery, not forcing a hard server-only tap-fire gate as the only way to get a skillful pistol or SMG feel.
+The intent is to make it obvious that the editor is tuning cadence growth plus recovery, with an optional deterministic follow-up pattern layered on top, instead of forcing a hard server-only tap-fire gate as the only way to get a skillful pistol or SMG feel.
 
 The same `General` page now also carries optional match-pack metadata:
 
@@ -115,6 +120,7 @@ The `Export` tab now emphasizes the simple live-mod workflow first:
 - `Copy launcher`, `Copy raw cfg`, `Open export folder`, and `Open live mod` all provide visible success or error feedback instead of failing silently.
 - `Copy launcher` still works when the exported cfg resolves to a live-mod-relative path.
 - Exported cfgs now include the current round, team-round, buy, armor, and helmet sections when those settings are present in the project, so one exported file can represent a full live match setup.
+- Exported Glock and MP5 cfgs now also include the deterministic pattern cvars when pattern mode is enabled.
 
 The default cfg filename is derived from the current project/config name so the common path does not start from a generic placeholder. Example defaults include `editor_glock_simple.cfg`, `editor_mp5_simple.cfg`, `editor_357_test.cfg`, and `editor_shotgun_test.cfg`.
 

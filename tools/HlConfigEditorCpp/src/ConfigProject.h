@@ -41,6 +41,11 @@ struct GlockConfig {
     std::wstring primaryShotGrowth;
     std::wstring primaryFirstShotSpeedThreshold;
     std::wstring primaryMaxSpread;
+    bool patternMode = false;
+    std::wstring patternScaleX;
+    std::wstring patternScaleY;
+    std::wstring patternResetTime;
+    std::wstring patternMaxIndex;
     std::wstring primaryDamage;
     std::wstring primaryHeadshotScale;
     bool primaryHeadshotLethal = false;
@@ -59,6 +64,11 @@ struct Mp5Config {
     bool primaryFirstShotAccuracy = false;
     std::wstring primaryFirstShotSpeedThreshold;
     std::wstring primaryMaxSpread;
+    bool patternMode = false;
+    std::wstring patternScaleX;
+    std::wstring patternScaleY;
+    std::wstring patternResetTime;
+    std::wstring patternMaxIndex;
     std::wstring primaryDamage;
     std::wstring primaryHeadshotScale;
     bool primaryHeadshotLethal = false;
@@ -185,7 +195,7 @@ struct ArmorEquipmentConfig {
 };
 
 struct ProjectDocument {
-    static constexpr int kSchemaVersion = 4;
+    static constexpr int kSchemaVersion = 5;
 
     int schemaVersion = kSchemaVersion;
     ProjectMetadata metadata;

@@ -1,6 +1,6 @@
 {
-  "name": "glock_cs_like_soft",
-  "description": "Experimental softer Glock preset that rewards deliberate single shots and short pauses without using a hard server-only tap-fire gate. This is not a claim of exact Counter-Strike parity.",
+  "name": "glock_pattern_soft",
+  "description": "Experimental Glock preset with a softer deterministic follow-up pattern. Single shots stay accurate, quick follow-ups become learnable instead of purely random, and this remains a server-side approximation on the stock Half-Life client.",
   "cvars": {
     "sv_exp_pistol_tapfire": "0",
     "sv_exp_move_spread_scale": "1.0",

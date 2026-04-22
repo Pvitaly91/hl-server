@@ -57,6 +57,7 @@ void CGlock::Spawn( )
 	m_flLastAcceptedPrimaryShotTime = -1.0f;
 	m_flPrimaryCadenceSpreadAccumulator = 0.0f;
 	m_iPrimaryCadenceShotCount = 0;
+	m_iPrimaryPatternIndex = -1;
 	m_fPrimaryHoldBlockLogged = FALSE;
 
 	FallInit();// get ready to fall down.
@@ -169,8 +170,15 @@ void CGlock::PrimaryAttack( void )
 		ExpGlockPrimaryShotGrowth(),
 		spreadProfile.maxSpread);
 	const float flSpread = spreadResult.spread;
+	const SharedWeaponPatternProfile patternProfile = BuildGlockPrimaryPatternProfile();
+	const SharedWeaponPatternResult patternResult = ComputeSharedWeaponPattern(
+		patternProfile,
+		spreadState,
+		spreadResult.speedRatio,
+		flSpread,
+		m_iPrimaryPatternIndex);
 
-	GlockFire( flSpread, 0.3, TRUE, TRUE );
+	GlockFire( flSpread, 0.3, TRUE, TRUE, &patternResult );
 
 	if (fHadAmmo)
 	{
@@ -185,6 +193,14 @@ void CGlock::PrimaryAttack( void )
 		acceptedTelemetry.recoveryApplied = flCadenceRecoveryApplied > 0.0f ? flCadenceRecoveryApplied : 0.0f;
 		acceptedTelemetry.shotGrowth = ExpGlockPrimaryShotGrowth();
 		acceptedTelemetry.nextAdditionalSpread = flNextCadenceAddedSpread;
+		acceptedTelemetry.patternModeActive = patternResult.enabled;
+		acceptedTelemetry.patternIndex = patternResult.patternIndex;
+		acceptedTelemetry.patternOffsetX = patternResult.offsetX;
+		acceptedTelemetry.patternOffsetY = patternResult.offsetY;
+		acceptedTelemetry.patternResetApplied = patternResult.resetApplied;
+		acceptedTelemetry.totalAdditionalSpread = flMovementPenalty + flAdditionalSpread;
+		acceptedTelemetry.movementContribution = flMovementPenalty;
+		acceptedTelemetry.cadenceGrowthContribution = flAdditionalSpread;
 		acceptedTelemetry.speedRatio = spreadResult.speedRatio;
 		acceptedTelemetry.horizontalSpeed = flHorizontalSpeed;
 		acceptedTelemetry.maxSpeedForNormalization = flMaxSpeedForNormalization;
@@ -198,11 +214,12 @@ void CGlock::PrimaryAttack( void )
 		LogAcceptedGlockPrimaryShot(m_pPlayer, acceptedTelemetry);
 		m_flPrimaryCadenceSpreadAccumulator = flNextCadenceAddedSpread;
 		m_iPrimaryCadenceShotCount = iCadenceShotIndex;
+		m_iPrimaryPatternIndex = patternResult.patternIndex;
 		m_flLastAcceptedPrimaryShotTime = gpGlobals->time;
 	}
 }
 
-void CGlock::GlockFire( float flSpread , float flCycleTime, BOOL fUseAutoAim, BOOL fExperimentalPrimary )
+void CGlock::GlockFire( float flSpread , float flCycleTime, BOOL fUseAutoAim, BOOL fExperimentalPrimary, const SharedWeaponPatternResult *pPattern )
 {
 	if (m_iClip <= 0)
 	{
@@ -260,7 +277,15 @@ void CGlock::GlockFire( float flSpread , float flCycleTime, BOOL fUseAutoAim, BO
 	{
 		BeginGlockPrimaryShotContext(m_pPlayer);
 	}
-	vecDir = m_pPlayer->FireBulletsPlayer( 1, vecSrc, vecAiming, Vector( flSpread, flSpread, flSpread ), 8192, BULLET_PLAYER_9MM, 0, 0, m_pPlayer->pev, m_pPlayer->random_seed );
+	Vector vecPatternAiming = vecAiming;
+	float flRandomSpread = flSpread;
+	if (pPattern != NULL && pPattern->enabled)
+	{
+		vecPatternAiming = (vecAiming + (gpGlobals->v_right * pPattern->offsetX) + (gpGlobals->v_up * pPattern->offsetY)).Normalize();
+		flRandomSpread = pPattern->randomSpread;
+	}
+
+	vecDir = m_pPlayer->FireBulletsPlayer( 1, vecSrc, vecPatternAiming, Vector( flRandomSpread, flRandomSpread, flRandomSpread ), 8192, BULLET_PLAYER_9MM, 0, 0, m_pPlayer->pev, m_pPlayer->random_seed );
 	if (fExperimentalPrimary)
 	{
 		EndGlockPrimaryShotContext();

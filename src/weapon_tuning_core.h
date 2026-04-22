@@ -39,6 +39,25 @@ struct SharedWeaponSpreadResult
     float spread;
 };
 
+struct SharedWeaponPatternProfile
+{
+    bool enabled;
+    float scaleX;
+    float scaleY;
+    float resetTimeSeconds;
+    int maxIndex;
+};
+
+struct SharedWeaponPatternResult
+{
+    bool enabled;
+    bool resetApplied;
+    int patternIndex;
+    float offsetX;
+    float offsetY;
+    float randomSpread;
+};
+
 struct SharedWeaponDamageProfile
 {
     float baseDamage;
@@ -66,6 +85,8 @@ SharedWeaponSpreadProfile BuildGlockPrimarySpreadProfile();
 SharedWeaponSpreadProfile BuildMp5PrimarySpreadProfile();
 SharedWeaponSpreadProfile Build357PrimarySpreadProfile();
 SharedWeaponSpreadProfile BuildShotgunPrimarySpreadProfile();
+SharedWeaponPatternProfile BuildGlockPrimaryPatternProfile();
+SharedWeaponPatternProfile BuildMp5PrimaryPatternProfile();
 SharedWeaponDamageProfile BuildGlockPrimaryDamageProfile();
 SharedWeaponDamageProfile BuildMp5PrimaryDamageProfile();
 SharedWeaponDamageProfile Build357PrimaryDamageProfile();
@@ -79,6 +100,12 @@ SharedWeaponSpreadState BuildPlayerWeaponSpreadState(
 SharedWeaponSpreadResult ComputeSharedWeaponSpread(
     const SharedWeaponSpreadProfile &profile,
     const SharedWeaponSpreadState &state);
+SharedWeaponPatternResult ComputeSharedWeaponPattern(
+    const SharedWeaponPatternProfile &profile,
+    const SharedWeaponSpreadState &state,
+    float speedRatio,
+    float totalSpread,
+    int lastPatternIndex);
 float RecoverSharedAdditionalSpread(
     float currentSpread,
     float elapsedSeconds,

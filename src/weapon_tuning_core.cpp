@@ -31,6 +31,76 @@ float ResolveNormalizedMaxSpeed(float maxSpeed, float fallbackMaxSpeed)
     return maxSpeed > 1.0f ? maxSpeed : fallbackMaxSpeed;
 }
 
+int ClampPatternMaxIndex(int maxIndex)
+{
+    return maxIndex > 1 ? maxIndex : 1;
+}
+
+int ResolveNextPatternIndex(
+    const SharedWeaponPatternProfile &profile,
+    const SharedWeaponSpreadState &state,
+    int lastPatternIndex,
+    bool *resetApplied)
+{
+    if (resetApplied != NULL)
+    {
+        *resetApplied = false;
+    }
+
+    if (!profile.enabled || !state.hasPreviousShot)
+    {
+        return 0;
+    }
+
+    if (profile.resetTimeSeconds > 0.0f && state.timeSincePreviousShot >= profile.resetTimeSeconds)
+    {
+        if (resetApplied != NULL)
+        {
+            *resetApplied = true;
+        }
+
+        return 0;
+    }
+
+    const int clampedMaxIndex = ClampPatternMaxIndex(profile.maxIndex);
+    const int nextPatternIndex = lastPatternIndex >= 0 ? (lastPatternIndex + 1) : 0;
+    return nextPatternIndex < clampedMaxIndex ? nextPatternIndex : (clampedMaxIndex - 1);
+}
+
+float ResolvePatternControlScale(const SharedWeaponSpreadState &state, float speedRatio)
+{
+    float controlScale = 1.0f;
+
+    if (!state.grounded)
+    {
+        controlScale = 1.40f;
+    }
+    else
+    {
+        controlScale += ClampSharedValue(speedRatio, 0.0f, 1.0f) * 0.60f;
+        if (state.ducking)
+        {
+            controlScale *= 0.80f;
+        }
+    }
+
+    return controlScale;
+}
+
+const Vector2D kDeterministicPatternPoints[] =
+{
+    Vector2D(0.00f, 0.00f),
+    Vector2D(0.18f, -0.12f),
+    Vector2D(-0.16f, -0.24f),
+    Vector2D(0.22f, -0.38f),
+    Vector2D(-0.20f, -0.52f),
+    Vector2D(0.26f, -0.68f),
+    Vector2D(-0.24f, -0.84f),
+    Vector2D(0.30f, -1.00f),
+    Vector2D(-0.28f, -1.16f),
+    Vector2D(0.34f, -1.32f)
+};
+
 float GetFallbackHitgroupScale(CBaseEntity *pVictim, int hitgroup)
 {
     const bool playerVictim = pVictim != NULL && pVictim->IsPlayer();
@@ -364,6 +434,28 @@ SharedWeaponSpreadProfile BuildShotgunPrimarySpreadProfile()
     return profile;
 }
 
+SharedWeaponPatternProfile BuildGlockPrimaryPatternProfile()
+{
+    SharedWeaponPatternProfile profile = {};
+    profile.enabled = ExpGlockPatternModeEnabled();
+    profile.scaleX = ExpGlockPatternScaleX();
+    profile.scaleY = ExpGlockPatternScaleY();
+    profile.resetTimeSeconds = ExpGlockPatternResetTime();
+    profile.maxIndex = ExpGlockPatternMaxIndex();
+    return profile;
+}
+
+SharedWeaponPatternProfile BuildMp5PrimaryPatternProfile()
+{
+    SharedWeaponPatternProfile profile = {};
+    profile.enabled = ExpMP5PatternModeEnabled();
+    profile.scaleX = ExpMP5PatternScaleX();
+    profile.scaleY = ExpMP5PatternScaleY();
+    profile.resetTimeSeconds = ExpMP5PatternResetTime();
+    profile.maxIndex = ExpMP5PatternMaxIndex();
+    return profile;
+}
+
 SharedWeaponDamageProfile BuildGlockPrimaryDamageProfile()
 {
     SharedWeaponDamageProfile profile = {};
@@ -474,6 +566,50 @@ SharedWeaponSpreadResult ComputeSharedWeaponSpread(
         result.spread = 0.0f;
     }
 
+    return result;
+}
+
+SharedWeaponPatternResult ComputeSharedWeaponPattern(
+    const SharedWeaponPatternProfile &profile,
+    const SharedWeaponSpreadState &state,
+    float speedRatio,
+    float totalSpread,
+    int lastPatternIndex)
+{
+    SharedWeaponPatternResult result = {};
+    const float clampedTotalSpread = totalSpread > 0.0f ? totalSpread : 0.0f;
+    result.enabled = profile.enabled;
+    result.randomSpread = clampedTotalSpread;
+
+    if (!profile.enabled)
+    {
+        return result;
+    }
+
+    result.patternIndex = ResolveNextPatternIndex(profile, state, lastPatternIndex, &result.resetApplied);
+
+    const int patternPointCount = sizeof(kDeterministicPatternPoints) / sizeof(kDeterministicPatternPoints[0]);
+    const int cappedPatternIndex = result.patternIndex < patternPointCount
+        ? result.patternIndex
+        : (patternPointCount - 1);
+    const Vector2D patternPoint = kDeterministicPatternPoints[cappedPatternIndex];
+    const float controlScale = ResolvePatternControlScale(state, speedRatio);
+    const float scaleX = ClampSharedValue(profile.scaleX, 0.0f, 4.0f);
+    const float scaleY = ClampSharedValue(profile.scaleY, 0.0f, 4.0f);
+
+    result.offsetX = clampedTotalSpread * patternPoint.x * scaleX * controlScale;
+    result.offsetY = clampedTotalSpread * patternPoint.y * scaleY * controlScale;
+
+    if (clampedTotalSpread <= 0.0001f)
+    {
+        result.randomSpread = 0.0f;
+        return result;
+    }
+
+    const float offsetMagnitude = sqrtf((result.offsetX * result.offsetX) + (result.offsetY * result.offsetY));
+    const float offsetRatio = ClampSharedValue(offsetMagnitude / clampedTotalSpread, 0.0f, 0.75f);
+    const float residualScale = ClampSharedValue(0.70f - (offsetRatio * 0.30f), 0.35f, 0.70f);
+    result.randomSpread = clampedTotalSpread * residualScale;
     return result;
 }
 

@@ -22,6 +22,7 @@ The core exposes small spread and damage profiles plus helper functions that com
 
 - normalized movement state from the firing player
 - final spread after movement, duck, first-shot, and recovery inputs
+- optional deterministic per-shot pattern offsets with idle reset
 - shared damage and headshot handling for dummy and non-dummy traces
 
 ## What stayed weapon-specific
@@ -48,15 +49,24 @@ The user-facing tuning surface was kept stable:
 This repository is explicitly improving stock-client-compatible HLDM gameplay, not chasing a full Counter-Strike clone.
 
 - Glock now favors accurate single shots through first-shot qualification plus cadence-grown inaccuracy that recovers over time.
+- Glock can now optionally layer a deterministic follow-up pattern over that cadence model so second and third shots are learnable instead of feeling like a pure random cone.
 - The old hard tap-fire gate can still exist as a legacy switch, but it is no longer the recommended path for skillful pistol feel.
 - MP5 now favors controlled bursts: repeated accepted shots add burst spread, waiting lets that extra spread decay, and long held fire is meant to bloom more than short bursts.
+- MP5 can now optionally layer a deterministic early-burst pattern over the same shared spread and recovery model so the opening spray shape is more learnable.
 - Movement, air state, crouch stability, and readable headshot damage remain part of the shared model.
 - Because the client DLL is still stock Half-Life, the server can improve authoritative spread and damage behavior but cannot promise exact client-side recoil or prediction parity.
 
 ## Current Recommended Presets
 
-- Glock: `glock_cs_like_soft` for a softer mobile pistol feel, `glock_cs_like_tight` for a stricter single-shot-focused feel.
-- MP5: `mp5_controlled_burst` for the main "short burst beats spray" path, `mp5_mobile_soft` for a lighter movement-oriented variant.
+- Glock: `glock_pattern_soft` for a softer mobile pistol feel, `glock_pattern_tight` for a stricter single-shot-focused feel with a stronger learnable follow-up pattern.
+- MP5: `mp5_pattern_burst` for the main "short burst beats spray" path, `mp5_pattern_mobile` for a lighter movement-oriented variant.
+
+Relevant new cvars for this pass:
+
+- Glock: `sv_exp_glock_pattern_mode`, `sv_exp_glock_pattern_scale_x`, `sv_exp_glock_pattern_scale_y`, `sv_exp_glock_pattern_reset_time`, `sv_exp_glock_pattern_max_index`
+- MP5: `sv_exp_mp5_pattern_mode`, `sv_exp_mp5_pattern_scale_x`, `sv_exp_mp5_pattern_scale_y`, `sv_exp_mp5_pattern_reset_time`, `sv_exp_mp5_pattern_max_index`
+
+Pattern mode is still a server-side approximation. It does not add client-side recoil animation or a custom prediction model.
 
 That keeps the live-lab workflow unchanged:
 
@@ -126,6 +136,12 @@ On `2026-04-22`, the Glock and MP5 feel pass was verified again in fresh client-
 - Glock telemetry in `weapon-debug-20260422-231348.log` showed an accurate first shot followed by cadence and recovery evidence on the next accepted shot, with the new `shot_growth`, `additional_spread`, and `recovery_applied` fields populated.
 - MP5 telemetry in `weapon-debug-20260422-233056.log` showed nonzero `burst_additional_spread`, partial `recovery_applied`, and higher spread on the next accepted shot under the `editor_mp5_simple` controlled-burst cfg.
 - In both sessions, the target dummy still spawned from the persisted saved spot, so the live-lab workflow remained intact while the weapon-feel telemetry changed.
+
+On `2026-04-23`, deterministic pattern mode was verified in fresh client-attached sessions on `crossfire`:
+
+- Glock telemetry in `weapon-debug-20260423-010332.log` showed `pattern_mode=1`, pattern indices progressing from `1` to `3` across consecutive careful follow-up shots, and later `pattern_reset=1` after an idle pause.
+- MP5 telemetry in `weapon-debug-20260423-010419.log` showed `pattern_mode=1`, a learnable early burst progressing through indices `1` to `5`, and repeated `pattern_reset=1` events after short pauses between bursts.
+- The analyzer summaries for both logs surfaced nonzero pattern evidence counts, pattern index ranges, and reset counts, so the deterministic-pattern layer is inspectable in the normal live tuning workflow.
 
 Shotgun integration is present in the same shared-core path, including editor export, cfg apply, lab loadout wiring, telemetry, and analyzer support. On `2026-04-21`, the remaining blocker was not the server-side shotgun code path itself but unstable live client launches around Steam initialization. The strongest live shotgun evidence from that date was:
 

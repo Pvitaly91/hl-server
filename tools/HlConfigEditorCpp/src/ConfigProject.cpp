@@ -155,6 +155,10 @@ ProjectDocument CreateDefaultProject() {
     document.glock.primaryShotGrowth = L"0.0800";
     document.glock.primaryFirstShotSpeedThreshold = L"45.0";
     document.glock.primaryMaxSpread = L"0.1800";
+    document.glock.patternScaleX = L"0.2000";
+    document.glock.patternScaleY = L"0.3500";
+    document.glock.patternResetTime = L"0.3500";
+    document.glock.patternMaxIndex = L"5";
     document.glock.primaryDamage = L"10.0";
     document.glock.primaryHeadshotScale = L"4.0";
 
@@ -168,6 +172,10 @@ ProjectDocument CreateDefaultProject() {
     document.mp5.primarySpreadRecovery = L"0.8000";
     document.mp5.primaryFirstShotSpeedThreshold = L"30.0";
     document.mp5.primaryMaxSpread = L"0.1250";
+    document.mp5.patternScaleX = L"0.2600";
+    document.mp5.patternScaleY = L"0.5500";
+    document.mp5.patternResetTime = L"0.2800";
+    document.mp5.patternMaxIndex = L"6";
     document.mp5.primaryDamage = L"12.0";
     document.mp5.primaryHeadshotScale = L"3.25";
     document.mp5.labAmmo = L"250";
@@ -324,6 +332,11 @@ bool SaveProjectDocumentToFile(const ProjectDocument& document, const std::wstri
     SetString(glock, L"sv_exp_glock_primary_shot_growth", document.glock.primaryShotGrowth);
     SetString(glock, L"sv_exp_glock_primary_first_shot_speed_threshold", document.glock.primaryFirstShotSpeedThreshold);
     SetString(glock, L"sv_exp_glock_primary_max_spread", document.glock.primaryMaxSpread);
+    SetBool(glock, L"sv_exp_glock_pattern_mode", document.glock.patternMode);
+    SetString(glock, L"sv_exp_glock_pattern_scale_x", document.glock.patternScaleX);
+    SetString(glock, L"sv_exp_glock_pattern_scale_y", document.glock.patternScaleY);
+    SetString(glock, L"sv_exp_glock_pattern_reset_time", document.glock.patternResetTime);
+    SetString(glock, L"sv_exp_glock_pattern_max_index", document.glock.patternMaxIndex);
     SetString(glock, L"sv_exp_glock_primary_damage", document.glock.primaryDamage);
     SetString(glock, L"sv_exp_glock_primary_headshot_scale", document.glock.primaryHeadshotScale);
     SetBool(glock, L"sv_exp_glock_primary_headshot_lethal", document.glock.primaryHeadshotLethal);
@@ -341,6 +354,11 @@ bool SaveProjectDocumentToFile(const ProjectDocument& document, const std::wstri
     SetBool(mp5, L"sv_exp_mp5_primary_first_shot_accuracy", document.mp5.primaryFirstShotAccuracy);
     SetString(mp5, L"sv_exp_mp5_primary_first_shot_speed_threshold", document.mp5.primaryFirstShotSpeedThreshold);
     SetString(mp5, L"sv_exp_mp5_primary_max_spread", document.mp5.primaryMaxSpread);
+    SetBool(mp5, L"sv_exp_mp5_pattern_mode", document.mp5.patternMode);
+    SetString(mp5, L"sv_exp_mp5_pattern_scale_x", document.mp5.patternScaleX);
+    SetString(mp5, L"sv_exp_mp5_pattern_scale_y", document.mp5.patternScaleY);
+    SetString(mp5, L"sv_exp_mp5_pattern_reset_time", document.mp5.patternResetTime);
+    SetString(mp5, L"sv_exp_mp5_pattern_max_index", document.mp5.patternMaxIndex);
     SetString(mp5, L"sv_exp_mp5_primary_damage", document.mp5.primaryDamage);
     SetString(mp5, L"sv_exp_mp5_primary_headshot_scale", document.mp5.primaryHeadshotScale);
     SetBool(mp5, L"sv_exp_mp5_primary_headshot_lethal", document.mp5.primaryHeadshotLethal);
@@ -518,6 +536,11 @@ bool LoadProjectDocumentFromFile(const std::wstring& path, ProjectDocument& docu
         loaded.glock.primaryShotGrowth = ReadStringValue(*glock, L"sv_exp_glock_primary_shot_growth", loaded.glock.primaryShotGrowth);
         loaded.glock.primaryFirstShotSpeedThreshold = ReadStringValue(*glock, L"sv_exp_glock_primary_first_shot_speed_threshold", loaded.glock.primaryFirstShotSpeedThreshold);
         loaded.glock.primaryMaxSpread = ReadStringValue(*glock, L"sv_exp_glock_primary_max_spread", loaded.glock.primaryMaxSpread);
+        loaded.glock.patternMode = ReadBoolValue(*glock, L"sv_exp_glock_pattern_mode", loaded.glock.patternMode);
+        loaded.glock.patternScaleX = ReadStringValue(*glock, L"sv_exp_glock_pattern_scale_x", loaded.glock.patternScaleX);
+        loaded.glock.patternScaleY = ReadStringValue(*glock, L"sv_exp_glock_pattern_scale_y", loaded.glock.patternScaleY);
+        loaded.glock.patternResetTime = ReadStringValue(*glock, L"sv_exp_glock_pattern_reset_time", loaded.glock.patternResetTime);
+        loaded.glock.patternMaxIndex = ReadStringValue(*glock, L"sv_exp_glock_pattern_max_index", loaded.glock.patternMaxIndex);
         loaded.glock.primaryDamage = ReadStringValue(*glock, L"sv_exp_glock_primary_damage", loaded.glock.primaryDamage);
         loaded.glock.primaryHeadshotScale = ReadStringValue(*glock, L"sv_exp_glock_primary_headshot_scale", loaded.glock.primaryHeadshotScale);
         loaded.glock.primaryHeadshotLethal = ReadBoolValue(*glock, L"sv_exp_glock_primary_headshot_lethal", loaded.glock.primaryHeadshotLethal);
@@ -536,6 +559,11 @@ bool LoadProjectDocumentFromFile(const std::wstring& path, ProjectDocument& docu
         loaded.mp5.primaryFirstShotAccuracy = ReadBoolValue(*mp5, L"sv_exp_mp5_primary_first_shot_accuracy", loaded.mp5.primaryFirstShotAccuracy);
         loaded.mp5.primaryFirstShotSpeedThreshold = ReadStringValue(*mp5, L"sv_exp_mp5_primary_first_shot_speed_threshold", loaded.mp5.primaryFirstShotSpeedThreshold);
         loaded.mp5.primaryMaxSpread = ReadStringValue(*mp5, L"sv_exp_mp5_primary_max_spread", loaded.mp5.primaryMaxSpread);
+        loaded.mp5.patternMode = ReadBoolValue(*mp5, L"sv_exp_mp5_pattern_mode", loaded.mp5.patternMode);
+        loaded.mp5.patternScaleX = ReadStringValue(*mp5, L"sv_exp_mp5_pattern_scale_x", loaded.mp5.patternScaleX);
+        loaded.mp5.patternScaleY = ReadStringValue(*mp5, L"sv_exp_mp5_pattern_scale_y", loaded.mp5.patternScaleY);
+        loaded.mp5.patternResetTime = ReadStringValue(*mp5, L"sv_exp_mp5_pattern_reset_time", loaded.mp5.patternResetTime);
+        loaded.mp5.patternMaxIndex = ReadStringValue(*mp5, L"sv_exp_mp5_pattern_max_index", loaded.mp5.patternMaxIndex);
         loaded.mp5.primaryDamage = ReadStringValue(*mp5, L"sv_exp_mp5_primary_damage", loaded.mp5.primaryDamage);
         loaded.mp5.primaryHeadshotScale = ReadStringValue(*mp5, L"sv_exp_mp5_primary_headshot_scale", loaded.mp5.primaryHeadshotScale);
         loaded.mp5.primaryHeadshotLethal = ReadBoolValue(*mp5, L"sv_exp_mp5_primary_headshot_lethal", loaded.mp5.primaryHeadshotLethal);

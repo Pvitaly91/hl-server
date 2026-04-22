@@ -460,6 +460,11 @@ cvar_t sv_exp_glock_primary_duck_penalty_scale = {"sv_exp_glock_primary_duck_pen
 cvar_t sv_exp_glock_primary_shot_growth = {"sv_exp_glock_primary_shot_growth", "0.0800", FCVAR_SERVER};
 cvar_t sv_exp_glock_primary_first_shot_speed_threshold = {"sv_exp_glock_primary_first_shot_speed_threshold", "45.0", FCVAR_SERVER};
 cvar_t sv_exp_glock_primary_max_spread = {"sv_exp_glock_primary_max_spread", "0.1800", FCVAR_SERVER};
+cvar_t sv_exp_glock_pattern_mode = {"sv_exp_glock_pattern_mode", "0", FCVAR_SERVER};
+cvar_t sv_exp_glock_pattern_scale_x = {"sv_exp_glock_pattern_scale_x", "0.2000", FCVAR_SERVER};
+cvar_t sv_exp_glock_pattern_scale_y = {"sv_exp_glock_pattern_scale_y", "0.3500", FCVAR_SERVER};
+cvar_t sv_exp_glock_pattern_reset_time = {"sv_exp_glock_pattern_reset_time", "0.3500", FCVAR_SERVER};
+cvar_t sv_exp_glock_pattern_max_index = {"sv_exp_glock_pattern_max_index", "5", FCVAR_SERVER};
 cvar_t sv_exp_glock_primary_damage = {"sv_exp_glock_primary_damage", "10.0", FCVAR_SERVER};
 cvar_t sv_exp_glock_primary_headshot_scale = {"sv_exp_glock_primary_headshot_scale", "4.0", FCVAR_SERVER};
 cvar_t sv_exp_glock_primary_headshot_lethal = {"sv_exp_glock_primary_headshot_lethal", "0", FCVAR_SERVER};
@@ -471,6 +476,11 @@ cvar_t sv_exp_mp5_primary_duck_penalty_scale = {"sv_exp_mp5_primary_duck_penalty
 cvar_t sv_exp_mp5_primary_burst_growth = {"sv_exp_mp5_primary_burst_growth", "0.0140", FCVAR_SERVER};
 cvar_t sv_exp_mp5_primary_burst_max_additional_spread = {"sv_exp_mp5_primary_burst_max_additional_spread", "0.0950", FCVAR_SERVER};
 cvar_t sv_exp_mp5_primary_spread_recovery = {"sv_exp_mp5_primary_spread_recovery", "0.8000", FCVAR_SERVER};
+cvar_t sv_exp_mp5_pattern_mode = {"sv_exp_mp5_pattern_mode", "0", FCVAR_SERVER};
+cvar_t sv_exp_mp5_pattern_scale_x = {"sv_exp_mp5_pattern_scale_x", "0.2600", FCVAR_SERVER};
+cvar_t sv_exp_mp5_pattern_scale_y = {"sv_exp_mp5_pattern_scale_y", "0.5500", FCVAR_SERVER};
+cvar_t sv_exp_mp5_pattern_reset_time = {"sv_exp_mp5_pattern_reset_time", "0.2800", FCVAR_SERVER};
+cvar_t sv_exp_mp5_pattern_max_index = {"sv_exp_mp5_pattern_max_index", "6", FCVAR_SERVER};
 cvar_t sv_exp_mp5_primary_damage = {"sv_exp_mp5_primary_damage", "12.0", FCVAR_SERVER};
 cvar_t sv_exp_mp5_primary_headshot_scale = {"sv_exp_mp5_primary_headshot_scale", "3.25", FCVAR_SERVER};
 cvar_t sv_exp_mp5_primary_headshot_lethal = {"sv_exp_mp5_primary_headshot_lethal", "0", FCVAR_SERVER};
@@ -11793,6 +11803,11 @@ void RegisterFutureGameplayCvars()
     CVAR_REGISTER(&sv_exp_glock_primary_shot_growth);
     CVAR_REGISTER(&sv_exp_glock_primary_first_shot_speed_threshold);
     CVAR_REGISTER(&sv_exp_glock_primary_max_spread);
+    CVAR_REGISTER(&sv_exp_glock_pattern_mode);
+    CVAR_REGISTER(&sv_exp_glock_pattern_scale_x);
+    CVAR_REGISTER(&sv_exp_glock_pattern_scale_y);
+    CVAR_REGISTER(&sv_exp_glock_pattern_reset_time);
+    CVAR_REGISTER(&sv_exp_glock_pattern_max_index);
     CVAR_REGISTER(&sv_exp_glock_primary_damage);
     CVAR_REGISTER(&sv_exp_glock_primary_headshot_scale);
     CVAR_REGISTER(&sv_exp_glock_primary_headshot_lethal);
@@ -11804,6 +11819,11 @@ void RegisterFutureGameplayCvars()
     CVAR_REGISTER(&sv_exp_mp5_primary_burst_growth);
     CVAR_REGISTER(&sv_exp_mp5_primary_burst_max_additional_spread);
     CVAR_REGISTER(&sv_exp_mp5_primary_spread_recovery);
+    CVAR_REGISTER(&sv_exp_mp5_pattern_mode);
+    CVAR_REGISTER(&sv_exp_mp5_pattern_scale_x);
+    CVAR_REGISTER(&sv_exp_mp5_pattern_scale_y);
+    CVAR_REGISTER(&sv_exp_mp5_pattern_reset_time);
+    CVAR_REGISTER(&sv_exp_mp5_pattern_max_index);
     CVAR_REGISTER(&sv_exp_mp5_primary_damage);
     CVAR_REGISTER(&sv_exp_mp5_primary_headshot_scale);
     CVAR_REGISTER(&sv_exp_mp5_primary_headshot_lethal);
@@ -12180,6 +12200,32 @@ float ExpGlockPrimaryMaxSpread()
     return GetNonNegativeCvarValue(sv_exp_glock_primary_max_spread);
 }
 
+bool ExpGlockPatternModeEnabled()
+{
+    return sv_exp_glock_pattern_mode.value != 0.0f;
+}
+
+float ExpGlockPatternScaleX()
+{
+    return GetNonNegativeCvarValue(sv_exp_glock_pattern_scale_x);
+}
+
+float ExpGlockPatternScaleY()
+{
+    return GetNonNegativeCvarValue(sv_exp_glock_pattern_scale_y);
+}
+
+float ExpGlockPatternResetTime()
+{
+    return GetNonNegativeCvarValue(sv_exp_glock_pattern_reset_time);
+}
+
+int ExpGlockPatternMaxIndex()
+{
+    const float maxIndex = GetNonNegativeCvarValue(sv_exp_glock_pattern_max_index);
+    return maxIndex >= 1.0f ? (int)(maxIndex + 0.5f) : 1;
+}
+
 float ExpGlockPrimaryDamage()
 {
     return GetNonNegativeCvarValue(sv_exp_glock_primary_damage);
@@ -12207,12 +12253,12 @@ bool ExpDebugWeaponLogRejectionsEnabled()
 
 bool ExpGlockExperimentalModeEnabled()
 {
-    return ExpPistolTapFireEnabled() || ExpMoveSpreadScale() > 0.0f || ExpFirstShotAccuracyEnabled();
+    return ExpPistolTapFireEnabled() || ExpMoveSpreadScale() > 0.0f || ExpFirstShotAccuracyEnabled() || ExpGlockPatternModeEnabled();
 }
 
 bool ExpMP5ExperimentalModeEnabled()
 {
-    return ExpMP5PrimaryEnabled();
+    return ExpMP5PrimaryEnabled() || ExpMP5PatternModeEnabled();
 }
 
 bool ExpMP5PrimaryEnabled()
@@ -12253,6 +12299,32 @@ float ExpMP5PrimaryBurstMaxAdditionalSpread()
 float ExpMP5PrimarySpreadRecoverySeconds()
 {
     return GetNonNegativeCvarValue(sv_exp_mp5_primary_spread_recovery);
+}
+
+bool ExpMP5PatternModeEnabled()
+{
+    return sv_exp_mp5_pattern_mode.value != 0.0f;
+}
+
+float ExpMP5PatternScaleX()
+{
+    return GetNonNegativeCvarValue(sv_exp_mp5_pattern_scale_x);
+}
+
+float ExpMP5PatternScaleY()
+{
+    return GetNonNegativeCvarValue(sv_exp_mp5_pattern_scale_y);
+}
+
+float ExpMP5PatternResetTime()
+{
+    return GetNonNegativeCvarValue(sv_exp_mp5_pattern_reset_time);
+}
+
+int ExpMP5PatternMaxIndex()
+{
+    const float maxIndex = GetNonNegativeCvarValue(sv_exp_mp5_pattern_max_index);
+    return maxIndex >= 1.0f ? (int)(maxIndex + 0.5f) : 1;
 }
 
 float ExpMP5PrimaryDamage()

@@ -1427,7 +1427,7 @@ void LogAcceptedGlockPrimaryShot(CBasePlayer *pPlayer, const GlockAcceptedShotTe
 
     char timestamp[64];
     char deltaPreviousShot[32];
-    char line[1024];
+    char line[1536];
     FormatTimestamp(timestamp, sizeof(timestamp));
 
     if (telemetry.hasPreviousAcceptedShot)
@@ -1443,7 +1443,7 @@ void LogAcceptedGlockPrimaryShot(CBasePlayer *pPlayer, const GlockAcceptedShotTe
         line,
         sizeof(line),
         _TRUNCATE,
-        "[weaponlog] type=accepted ts=%s map=%s player=\"%s\" entindex=%d userid=%d weapon=glock fire=primary experimental=%d tapfire=%d firstshot=%d spread=%.4f base=%.4f move_penalty=%.4f additional_spread=%.4f recovery_applied=%.4f shot_growth=%.4f next_additional_spread=%.4f shot_index=%d speed_ratio=%.3f speed2d=%.1f maxspeed=%.1f grounded=%d ducking=%d delta_prev=%s clip=%d",
+        "[weaponlog] type=accepted ts=%s map=%s player=\"%s\" entindex=%d userid=%d weapon=glock fire=primary experimental=%d tapfire=%d firstshot=%d spread=%.4f base=%.4f move_penalty=%.4f additional_spread=%.4f recovery_applied=%.4f shot_growth=%.4f next_additional_spread=%.4f pattern_mode=%d pattern_index=%d pattern_offset_x=%.4f pattern_offset_y=%.4f pattern_reset=%d total_additional_spread=%.4f movement_contribution=%.4f cadence_growth_contribution=%.4f shot_index=%d speed_ratio=%.3f speed2d=%.1f maxspeed=%.1f grounded=%d ducking=%d delta_prev=%s clip=%d",
         timestamp,
         SanitizeLogValue(GetSafeMapName()).c_str(),
         GetSafePlayerName(pPlayer).c_str(),
@@ -1459,6 +1459,14 @@ void LogAcceptedGlockPrimaryShot(CBasePlayer *pPlayer, const GlockAcceptedShotTe
         telemetry.recoveryApplied,
         telemetry.shotGrowth,
         telemetry.nextAdditionalSpread,
+        telemetry.patternModeActive ? 1 : 0,
+        telemetry.patternIndex,
+        telemetry.patternOffsetX,
+        telemetry.patternOffsetY,
+        telemetry.patternResetApplied ? 1 : 0,
+        telemetry.totalAdditionalSpread,
+        telemetry.movementContribution,
+        telemetry.cadenceGrowthContribution,
         telemetry.cadenceShotIndex,
         telemetry.speedRatio,
         telemetry.horizontalSpeed,
@@ -1482,7 +1490,7 @@ void LogAcceptedMp5PrimaryShot(CBasePlayer *pPlayer, const Mp5AcceptedShotTeleme
 
     char timestamp[64];
     char deltaPreviousShot[32];
-    char line[1408];
+    char line[1792];
     FormatTimestamp(timestamp, sizeof(timestamp));
 
     if (telemetry.hasPreviousAcceptedShot)
@@ -1498,7 +1506,7 @@ void LogAcceptedMp5PrimaryShot(CBasePlayer *pPlayer, const Mp5AcceptedShotTeleme
         line,
         sizeof(line),
         _TRUNCATE,
-        "[weaponlog] type=accepted ts=%s map=%s player=\"%s\" entindex=%d userid=%d weapon=mp5 fire=primary experimental=%d profile=\"%s\" firstshot=%d spread=%.4f base=%.4f move_penalty=%.4f burst_additional_spread=%.4f recovery_applied=%.4f burst_growth=%.4f next_additional_spread=%.4f burst_index=%d speed_ratio=%.3f speed2d=%.1f maxspeed=%.1f grounded=%d ducking=%d delta_prev=%s clip=%d",
+        "[weaponlog] type=accepted ts=%s map=%s player=\"%s\" entindex=%d userid=%d weapon=mp5 fire=primary experimental=%d profile=\"%s\" firstshot=%d spread=%.4f base=%.4f move_penalty=%.4f burst_additional_spread=%.4f recovery_applied=%.4f burst_growth=%.4f next_additional_spread=%.4f pattern_mode=%d pattern_index=%d pattern_offset_x=%.4f pattern_offset_y=%.4f pattern_reset=%d total_additional_spread=%.4f movement_contribution=%.4f cadence_growth_contribution=%.4f burst_index=%d speed_ratio=%.3f speed2d=%.1f maxspeed=%.1f grounded=%d ducking=%d delta_prev=%s clip=%d",
         timestamp,
         SanitizeLogValue(GetSafeMapName()).c_str(),
         GetSafePlayerName(pPlayer).c_str(),
@@ -1514,6 +1522,14 @@ void LogAcceptedMp5PrimaryShot(CBasePlayer *pPlayer, const Mp5AcceptedShotTeleme
         telemetry.recoveryApplied,
         telemetry.shotGrowth,
         telemetry.nextAdditionalSpread,
+        telemetry.patternModeActive ? 1 : 0,
+        telemetry.patternIndex,
+        telemetry.patternOffsetX,
+        telemetry.patternOffsetY,
+        telemetry.patternResetApplied ? 1 : 0,
+        telemetry.totalAdditionalSpread,
+        telemetry.movementContribution,
+        telemetry.cadenceGrowthContribution,
         telemetry.burstShotIndex,
         telemetry.speedRatio,
         telemetry.horizontalSpeed,

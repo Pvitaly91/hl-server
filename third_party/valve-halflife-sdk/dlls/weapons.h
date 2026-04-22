@@ -18,6 +18,7 @@
 #include "effects.h"
 
 class CBasePlayer;
+struct SharedWeaponPatternResult;
 extern int gmsgWeapPickup;
 
 void DeactivateSatchels( CBasePlayer *pOwner );
@@ -478,7 +479,7 @@ public:
 
 	void PrimaryAttack( void );
 	void SecondaryAttack( void );
-	void GlockFire( float flSpread, float flCycleTime, BOOL fUseAutoAim, BOOL fExperimentalPrimary = FALSE );
+	void GlockFire( float flSpread, float flCycleTime, BOOL fUseAutoAim, BOOL fExperimentalPrimary = FALSE, const SharedWeaponPatternResult *pPattern = NULL );
 	BOOL Deploy( void );
 	void Reload( void );
 	void WeaponIdle( void );
@@ -501,6 +502,7 @@ private:
 	float m_flLastAcceptedPrimaryShotTime;
 	float m_flPrimaryCadenceSpreadAccumulator;
 	int m_iPrimaryCadenceShotCount;
+	int m_iPrimaryPatternIndex;
 	BOOL m_fPrimaryHoldBlockLogged;
 	
 
@@ -589,6 +591,7 @@ public:
 	float m_flLastAcceptedPrimaryShotTime;
 	float m_flPrimaryBurstSpreadAccumulator;
 	int m_iPrimaryBurstShotCount;
+	int m_iPrimaryPatternIndex;
 
 	virtual BOOL UseDecrement( void )
 	{ 

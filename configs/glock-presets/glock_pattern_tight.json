@@ -1,6 +1,6 @@
 {
-  "name": "glock_cs_like_tight",
-  "description": "Experimental tighter Glock preset that makes careful single shots strong, increases cadence bloom faster when spamming, and rewards patient pacing. This is not a claim of exact Counter-Strike parity.",
+  "name": "glock_pattern_tight",
+  "description": "Experimental tighter Glock preset with stronger cadence bloom and a clearer deterministic follow-up pattern. Careful single shots are strongest, while rapid spam becomes predictably weaker. This is not a claim of exact Counter-Strike parity.",
   "cvars": {
     "sv_exp_pistol_tapfire": "0",
     "sv_exp_move_spread_scale": "1.0",

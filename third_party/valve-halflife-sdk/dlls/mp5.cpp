@@ -76,6 +76,7 @@ void CMP5::Spawn( )
 	m_flLastAcceptedPrimaryShotTime = -1.0f;
 	m_flPrimaryBurstSpreadAccumulator = 0.0f;
 	m_iPrimaryBurstShotCount = 0;
+	m_iPrimaryPatternIndex = -1;
 
 	FallInit();// get ready to fall down.
 }
@@ -207,6 +208,13 @@ void CMP5::PrimaryAttack()
 			flBurstAddedSpread);
 		const SharedWeaponSpreadResult spreadResult = ComputeSharedWeaponSpread(spreadProfile, spreadState);
 		const float flSpread = spreadResult.spread;
+		const SharedWeaponPatternProfile patternProfile = BuildMp5PrimaryPatternProfile();
+		const SharedWeaponPatternResult patternResult = ComputeSharedWeaponPattern(
+			patternProfile,
+			spreadState,
+			spreadResult.speedRatio,
+			flSpread,
+			m_iPrimaryPatternIndex);
 		fFirstShotAccuracyApplied = spreadResult.firstShotAccuracyApplied ? TRUE : FALSE;
 		flMovementPenalty = spreadResult.movementPenalty;
 		const float flCadenceRecoveryApplied = fHasPreviousAcceptedShot
@@ -220,9 +228,16 @@ void CMP5::PrimaryAttack()
 		flMaxSpeedForNormalization = spreadResult.normalizedMaxSpeed;
 		fGrounded = spreadState.grounded ? TRUE : FALSE;
 		fDucking = spreadState.ducking ? TRUE : FALSE;
+		Vector vecPatternAiming = vecAiming;
+		float flRandomSpread = flSpread;
+		if (patternResult.enabled)
+		{
+			vecPatternAiming = (vecAiming + (gpGlobals->v_right * patternResult.offsetX) + (gpGlobals->v_up * patternResult.offsetY)).Normalize();
+			flRandomSpread = patternResult.randomSpread;
+		}
 
 		BeginMp5PrimaryShotContext(m_pPlayer);
-		vecDir = m_pPlayer->FireBulletsPlayer( 1, vecSrc, vecAiming, Vector( flSpread, flSpread, flSpread ), 8192, BULLET_PLAYER_MP5, 2, 0, m_pPlayer->pev, m_pPlayer->random_seed );
+		vecDir = m_pPlayer->FireBulletsPlayer( 1, vecSrc, vecPatternAiming, Vector( flRandomSpread, flRandomSpread, flRandomSpread ), 8192, BULLET_PLAYER_MP5, 2, 0, m_pPlayer->pev, m_pPlayer->random_seed );
 		EndMp5PrimaryShotContext();
 
 		if (fHadAmmo)
@@ -237,6 +252,14 @@ void CMP5::PrimaryAttack()
 			acceptedTelemetry.recoveryApplied = flCadenceRecoveryApplied > 0.0f ? flCadenceRecoveryApplied : 0.0f;
 			acceptedTelemetry.shotGrowth = ExpMP5PrimaryBurstGrowth();
 			acceptedTelemetry.nextAdditionalSpread = flNextBurstAddedSpread;
+			acceptedTelemetry.patternModeActive = patternResult.enabled;
+			acceptedTelemetry.patternIndex = patternResult.patternIndex;
+			acceptedTelemetry.patternOffsetX = patternResult.offsetX;
+			acceptedTelemetry.patternOffsetY = patternResult.offsetY;
+			acceptedTelemetry.patternResetApplied = patternResult.resetApplied;
+			acceptedTelemetry.totalAdditionalSpread = flMovementPenalty + flBurstAddedSpread;
+			acceptedTelemetry.movementContribution = flMovementPenalty;
+			acceptedTelemetry.cadenceGrowthContribution = flBurstAddedSpread;
 			acceptedTelemetry.speedRatio = spreadResult.speedRatio;
 			acceptedTelemetry.burstShotIndex = iBurstShotIndex;
 			acceptedTelemetry.horizontalSpeed = flHorizontalSpeed;
@@ -250,6 +273,7 @@ void CMP5::PrimaryAttack()
 			LogAcceptedMp5PrimaryShot(m_pPlayer, acceptedTelemetry);
 			m_flPrimaryBurstSpreadAccumulator = flNextBurstAddedSpread;
 			m_iPrimaryBurstShotCount = iBurstShotIndex;
+			m_iPrimaryPatternIndex = patternResult.patternIndex;
 			m_flLastAcceptedPrimaryShotTime = gpGlobals->time;
 		}
 	}

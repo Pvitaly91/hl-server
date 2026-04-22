@@ -678,6 +678,23 @@ bool BuildCfgLines(const ProjectDocument& document, std::vector<std::wstring>& l
             return false;
         }
         AddLine(lines, L"sv_exp_glock_primary_max_spread", normalized);
+        AddLine(lines, L"sv_exp_glock_pattern_mode", document.glock.patternMode ? L"1" : L"0");
+        if (!NormalizeFloatValue(document.glock.patternScaleX, normalized, errorMessage, L"Glock pattern scale X")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_glock_pattern_scale_x", normalized);
+        if (!NormalizeFloatValue(document.glock.patternScaleY, normalized, errorMessage, L"Glock pattern scale Y")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_glock_pattern_scale_y", normalized);
+        if (!NormalizeFloatValue(document.glock.patternResetTime, normalized, errorMessage, L"Glock pattern reset time")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_glock_pattern_reset_time", normalized);
+        if (!NormalizeIntegerValue(document.glock.patternMaxIndex, normalized, errorMessage, L"Glock pattern max index")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_glock_pattern_max_index", normalized);
         if (!NormalizeFloatValue(document.glock.primaryDamage, normalized, errorMessage, L"Glock damage")) {
             return false;
         }
@@ -730,6 +747,23 @@ bool BuildCfgLines(const ProjectDocument& document, std::vector<std::wstring>& l
             return false;
         }
         AddLine(lines, L"sv_exp_mp5_primary_max_spread", normalized);
+        AddLine(lines, L"sv_exp_mp5_pattern_mode", document.mp5.patternMode ? L"1" : L"0");
+        if (!NormalizeFloatValue(document.mp5.patternScaleX, normalized, errorMessage, L"MP5 pattern scale X")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_mp5_pattern_scale_x", normalized);
+        if (!NormalizeFloatValue(document.mp5.patternScaleY, normalized, errorMessage, L"MP5 pattern scale Y")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_mp5_pattern_scale_y", normalized);
+        if (!NormalizeFloatValue(document.mp5.patternResetTime, normalized, errorMessage, L"MP5 pattern reset time")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_mp5_pattern_reset_time", normalized);
+        if (!NormalizeIntegerValue(document.mp5.patternMaxIndex, normalized, errorMessage, L"MP5 pattern max index")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_mp5_pattern_max_index", normalized);
         if (!NormalizeFloatValue(document.mp5.primaryDamage, normalized, errorMessage, L"MP5 damage")) {
             return false;
         }
