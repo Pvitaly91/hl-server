@@ -22,10 +22,11 @@ This repo now includes a server-side no-respawn round loop for live testing on t
 
 - full economy tree
 - buy menu
+- full utility suite
 - Counter-Strike parity
 - polished join-in-progress handling
 
-This is a clean first round loop with a small console-driven buy prototype, not a full game-mode conversion.
+This is a clean first round loop with a small console-driven buy and equipment prototype, not a full game-mode conversion. Armor and helmet behavior is a deterministic server-side approximation for live testing, not a claim of exact CS armor parity.
 
 ## Cvars
 
@@ -82,10 +83,24 @@ This is a clean first round loop with a small console-driven buy prototype, not 
 - `sv_exp_buy_allow_mp5`
 - `sv_exp_buy_allow_357`
 - `sv_exp_buy_allow_shotgun`
+- `sv_exp_buy_allow_armor`
+- `sv_exp_buy_allow_helmet`
+- `sv_exp_buy_allow_handgrenade`
 - `sv_exp_buy_cost_glock`
 - `sv_exp_buy_cost_mp5`
 - `sv_exp_buy_cost_357`
 - `sv_exp_buy_cost_shotgun`
+- `sv_exp_buy_cost_armor`
+- `sv_exp_buy_cost_helmet`
+- `sv_exp_buy_cost_handgrenade`
+- `sv_exp_armor_mode`
+- `sv_exp_armor_start_value`
+- `sv_exp_armor_max_value`
+- `sv_exp_armor_health_fraction`
+- `sv_exp_armor_drain_scale`
+- `sv_exp_helmet_mode`
+- `sv_exp_helmet_start_enabled`
+- `sv_exp_helmet_headshot_protection`
 
 ## Round states
 
@@ -128,10 +143,10 @@ This is a clean first round loop with a small console-driven buy prototype, not 
 - `exp_team_spawn_status`
   - prints the current team-spawn file path, saved names, active selection, last applied spawn source, and last failure per team
 - `exp_buy_list`
-  - prints the allowed weapons, their costs, whether the shared catalog is enabled, and whether buying is currently open
+  - prints the allowed weapons and equipment items, their costs, whether the shared catalog is enabled, and whether buying is currently open
 - `exp_buy_status`
-  - prints buy configuration plus each tracked player's money, selected weapon, and bought-this-freeze state
-- `exp_buy <weapon> [player]`
+  - prints buy configuration plus each tracked player's money, selected loadout override, armor buy state, helmet state, handgrenade state, and bought-this-freeze state
+- `exp_buy <item> [player]`
   - attempts a server-side buy for the requested player. If the player argument is omitted, the command uses the only connected real player when that is unambiguous
 - `exp_buy_clear [player]`
   - refunds and clears the current selected purchase for the requested player, then reapplies the base round/team loadout
@@ -139,6 +154,8 @@ This is a clean first round loop with a small console-driven buy prototype, not 
   - reapplies the currently selected purchase for the requested player for local verification
 - `exp_buy_setmoney <player> <amount>`
   - small server-side verification helper for adjusting one player's money during testing
+- `exp_armor_status [player]`
+  - prints health, armor, helmet/head-protection state, current money, and bought items for the requested player or for all managed players when no player is specified
 
 ## Recommended workflow
 
@@ -204,6 +221,9 @@ sv_exp_team_round_mode 1
 sv_exp_buy_mode 1
 sv_exp_buy_freeze_only 1
 sv_exp_buy_start_money 2500
+sv_exp_armor_mode 1
+sv_exp_helmet_mode 1
+sv_exp_buy_allow_handgrenade 1
 sv_exp_team_round_team1_loadout none
 sv_exp_team_round_team2_loadout none
 exp_team_join Poni alpha
@@ -211,16 +231,21 @@ exp_team_status
 exp_round_start
 exp_buy_list
 exp_buy 357 Poni
+exp_buy armor Poni
+exp_buy helmet Poni
+exp_buy handgrenade Poni
+exp_armor_status Poni
 ```
 
 During a buy-enabled round session:
 
-1. Use `exp_buy_list` to inspect allowed weapons and costs.
-2. Use `exp_buy_status` to inspect current money, selected weapon, and whether buy phase is open.
-3. Buy during freeze with `exp_buy <weapon> [player]`.
-4. When buying succeeds, the selected weapon is granted immediately during freeze and becomes that player's deterministic round loadout override for the current round.
-5. When the round becomes live, freeze-only buy mode rejects further purchases with an explicit reason instead of silently ignoring them.
-6. On the next round freeze, the selected weapon resets and round rewards are applied to the player's money.
+1. Use `exp_buy_list` to inspect allowed weapons, armor, helmet, and handgrenade costs.
+2. Use `exp_buy_status` to inspect current money, selected loadout override, armor/helmet state, and whether buy phase is open.
+3. Buy during freeze with `exp_buy <item> [player]`.
+4. Weapon buys are granted immediately during freeze and become that player's deterministic loadout override for the current round. `exp_buy armor`, `exp_buy helmet`, and `exp_buy handgrenade` also grant immediately during freeze and can be inspected with `exp_armor_status`.
+5. When armor mode is enabled, body hits can drain armor before health and protected head hits can use helmet-enabled head protection. This is a deterministic server-side approximation for live testing, not a full CS armor model.
+6. When the round becomes live, freeze-only buy mode rejects further purchases with an explicit reason instead of silently ignoring them.
+7. On the next round freeze, the current round's selected items reset and round rewards are applied to the player's money.
 
 Example persisted team-spawn setup:
 

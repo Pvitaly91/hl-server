@@ -190,7 +190,7 @@ Live lab console commands:
 - `exp_team_join <player> <team>`, `exp_team_autoassign`, and `exp_team_status` provide lightweight server-side team assignment and debugging for small live round tests.
 - `exp_team_fake_add <team> [name]` and `exp_team_fake_clear` are optional local verification helpers when only one real client is available and you still need to exercise last-team-alive round flow.
 - `exp_team_spawn_mark <team> [name]`, `exp_team_spawn_unmark <team> <name>`, `exp_team_spawn_list`, `exp_team_spawn_use <team> <name>`, and `exp_team_spawn_status` manage persistent per-team round spawns under `<HalfLifeRoot>\hlserver_testbed\team_spawns\<map>.json`.
-- `exp_buy_list`, `exp_buy_status`, `exp_buy <weapon> [player]`, `exp_buy_clear [player]`, `exp_buy_grant [player]`, and `exp_buy_setmoney <player> <amount>` provide the first server-side round buy prototype for freeze-time weapon purchases without a client buy menu.
+- `exp_buy_list`, `exp_buy_status`, `exp_buy <item> [player]`, `exp_buy_clear [player]`, `exp_buy_grant [player]`, `exp_buy_setmoney <player> <amount>`, and `exp_armor_status [player]` provide the first server-side round buy and equipment prototype for freeze-time weapon, armor, helmet, and handgrenade purchases without a client buy menu.
 
 The live dummy now forces `mp_allowmonsters 1` before spawning, because the underlying server-side `monster_generic` entity is otherwise removed immediately on deathmatch maps.
 
@@ -207,7 +207,7 @@ The repo now has a first server-side round loop for live duel testing plus a sim
 - automatic next-round restart after a short delay
 - optional two-team assignment with last-team-alive win logic
 
-It is not a full Counter-Strike ruleset yet. There is now a small server-side buy prototype for round mode, but there is still no client buy menu, no full economy tree, and no polished join-in-progress flow in this pass.
+It is not a full Counter-Strike ruleset yet. There is now a small server-side buy and equipment prototype for round mode, but there is still no client buy menu, no full economy tree, no full utility suite, and no polished join-in-progress flow in this pass. The armor and helmet logic is a deterministic server-side approximation for live testing, not a claim of exact CS armor parity.
 
 Main round cvars:
 
@@ -246,10 +246,24 @@ Additional team-round cvars:
 - `sv_exp_buy_allow_mp5`
 - `sv_exp_buy_allow_357`
 - `sv_exp_buy_allow_shotgun`
+- `sv_exp_buy_allow_armor`
+- `sv_exp_buy_allow_helmet`
+- `sv_exp_buy_allow_handgrenade`
 - `sv_exp_buy_cost_glock`
 - `sv_exp_buy_cost_mp5`
 - `sv_exp_buy_cost_357`
 - `sv_exp_buy_cost_shotgun`
+- `sv_exp_buy_cost_armor`
+- `sv_exp_buy_cost_helmet`
+- `sv_exp_buy_cost_handgrenade`
+- `sv_exp_armor_mode`
+- `sv_exp_armor_start_value`
+- `sv_exp_armor_max_value`
+- `sv_exp_armor_health_fraction`
+- `sv_exp_armor_drain_scale`
+- `sv_exp_helmet_mode`
+- `sv_exp_helmet_start_enabled`
+- `sv_exp_helmet_headshot_protection`
 
 Recommended duel loop:
 
@@ -309,10 +323,10 @@ Recommended simple buy-prototype loop:
    `sv_exp_team_round_team2_loadout none`
 3. Use `exp_buy_list` to inspect the allowed shared catalog and costs.
 4. Start the round with `exp_round_start`.
-5. During freeze, buy with `exp_buy 357 Poni` or another allowed weapon.
-6. Use `exp_buy_status` to confirm current money and the selected or granted weapon.
+5. During freeze, buy with `exp_buy 357 Poni`, `exp_buy armor Poni`, `exp_buy helmet Poni`, or `exp_buy handgrenade Poni`.
+6. Use `exp_buy_status` and `exp_armor_status Poni` to confirm current money, selected loadout override, armor value, helmet state, and the current handgrenade grant.
 7. When the round goes live, freeze-only buy mode closes automatically and later `exp_buy` attempts fail with an explicit reason.
-8. After round end and restart, the buy selection resets for the next freeze while the player's money carries forward with the configured win/loss reward.
+8. After round end and restart, the current round's selected items reset for the next freeze while the player's money carries forward with the configured win/loss reward.
 
 For the full state model, command reference, and current limitations, see [docs/round-mode.md](/D:/DEV/CPP/HL-Server/docs/round-mode.md).
 

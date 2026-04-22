@@ -69,6 +69,122 @@ bool DummyArmorProtectsHitgroup(int hitgroup, bool headProtected)
     }
 }
 
+bool PlayerArmorProtectsHitgroup(int hitgroup, bool headProtected)
+{
+    switch (hitgroup)
+    {
+    case HITGROUP_CHEST:
+    case HITGROUP_STOMACH:
+    case HITGROUP_LEFTARM:
+    case HITGROUP_RIGHTARM:
+        return true;
+    case HITGROUP_HEAD:
+        return headProtected;
+    default:
+        return false;
+    }
+}
+
+bool ApplyCustomArmorAbsorption(
+    float traceDamage,
+    float armorBefore,
+    float armorHealthFraction,
+    float armorDrainScale,
+    float *damageToHealth,
+    float *damageAbsorbed,
+    float *armorDrain,
+    bool *armorApplied)
+{
+    if (damageToHealth == NULL || damageAbsorbed == NULL || armorDrain == NULL || armorApplied == NULL)
+    {
+        return false;
+    }
+
+    *damageToHealth = traceDamage;
+    *damageAbsorbed = 0.0f;
+    *armorDrain = 0.0f;
+    *armorApplied = false;
+
+    if (traceDamage <= 0.0f || armorBefore <= 0.0f)
+    {
+        return true;
+    }
+
+    const float clampedArmorHealthFraction = ClampSharedValue(armorHealthFraction, 0.0f, 1.0f);
+    const float desiredDamageToHealth = traceDamage * clampedArmorHealthFraction;
+    const float desiredDamageAbsorbed = traceDamage - desiredDamageToHealth;
+    if (desiredDamageAbsorbed <= 0.0f)
+    {
+        return true;
+    }
+
+    if (armorDrainScale <= 0.0f)
+    {
+        *damageToHealth = desiredDamageToHealth;
+        *damageAbsorbed = desiredDamageAbsorbed;
+        *armorApplied = true;
+        return true;
+    }
+
+    const float desiredArmorDrain = desiredDamageAbsorbed * armorDrainScale;
+    if (desiredArmorDrain <= armorBefore)
+    {
+        *damageToHealth = desiredDamageToHealth;
+        *damageAbsorbed = desiredDamageAbsorbed;
+        *armorDrain = desiredArmorDrain;
+        *armorApplied = true;
+        return true;
+    }
+
+    *armorDrain = armorBefore;
+    *damageAbsorbed = *armorDrain / armorDrainScale;
+    *damageToHealth = traceDamage - *damageAbsorbed;
+    *armorApplied = *damageAbsorbed > 0.0f;
+    return true;
+}
+
+float ComputeCustomArmoredLethalDamage(float health, float armor, float armorHealthFraction, float armorDrainScale)
+{
+    if (health <= 0.0f)
+    {
+        return 0.0f;
+    }
+
+    if (armor <= 0.0f)
+    {
+        return (float)ceil(health);
+    }
+
+    const float clampedArmorHealthFraction = ClampSharedValue(armorHealthFraction, 0.0f, 1.0f);
+    const float absorbedFraction = 1.0f - clampedArmorHealthFraction;
+    if (absorbedFraction <= 0.0f)
+    {
+        return (float)ceil(health);
+    }
+
+    if (armorDrainScale <= 0.0f)
+    {
+        if (clampedArmorHealthFraction <= 0.0f)
+        {
+            return 0.0f;
+        }
+
+        return (float)ceil(health / clampedArmorHealthFraction);
+    }
+
+    if (clampedArmorHealthFraction > 0.0f)
+    {
+        const float transitionDamage = armor / (absorbedFraction * armorDrainScale);
+        const float lethalWhileArmored = health / clampedArmorHealthFraction;
+        if (lethalWhileArmored <= transitionDamage)
+        {
+            return (float)ceil(lethalWhileArmored);
+        }
+    }
+
+    return (float)ceil(health + (armor / armorDrainScale));
+}
+
 float ComputePlayerHeadshotLethalDamage(CBasePlayer *pPlayer)
 {
     if (pPlayer == NULL || pPlayer->pev == NULL)
@@ -78,6 +194,20 @@ float ComputePlayerHeadshotLethalDamage(CBasePlayer *pPlayer)
 
     const float health = pPlayer->pev->health > 0.0f ? pPlayer->pev->health : 0.0f;
     const float armor = pPlayer->pev->armorvalue > 0.0f ? pPlayer->pev->armorvalue : 0.0f;
+    if (ExpArmorModeEnabled())
+    {
+        if (!FutureGameplayPlayerHeadProtectionActive(pPlayer))
+        {
+            return (float)ceil(health);
+        }
+
+        return ComputeCustomArmoredLethalDamage(
+            health,
+            armor,
+            ExpArmorHealthFraction(),
+            ExpArmorDrainScale());
+    }
+
     const float requiredDamage = (armor >= (2.0f * health))
         ? (5.0f * health)
         : (health + (2.0f * armor));
@@ -392,45 +522,47 @@ bool ApplySharedWeaponTraceDamage(
 
         if (dummyArmorBefore > 0.0f && DummyArmorProtectsHitgroup(hitgroup, result->dummyHeadProtected))
         {
-            const float armorHealthFraction = ClampSharedValue(ExpGlockLabDummyArmorHealthFraction(), 0.0f, 1.0f);
-            const float desiredDamageToHealth = result->traceDamage * armorHealthFraction;
-            const float desiredDamageAbsorbed = result->traceDamage - desiredDamageToHealth;
-            const float armorDrainScale = ExpGlockLabDummyArmorDrainScale();
+            ApplyCustomArmorAbsorption(
+                result->traceDamage,
+                dummyArmorBefore,
+                ExpGlockLabDummyArmorHealthFraction(),
+                ExpGlockLabDummyArmorDrainScale(),
+                &result->damageToHealth,
+                &result->damageAbsorbed,
+                &result->armorDrain,
+                &result->dummyArmorApplied);
 
-            if (desiredDamageAbsorbed > 0.0f)
+            pVictim->pev->armorvalue = dummyArmorBefore - result->armorDrain;
+            if (pVictim->pev->armorvalue < 0.0f)
             {
-                if (armorDrainScale <= 0.0f)
-                {
-                    result->damageToHealth = desiredDamageToHealth;
-                    result->damageAbsorbed = desiredDamageAbsorbed;
-                    result->armorDrain = 0.0f;
-                    result->dummyArmorApplied = true;
-                }
-                else
-                {
-                    const float desiredArmorDrain = desiredDamageAbsorbed * armorDrainScale;
+                pVictim->pev->armorvalue = 0.0f;
+            }
+        }
+    }
+    else if (pVictim->IsPlayer() && ExpArmorModeEnabled())
+    {
+        CBasePlayer *pPlayerVictim = (CBasePlayer *)pVictim;
+        const float playerArmorBefore = pVictim->pev->armorvalue > 0.0f ? pVictim->pev->armorvalue : 0.0f;
+        result->victimArmorBefore = playerArmorBefore;
+        result->dummyHeadProtected = FutureGameplayPlayerHeadProtectionActive(pPlayerVictim);
+        FutureGameplayMarkPlayerBulletArmorHandled(pPlayerVictim);
 
-                    if (desiredArmorDrain <= dummyArmorBefore)
-                    {
-                        result->damageToHealth = desiredDamageToHealth;
-                        result->damageAbsorbed = desiredDamageAbsorbed;
-                        result->armorDrain = desiredArmorDrain;
-                        result->dummyArmorApplied = true;
-                    }
-                    else
-                    {
-                        result->armorDrain = dummyArmorBefore;
-                        result->damageAbsorbed = result->armorDrain / armorDrainScale;
-                        result->damageToHealth = result->traceDamage - result->damageAbsorbed;
-                        result->dummyArmorApplied = result->damageAbsorbed > 0.0f;
-                    }
-                }
+        if (playerArmorBefore > 0.0f && PlayerArmorProtectsHitgroup(hitgroup, result->dummyHeadProtected))
+        {
+            ApplyCustomArmorAbsorption(
+                result->traceDamage,
+                playerArmorBefore,
+                ExpArmorHealthFraction(),
+                ExpArmorDrainScale(),
+                &result->damageToHealth,
+                &result->damageAbsorbed,
+                &result->armorDrain,
+                &result->dummyArmorApplied);
 
-                pVictim->pev->armorvalue = dummyArmorBefore - result->armorDrain;
-                if (pVictim->pev->armorvalue < 0.0f)
-                {
-                    pVictim->pev->armorvalue = 0.0f;
-                }
+            pVictim->pev->armorvalue = playerArmorBefore - result->armorDrain;
+            if (pVictim->pev->armorvalue < 0.0f)
+            {
+                pVictim->pev->armorvalue = 0.0f;
             }
         }
     }

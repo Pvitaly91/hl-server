@@ -37,6 +37,7 @@
 #include "pm_shared.h"
 #include "hltv.h"
 #include "weapon_debug_logger.h"
+#include "future_gameplay_hooks.h"
 
 // #define DUCKFIX
 
@@ -403,7 +404,9 @@ void CBasePlayer :: TraceAttack( entvars_t *pevAttacker, float flDamage, Vector 
 		m_LastHitGroup = ptr->iHitgroup;
 
 		if (!ApplyActiveGlockPrimaryTraceDamage(this, pevAttacker, ptr->iHitgroup, &flDamage) &&
-			!ApplyActiveMp5PrimaryTraceDamage(this, pevAttacker, ptr->iHitgroup, &flDamage))
+			!ApplyActiveMp5PrimaryTraceDamage(this, pevAttacker, ptr->iHitgroup, &flDamage) &&
+			!ApplyActive357PrimaryTraceDamage(this, pevAttacker, ptr->iHitgroup, &flDamage) &&
+			!ApplyActiveShotgunPrimaryTraceDamage(this, pevAttacker, ptr->iHitgroup, &flDamage))
 		{
 			switch ( ptr->iHitgroup )
 			{
@@ -462,6 +465,7 @@ int CBasePlayer :: TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, 
 
 	flBonus = ARMOR_BONUS;
 	flRatio = ARMOR_RATIO;
+	const BOOL fSkipStockArmor = FutureGameplayConsumePlayerBulletArmorHandled(this, bitsDamageType) ? TRUE : FALSE;
 
 	if ( ( bitsDamageType & DMG_BLAST ) && g_pGameRules->IsMultiplayer() )
 	{
@@ -487,7 +491,7 @@ int CBasePlayer :: TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, 
 	m_lastDamageAmount = flDamage;
 
 	// Armor. 
-	if (pev->armorvalue && !(bitsDamageType & (DMG_FALL | DMG_DROWN)) )// armor doesn't protect against fall or drown damage!
+	if (!fSkipStockArmor && pev->armorvalue && !(bitsDamageType & (DMG_FALL | DMG_DROWN)) )// armor doesn't protect against fall or drown damage!
 	{
 		float flNew = flDamage * flRatio;
 

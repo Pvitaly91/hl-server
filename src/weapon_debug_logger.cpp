@@ -1673,6 +1673,11 @@ void FinalizeActiveGlockPrimaryHitTelemetry()
     const float flArmorAfter = fArmorKnown ? pVictim->pev->armorvalue : 0.0f;
     const float flArmorDamage = fArmorKnown ? (g_glockPrimaryShotContext.victimArmorBefore - flArmorAfter) : 0.0f;
     const bool fDummyTelemetry = g_glockPrimaryShotContext.victimIsDummy;
+    const bool fCustomArmorTelemetry = fDummyTelemetry ||
+        g_glockPrimaryShotContext.dummyArmorApplied ||
+        g_glockPrimaryShotContext.dummyHeadProtected ||
+        g_glockPrimaryShotContext.damageAbsorbed > 0.0f ||
+        g_glockPrimaryShotContext.armorDrain > 0.0f;
 
     const bool killedByShot = (g_glockPrimaryShotContext.victimHealthBefore > 0.0f) &&
         (flHealthAfter <= 0.0f || !pVictim->IsAlive());
@@ -1699,10 +1704,10 @@ void FinalizeActiveGlockPrimaryHitTelemetry()
         FormatOptionalFloat(armorDamage, sizeof(armorDamage), fArmorKnown, flArmorDamage, 1);
         FormatOptionalFloat(dummyArmorBefore, sizeof(dummyArmorBefore), fDummyTelemetry, g_glockPrimaryShotContext.victimArmorBefore, 1);
         FormatOptionalFloat(dummyArmorAfter, sizeof(dummyArmorAfter), fDummyTelemetry, flArmorAfter, 1);
-        FormatOptionalFloat(damageRaw, sizeof(damageRaw), fDummyTelemetry, g_glockPrimaryShotContext.damageRaw, 4);
-        FormatOptionalFloat(damageToHealth, sizeof(damageToHealth), fDummyTelemetry, g_glockPrimaryShotContext.damageToHealth, 4);
-        FormatOptionalFloat(damageAbsorbed, sizeof(damageAbsorbed), fDummyTelemetry, g_glockPrimaryShotContext.damageAbsorbed, 4);
-        FormatOptionalFloat(armorDrain, sizeof(armorDrain), fDummyTelemetry, g_glockPrimaryShotContext.armorDrain, 4);
+        FormatOptionalFloat(damageRaw, sizeof(damageRaw), fCustomArmorTelemetry, g_glockPrimaryShotContext.damageRaw, 4);
+        FormatOptionalFloat(damageToHealth, sizeof(damageToHealth), fCustomArmorTelemetry, g_glockPrimaryShotContext.damageToHealth, 4);
+        FormatOptionalFloat(damageAbsorbed, sizeof(damageAbsorbed), fCustomArmorTelemetry, g_glockPrimaryShotContext.damageAbsorbed, 4);
+        FormatOptionalFloat(armorDrain, sizeof(armorDrain), fCustomArmorTelemetry, g_glockPrimaryShotContext.armorDrain, 4);
 
         _snprintf_s(
             line,
@@ -1889,6 +1894,11 @@ void FinalizeActiveMp5PrimaryHitTelemetry()
     const float armorAfter = armorKnown ? pVictim->pev->armorvalue : 0.0f;
     const float armorDamage = armorKnown ? (g_mp5PrimaryShotContext.victimArmorBefore - armorAfter) : 0.0f;
     const bool dummyTelemetry = g_mp5PrimaryShotContext.victimIsDummy;
+    const bool customArmorTelemetry = dummyTelemetry ||
+        g_mp5PrimaryShotContext.dummyArmorApplied ||
+        g_mp5PrimaryShotContext.dummyHeadProtected ||
+        g_mp5PrimaryShotContext.damageAbsorbed > 0.0f ||
+        g_mp5PrimaryShotContext.armorDrain > 0.0f;
 
     const bool killedByShot = (g_mp5PrimaryShotContext.victimHealthBefore > 0.0f) &&
         (healthAfter <= 0.0f || !pVictim->IsAlive());
@@ -1915,10 +1925,10 @@ void FinalizeActiveMp5PrimaryHitTelemetry()
         FormatOptionalFloat(armorDamageText, sizeof(armorDamageText), armorKnown, armorDamage, 1);
         FormatOptionalFloat(dummyArmorBefore, sizeof(dummyArmorBefore), dummyTelemetry, g_mp5PrimaryShotContext.victimArmorBefore, 1);
         FormatOptionalFloat(dummyArmorAfter, sizeof(dummyArmorAfter), dummyTelemetry, armorAfter, 1);
-        FormatOptionalFloat(damageRaw, sizeof(damageRaw), dummyTelemetry, g_mp5PrimaryShotContext.damageRaw, 4);
-        FormatOptionalFloat(damageToHealth, sizeof(damageToHealth), dummyTelemetry, g_mp5PrimaryShotContext.damageToHealth, 4);
-        FormatOptionalFloat(damageAbsorbed, sizeof(damageAbsorbed), dummyTelemetry, g_mp5PrimaryShotContext.damageAbsorbed, 4);
-        FormatOptionalFloat(armorDrain, sizeof(armorDrain), dummyTelemetry, g_mp5PrimaryShotContext.armorDrain, 4);
+        FormatOptionalFloat(damageRaw, sizeof(damageRaw), customArmorTelemetry, g_mp5PrimaryShotContext.damageRaw, 4);
+        FormatOptionalFloat(damageToHealth, sizeof(damageToHealth), customArmorTelemetry, g_mp5PrimaryShotContext.damageToHealth, 4);
+        FormatOptionalFloat(damageAbsorbed, sizeof(damageAbsorbed), customArmorTelemetry, g_mp5PrimaryShotContext.damageAbsorbed, 4);
+        FormatOptionalFloat(armorDrain, sizeof(armorDrain), customArmorTelemetry, g_mp5PrimaryShotContext.armorDrain, 4);
 
         _snprintf_s(
             line,
@@ -2105,6 +2115,11 @@ void FinalizeActive357PrimaryHitTelemetry()
     const float armorAfter = armorKnown ? pVictim->pev->armorvalue : 0.0f;
     const float armorDamage = armorKnown ? (g_357PrimaryShotContext.victimArmorBefore - armorAfter) : 0.0f;
     const bool dummyTelemetry = g_357PrimaryShotContext.victimIsDummy;
+    const bool customArmorTelemetry = dummyTelemetry ||
+        g_357PrimaryShotContext.dummyArmorApplied ||
+        g_357PrimaryShotContext.dummyHeadProtected ||
+        g_357PrimaryShotContext.damageAbsorbed > 0.0f ||
+        g_357PrimaryShotContext.armorDrain > 0.0f;
 
     const bool killedByShot = (g_357PrimaryShotContext.victimHealthBefore > 0.0f) &&
         (healthAfter <= 0.0f || !pVictim->IsAlive());
@@ -2131,10 +2146,10 @@ void FinalizeActive357PrimaryHitTelemetry()
         FormatOptionalFloat(armorDamageText, sizeof(armorDamageText), armorKnown, armorDamage, 1);
         FormatOptionalFloat(dummyArmorBefore, sizeof(dummyArmorBefore), dummyTelemetry, g_357PrimaryShotContext.victimArmorBefore, 1);
         FormatOptionalFloat(dummyArmorAfter, sizeof(dummyArmorAfter), dummyTelemetry, armorAfter, 1);
-        FormatOptionalFloat(damageRaw, sizeof(damageRaw), dummyTelemetry, g_357PrimaryShotContext.damageRaw, 4);
-        FormatOptionalFloat(damageToHealth, sizeof(damageToHealth), dummyTelemetry, g_357PrimaryShotContext.damageToHealth, 4);
-        FormatOptionalFloat(damageAbsorbed, sizeof(damageAbsorbed), dummyTelemetry, g_357PrimaryShotContext.damageAbsorbed, 4);
-        FormatOptionalFloat(armorDrain, sizeof(armorDrain), dummyTelemetry, g_357PrimaryShotContext.armorDrain, 4);
+        FormatOptionalFloat(damageRaw, sizeof(damageRaw), customArmorTelemetry, g_357PrimaryShotContext.damageRaw, 4);
+        FormatOptionalFloat(damageToHealth, sizeof(damageToHealth), customArmorTelemetry, g_357PrimaryShotContext.damageToHealth, 4);
+        FormatOptionalFloat(damageAbsorbed, sizeof(damageAbsorbed), customArmorTelemetry, g_357PrimaryShotContext.damageAbsorbed, 4);
+        FormatOptionalFloat(armorDrain, sizeof(armorDrain), customArmorTelemetry, g_357PrimaryShotContext.armorDrain, 4);
 
         _snprintf_s(
             line,
@@ -2349,6 +2364,11 @@ void FinalizeActiveShotgunPrimaryHitTelemetry()
         const float armorAfter = armorKnown ? pVictim->pev->armorvalue : 0.0f;
         const float armorDamage = armorKnown ? (aggregate->victimArmorBefore - armorAfter) : 0.0f;
         const bool dummyTelemetry = aggregate->victimIsDummy;
+        const bool customArmorTelemetry = dummyTelemetry ||
+            aggregate->dummyArmorApplied ||
+            aggregate->dummyHeadProtected ||
+            aggregate->totalDamageAbsorbed > 0.0f ||
+            aggregate->totalArmorDrain > 0.0f;
         const bool headshot = aggregate->anyHeadshot;
         const bool headshotLethalApplied = aggregate->headshotLethalPellets > 0;
         const bool killedByShot = (aggregate->victimHealthBefore > 0.0f) &&
@@ -2374,10 +2394,10 @@ void FinalizeActiveShotgunPrimaryHitTelemetry()
         FormatOptionalFloat(armorDamageText, sizeof(armorDamageText), armorKnown, armorDamage, 1);
         FormatOptionalFloat(dummyArmorBefore, sizeof(dummyArmorBefore), dummyTelemetry, aggregate->victimArmorBefore, 1);
         FormatOptionalFloat(dummyArmorAfter, sizeof(dummyArmorAfter), dummyTelemetry, armorAfter, 1);
-        FormatOptionalFloat(damageRaw, sizeof(damageRaw), dummyTelemetry, aggregate->totalTraceDamage, 4);
-        FormatOptionalFloat(damageToHealth, sizeof(damageToHealth), dummyTelemetry, aggregate->totalDamageToHealth, 4);
-        FormatOptionalFloat(damageAbsorbed, sizeof(damageAbsorbed), dummyTelemetry, aggregate->totalDamageAbsorbed, 4);
-        FormatOptionalFloat(armorDrain, sizeof(armorDrain), dummyTelemetry, aggregate->totalArmorDrain, 4);
+        FormatOptionalFloat(damageRaw, sizeof(damageRaw), customArmorTelemetry, aggregate->totalTraceDamage, 4);
+        FormatOptionalFloat(damageToHealth, sizeof(damageToHealth), customArmorTelemetry, aggregate->totalDamageToHealth, 4);
+        FormatOptionalFloat(damageAbsorbed, sizeof(damageAbsorbed), customArmorTelemetry, aggregate->totalDamageAbsorbed, 4);
+        FormatOptionalFloat(armorDrain, sizeof(armorDrain), customArmorTelemetry, aggregate->totalArmorDrain, 4);
 
         _snprintf_s(
             line,

@@ -277,6 +277,14 @@ struct ExpBuyPlayerState
     int money;
     int selectedCost;
     bool boughtThisFreeze;
+    bool boughtArmorThisFreeze;
+    bool boughtHelmetThisFreeze;
+    int armorCost;
+    int helmetCost;
+    int handGrenadeCount;
+    int handGrenadeCost;
+    bool helmetEquipped;
+    bool customArmorHandled;
     char selectedWeapon[16];
 };
 
@@ -470,10 +478,24 @@ cvar_t sv_exp_buy_allow_glock = {"sv_exp_buy_allow_glock", "1", FCVAR_SERVER};
 cvar_t sv_exp_buy_allow_mp5 = {"sv_exp_buy_allow_mp5", "1", FCVAR_SERVER};
 cvar_t sv_exp_buy_allow_357 = {"sv_exp_buy_allow_357", "1", FCVAR_SERVER};
 cvar_t sv_exp_buy_allow_shotgun = {"sv_exp_buy_allow_shotgun", "1", FCVAR_SERVER};
+cvar_t sv_exp_buy_allow_armor = {"sv_exp_buy_allow_armor", "1", FCVAR_SERVER};
+cvar_t sv_exp_buy_allow_helmet = {"sv_exp_buy_allow_helmet", "1", FCVAR_SERVER};
+cvar_t sv_exp_buy_allow_handgrenade = {"sv_exp_buy_allow_handgrenade", "1", FCVAR_SERVER};
 cvar_t sv_exp_buy_cost_glock = {"sv_exp_buy_cost_glock", "200", FCVAR_SERVER};
 cvar_t sv_exp_buy_cost_mp5 = {"sv_exp_buy_cost_mp5", "1500", FCVAR_SERVER};
 cvar_t sv_exp_buy_cost_357 = {"sv_exp_buy_cost_357", "1200", FCVAR_SERVER};
 cvar_t sv_exp_buy_cost_shotgun = {"sv_exp_buy_cost_shotgun", "1700", FCVAR_SERVER};
+cvar_t sv_exp_buy_cost_armor = {"sv_exp_buy_cost_armor", "650", FCVAR_SERVER};
+cvar_t sv_exp_buy_cost_helmet = {"sv_exp_buy_cost_helmet", "350", FCVAR_SERVER};
+cvar_t sv_exp_buy_cost_handgrenade = {"sv_exp_buy_cost_handgrenade", "300", FCVAR_SERVER};
+cvar_t sv_exp_armor_mode = {"sv_exp_armor_mode", "0", FCVAR_SERVER};
+cvar_t sv_exp_armor_start_value = {"sv_exp_armor_start_value", "0.0", FCVAR_SERVER};
+cvar_t sv_exp_armor_max_value = {"sv_exp_armor_max_value", "100.0", FCVAR_SERVER};
+cvar_t sv_exp_armor_health_fraction = {"sv_exp_armor_health_fraction", "0.5", FCVAR_SERVER};
+cvar_t sv_exp_armor_drain_scale = {"sv_exp_armor_drain_scale", "1.0", FCVAR_SERVER};
+cvar_t sv_exp_helmet_mode = {"sv_exp_helmet_mode", "0", FCVAR_SERVER};
+cvar_t sv_exp_helmet_start_enabled = {"sv_exp_helmet_start_enabled", "0", FCVAR_SERVER};
+cvar_t sv_exp_helmet_headshot_protection = {"sv_exp_helmet_headshot_protection", "1", FCVAR_SERVER};
 cvar_t sv_exp_debug_weaponlog = {"sv_exp_debug_weaponlog", "0", FCVAR_SERVER};
 cvar_t sv_exp_debug_weaponlog_rejections = {"sv_exp_debug_weaponlog_rejections", "0", FCVAR_SERVER};
 cvar_t sv_exp_glock_lab_dummy = {"sv_exp_glock_lab_dummy", "0", FCVAR_SERVER};
@@ -544,8 +566,8 @@ const TeamSpawnSavedSpotRecord *GetDefaultTeamSpawnSavedSpot(int teamId);
 void BuildTeamSpawnNamesSummary(int teamId, char *buffer, size_t bufferSize);
 TeamSpawnSavedSpotRecord *UpsertTeamSpawnSavedSpot(int teamId, const char *spotName, const Vector &origin, const Vector &angles, char *failureReason, size_t failureReasonSize);
 bool RemoveTeamSpawnSavedSpot(int teamId, const char *spotName, TeamSpawnSavedSpotRecord *removedSpot, char *failureReason, size_t failureReasonSize);
-bool IsBuyWeaponTokenSupported(const char *weaponToken);
-const char *GetResolvedBuyWeaponToken(const char *weaponToken);
+bool IsBuyItemTokenSupported(const char *weaponToken);
+const char *GetResolvedBuyItemToken(const char *weaponToken);
 bool TryResolveDefaultBuyPlayer(CBasePlayer **ppPlayer, char *failureReason, size_t failureReasonSize);
 
 float GetNonNegativeCvarValue(const cvar_t &cvar)
@@ -1894,6 +1916,16 @@ int BuyMaxMoney()
     return (int)ClampFloat(sv_exp_buy_max_money.value, 0.0f, 1000000.0f);
 }
 
+bool ArmorModeConfigured()
+{
+    return sv_exp_armor_mode.value != 0.0f;
+}
+
+bool HelmetModeConfigured()
+{
+    return sv_exp_helmet_mode.value != 0.0f;
+}
+
 bool IsBuyPhaseOpen()
 {
     if (!BuyModeConfigured() || !ExpRoundModeActive())
@@ -1919,15 +1951,19 @@ const char *GetBuyPhaseStateLabel()
     return IsBuyPhaseOpen() ? "open" : "closed";
 }
 
-bool IsBuyWeaponTokenSupported(const char *weaponToken)
+bool IsBuyItemTokenSupported(const char *weaponToken)
 {
     return StringEqualsIgnoreCase(weaponToken, "glock") ||
         StringEqualsIgnoreCase(weaponToken, "mp5") ||
         StringEqualsIgnoreCase(weaponToken, "357") ||
-        StringEqualsIgnoreCase(weaponToken, "shotgun");
+        StringEqualsIgnoreCase(weaponToken, "shotgun") ||
+        StringEqualsIgnoreCase(weaponToken, "armor") ||
+        StringEqualsIgnoreCase(weaponToken, "helmet") ||
+        StringEqualsIgnoreCase(weaponToken, "handgrenade") ||
+        StringEqualsIgnoreCase(weaponToken, "grenade");
 }
 
-const char *GetResolvedBuyWeaponToken(const char *weaponToken)
+const char *GetResolvedBuyItemToken(const char *weaponToken)
 {
     if (StringEqualsIgnoreCase(weaponToken, "glock"))
     {
@@ -1949,10 +1985,34 @@ const char *GetResolvedBuyWeaponToken(const char *weaponToken)
         return "shotgun";
     }
 
+    if (StringEqualsIgnoreCase(weaponToken, "armor"))
+    {
+        return "armor";
+    }
+
+    if (StringEqualsIgnoreCase(weaponToken, "helmet"))
+    {
+        return "helmet";
+    }
+
+    if (StringEqualsIgnoreCase(weaponToken, "handgrenade") ||
+        StringEqualsIgnoreCase(weaponToken, "grenade"))
+    {
+        return "handgrenade";
+    }
+
     return "";
 }
 
-bool IsBuyWeaponAllowed(const char *weaponToken)
+bool IsBuyWeaponToken(const char *weaponToken)
+{
+    return StringEqualsIgnoreCase(weaponToken, "glock") ||
+        StringEqualsIgnoreCase(weaponToken, "mp5") ||
+        StringEqualsIgnoreCase(weaponToken, "357") ||
+        StringEqualsIgnoreCase(weaponToken, "shotgun");
+}
+
+bool IsBuyItemAllowed(const char *weaponToken)
 {
     if (StringEqualsIgnoreCase(weaponToken, "glock"))
     {
@@ -1974,10 +2034,25 @@ bool IsBuyWeaponAllowed(const char *weaponToken)
         return sv_exp_buy_allow_shotgun.value != 0.0f;
     }
 
+    if (StringEqualsIgnoreCase(weaponToken, "armor"))
+    {
+        return ArmorModeConfigured() && sv_exp_buy_allow_armor.value != 0.0f;
+    }
+
+    if (StringEqualsIgnoreCase(weaponToken, "helmet"))
+    {
+        return HelmetModeConfigured() && sv_exp_buy_allow_helmet.value != 0.0f;
+    }
+
+    if (StringEqualsIgnoreCase(weaponToken, "handgrenade"))
+    {
+        return sv_exp_buy_allow_handgrenade.value != 0.0f;
+    }
+
     return false;
 }
 
-int GetBuyWeaponCost(const char *weaponToken)
+int GetBuyItemCost(const char *weaponToken)
 {
     if (StringEqualsIgnoreCase(weaponToken, "glock"))
     {
@@ -1999,10 +2074,55 @@ int GetBuyWeaponCost(const char *weaponToken)
         return (int)ClampFloat(sv_exp_buy_cost_shotgun.value, 0.0f, 1000000.0f);
     }
 
+    if (StringEqualsIgnoreCase(weaponToken, "armor"))
+    {
+        return (int)ClampFloat(sv_exp_buy_cost_armor.value, 0.0f, 1000000.0f);
+    }
+
+    if (StringEqualsIgnoreCase(weaponToken, "helmet"))
+    {
+        return (int)ClampFloat(sv_exp_buy_cost_helmet.value, 0.0f, 1000000.0f);
+    }
+
+    if (StringEqualsIgnoreCase(weaponToken, "handgrenade"))
+    {
+        return (int)ClampFloat(sv_exp_buy_cost_handgrenade.value, 0.0f, 1000000.0f);
+    }
+
     return 0;
 }
 
-ExpBuyPlayerState *GetBuyPlayerState(CBasePlayer *pPlayer)
+bool IsBuyWeaponAllowed(const char *weaponToken)
+{
+    return IsBuyItemAllowed(weaponToken);
+}
+
+int GetBuyWeaponCost(const char *weaponToken)
+{
+    return GetBuyItemCost(weaponToken);
+}
+
+void ResetBuyStateSelections(ExpBuyPlayerState *state)
+{
+    if (state == NULL)
+    {
+        return;
+    }
+
+    state->selectedCost = 0;
+    state->boughtThisFreeze = false;
+    state->boughtArmorThisFreeze = false;
+    state->boughtHelmetThisFreeze = false;
+    state->armorCost = 0;
+    state->helmetCost = 0;
+    state->handGrenadeCount = 0;
+    state->handGrenadeCost = 0;
+    state->helmetEquipped = false;
+    state->customArmorHandled = false;
+    state->selectedWeapon[0] = '\0';
+}
+
+ExpBuyPlayerState *GetBuyPlayerStateInternal(CBasePlayer *pPlayer, bool createIfMissing)
 {
     const int slot = GetRoundTeamSlot(pPlayer);
     if (slot <= 0 || pPlayer == NULL)
@@ -2019,13 +2139,16 @@ ExpBuyPlayerState *GetBuyPlayerState(CBasePlayer *pPlayer)
 
     if (!state.active)
     {
+        if (!createIfMissing)
+        {
+            return NULL;
+        }
+
         state.active = true;
         state.userId = userId;
         strncpy_s(state.playerName, sizeof(state.playerName), GetSafePlayerName(pPlayer), _TRUNCATE);
         state.money = BuyStartMoney();
-        state.selectedCost = 0;
-        state.boughtThisFreeze = false;
-        state.selectedWeapon[0] = '\0';
+        ResetBuyStateSelections(&state);
     }
     else
     {
@@ -2035,6 +2158,16 @@ ExpBuyPlayerState *GetBuyPlayerState(CBasePlayer *pPlayer)
     }
 
     return &state;
+}
+
+ExpBuyPlayerState *GetBuyPlayerState(CBasePlayer *pPlayer)
+{
+    return GetBuyPlayerStateInternal(pPlayer, true);
+}
+
+ExpBuyPlayerState *FindBuyPlayerState(CBasePlayer *pPlayer)
+{
+    return GetBuyPlayerStateInternal(pPlayer, false);
 }
 
 void EnsureBuyStateForAllManagedPlayers()
@@ -2073,9 +2206,7 @@ void ResetBuySelectionsForNewFreeze()
             continue;
         }
 
-        g_expBuyPlayerStates[slot].selectedWeapon[0] = '\0';
-        g_expBuyPlayerStates[slot].selectedCost = 0;
-        g_expBuyPlayerStates[slot].boughtThisFreeze = false;
+        ResetBuyStateSelections(&g_expBuyPlayerStates[slot]);
         g_expBuyPlayerStates[slot].money = ClampBuyMoney(g_expBuyPlayerStates[slot].money);
     }
 }
@@ -2089,6 +2220,75 @@ const char *GetSelectedBuyWeaponForPlayer(CBasePlayer *pPlayer)
     }
 
     return state->selectedWeapon;
+}
+
+bool BuyStateHasEquipmentSelection(const ExpBuyPlayerState *state)
+{
+    return state != NULL &&
+        (state->boughtArmorThisFreeze ||
+            state->boughtHelmetThisFreeze ||
+            state->handGrenadeCount > 0);
+}
+
+bool BuyStateHasAnySelection(const ExpBuyPlayerState *state)
+{
+    return state != NULL &&
+        (state->selectedWeapon[0] != '\0' || BuyStateHasEquipmentSelection(state));
+}
+
+int GetBuyStateRefundAmount(const ExpBuyPlayerState *state)
+{
+    if (state == NULL)
+    {
+        return 0;
+    }
+
+    return state->selectedCost + state->armorCost + state->helmetCost + state->handGrenadeCost;
+}
+
+void DescribeBuySelections(const ExpBuyPlayerState *state, char *buffer, size_t bufferSize)
+{
+    if (buffer == NULL || bufferSize == 0)
+    {
+        return;
+    }
+
+    buffer[0] = '\0';
+    if (state == NULL)
+    {
+        strcpy_s(buffer, bufferSize, "none");
+        return;
+    }
+
+    bool first = true;
+    if (state->selectedWeapon[0] != '\0')
+    {
+        strncpy_s(buffer, bufferSize, state->selectedWeapon, _TRUNCATE);
+        first = false;
+    }
+
+    if (state->boughtArmorThisFreeze)
+    {
+        _snprintf_s(buffer + strlen(buffer), bufferSize - strlen(buffer), _TRUNCATE, "%sarmor", first ? "" : ",");
+        first = false;
+    }
+
+    if (state->boughtHelmetThisFreeze)
+    {
+        _snprintf_s(buffer + strlen(buffer), bufferSize - strlen(buffer), _TRUNCATE, "%shelmet", first ? "" : ",");
+        first = false;
+    }
+
+    if (state->handGrenadeCount > 0)
+    {
+        _snprintf_s(buffer + strlen(buffer), bufferSize - strlen(buffer), _TRUNCATE, "%shandgrenade", first ? "" : ",");
+        first = false;
+    }
+
+    if (first)
+    {
+        strcpy_s(buffer, bufferSize, "none");
+    }
 }
 
 bool TryResolveDefaultBuyPlayer(CBasePlayer **ppPlayer, char *failureReason, size_t failureReasonSize)
@@ -2150,7 +2350,7 @@ bool TryResolveDefaultBuyPlayer(CBasePlayer **ppPlayer, char *failureReason, siz
             failureReasonSize,
             humanCount <= 0
                 ? "no non-fake player is available; pass a player name after the weapon token"
-                : "multiple real players are connected; use exp_buy <weapon> <player>");
+                : "multiple real players are connected; use exp_buy <item> <player>");
     }
 
     return false;
@@ -2336,15 +2536,26 @@ float GetResolvedRoundStartArmorForTeam(int teamId)
 {
     if (teamId == kExpRoundTeam1 && sv_exp_team_round_team1_armor.value >= 0.0f)
     {
-        return sv_exp_team_round_team1_armor.value;
+        return ClampFloat(sv_exp_team_round_team1_armor.value, 0.0f, max(0.0f, sv_exp_armor_max_value.value));
     }
 
     if (teamId == kExpRoundTeam2 && sv_exp_team_round_team2_armor.value >= 0.0f)
     {
-        return sv_exp_team_round_team2_armor.value;
+        return ClampFloat(sv_exp_team_round_team2_armor.value, 0.0f, max(0.0f, sv_exp_armor_max_value.value));
     }
 
-    return ExpRoundStartArmor();
+    const float roundArmor = ExpRoundStartArmor();
+    if (roundArmor > 0.0f)
+    {
+        return ClampFloat(roundArmor, 0.0f, max(0.0f, sv_exp_armor_max_value.value));
+    }
+
+    if (ArmorModeConfigured())
+    {
+        return ClampFloat(sv_exp_armor_start_value.value, 0.0f, max(0.0f, sv_exp_armor_max_value.value));
+    }
+
+    return 0.0f;
 }
 
 const char *GetResolvedRoundLoadoutModeForPlayer(CBasePlayer *pPlayer)
@@ -2374,7 +2585,124 @@ float GetResolvedRoundStartArmorForPlayer(CBasePlayer *pPlayer)
         return GetResolvedRoundStartArmorForTeam(GetAssignedRoundTeamId(pPlayer));
     }
 
-    return ExpRoundStartArmor();
+    const float roundArmor = ExpRoundStartArmor();
+    if (roundArmor > 0.0f)
+    {
+        return roundArmor;
+    }
+
+    if (ArmorModeConfigured())
+    {
+        return ClampFloat(sv_exp_armor_start_value.value, 0.0f, max(0.0f, sv_exp_armor_max_value.value));
+    }
+
+    return 0.0f;
+}
+
+bool GetResolvedRoundStartHelmetForPlayer(CBasePlayer *pPlayer)
+{
+    (void)pPlayer;
+    return HelmetModeConfigured() && sv_exp_helmet_start_enabled.value != 0.0f;
+}
+
+float GetEffectiveRoundArmorForPlayer(CBasePlayer *pPlayer)
+{
+    float armor = GetResolvedRoundStartArmorForPlayer(pPlayer);
+    if (!ArmorModeConfigured())
+    {
+        return armor;
+    }
+
+    armor = ClampFloat(armor, 0.0f, max(0.0f, sv_exp_armor_max_value.value));
+    ExpBuyPlayerState *state = GetBuyPlayerState(pPlayer);
+    if (state != NULL && state->boughtArmorThisFreeze)
+    {
+        armor = max(armor, ClampFloat(sv_exp_armor_max_value.value, 0.0f, 999999.0f));
+    }
+
+    return armor;
+}
+
+bool GetEffectiveHelmetStateForPlayer(CBasePlayer *pPlayer)
+{
+    ExpBuyPlayerState *state = FindBuyPlayerState(pPlayer);
+    if (state != NULL && state->active)
+    {
+        return state->helmetEquipped;
+    }
+
+    return GetResolvedRoundStartHelmetForPlayer(pPlayer);
+}
+
+void SetHelmetStateForPlayer(CBasePlayer *pPlayer, bool equipped)
+{
+    ExpBuyPlayerState *state = GetBuyPlayerState(pPlayer);
+    if (state != NULL)
+    {
+        state->helmetEquipped = equipped;
+    }
+}
+
+int GetPlayerHandGrenadeAmmoCount(CBasePlayer *pPlayer)
+{
+    if (pPlayer == NULL)
+    {
+        return 0;
+    }
+
+    const int ammoIndex = CBasePlayer::GetAmmoIndex("Hand Grenade");
+    return ammoIndex >= 0 ? pPlayer->AmmoInventory(ammoIndex) : 0;
+}
+
+void SetPlayerHandGrenadeAmmoCount(CBasePlayer *pPlayer, int targetCount)
+{
+    if (pPlayer == NULL)
+    {
+        return;
+    }
+
+    const int clampedCount = (int)ClampFloat((float)targetCount, 0.0f, (float)HANDGRENADE_MAX_CARRY);
+    int ammoIndex = CBasePlayer::GetAmmoIndex("Hand Grenade");
+    if (clampedCount > 0)
+    {
+        pPlayer->GiveNamedItem("weapon_handgrenade");
+        if (ammoIndex < 0)
+        {
+            ammoIndex = CBasePlayer::GetAmmoIndex("Hand Grenade");
+        }
+    }
+
+    if (ammoIndex >= 0)
+    {
+        pPlayer->m_rgAmmo[ammoIndex] = clampedCount;
+        pPlayer->SendAmmoUpdate();
+    }
+}
+
+void ApplyRoundArmorUtilityStateToPlayer(CBasePlayer *pPlayer)
+{
+    if (pPlayer == NULL || pPlayer->pev == NULL)
+    {
+        return;
+    }
+
+    pPlayer->pev->armorvalue = GetEffectiveRoundArmorForPlayer(pPlayer);
+    SetHelmetStateForPlayer(pPlayer, GetResolvedRoundStartHelmetForPlayer(pPlayer));
+
+    ExpBuyPlayerState *state = GetBuyPlayerState(pPlayer);
+    if (state != NULL)
+    {
+        if (state->boughtHelmetThisFreeze)
+        {
+            SetHelmetStateForPlayer(pPlayer, HelmetModeConfigured());
+        }
+
+        SetPlayerHandGrenadeAmmoCount(pPlayer, state->handGrenadeCount);
+    }
+    else
+    {
+        SetPlayerHandGrenadeAmmoCount(pPlayer, 0);
+    }
 }
 
 void GiveRoundAmmo(CBasePlayer *pPlayer, const char *ammoName, int amount, int maxCarry)
@@ -2455,6 +2783,7 @@ void ApplyRoundGrantToPlayerForMode(CBasePlayer *pPlayer, const char *loadoutMod
     }
 
     ApplyDeterministicRoundLoadoutToPlayer(pPlayer, loadoutMode);
+    ApplyRoundArmorUtilityStateToPlayer(pPlayer);
 }
 
 void ApplyRoundResetToPlayer(CBasePlayer *pPlayer)
@@ -2474,7 +2803,7 @@ void ApplyRoundResetToPlayer(CBasePlayer *pPlayer)
     const float startHealth = GetResolvedRoundStartHealthForPlayer(pPlayer);
     pPlayer->pev->health = startHealth;
     pPlayer->pev->max_health = startHealth;
-    pPlayer->pev->armorvalue = GetResolvedRoundStartArmorForPlayer(pPlayer);
+    ApplyRoundArmorUtilityStateToPlayer(pPlayer);
     pPlayer->m_iAutoWepSwitch = savedAutoSwitch;
 }
 
@@ -2627,6 +2956,37 @@ bool TryResolveBuyCommandPlayer(int playerArgIndex, CBasePlayer **ppPlayer, char
     return TryResolveDefaultBuyPlayer(ppPlayer, failureReason, failureReasonSize);
 }
 
+bool PlayerAlreadyOwnsBuyItem(CBasePlayer *pPlayer, ExpBuyPlayerState *state, const char *itemToken)
+{
+    if (pPlayer == NULL || state == NULL || itemToken == NULL || itemToken[0] == '\0')
+    {
+        return false;
+    }
+
+    if (IsBuyWeaponToken(itemToken))
+    {
+        return state->selectedWeapon[0] != '\0' && StringEqualsIgnoreCase(state->selectedWeapon, itemToken);
+    }
+
+    if (StringEqualsIgnoreCase(itemToken, "armor"))
+    {
+        const float currentArmor = pPlayer->pev != NULL ? pPlayer->pev->armorvalue : 0.0f;
+        return state->boughtArmorThisFreeze || currentArmor >= ClampFloat(sv_exp_armor_max_value.value, 0.0f, 999999.0f);
+    }
+
+    if (StringEqualsIgnoreCase(itemToken, "helmet"))
+    {
+        return GetEffectiveHelmetStateForPlayer(pPlayer);
+    }
+
+    if (StringEqualsIgnoreCase(itemToken, "handgrenade"))
+    {
+        return state->handGrenadeCount > 0 || GetPlayerHandGrenadeAmmoCount(pPlayer) > 0;
+    }
+
+    return false;
+}
+
 bool TryApplyBuySelectionToPlayer(CBasePlayer *pPlayer, bool allowBaseFallback, bool *pAppliedImmediately, char *failureReason, size_t failureReasonSize)
 {
     if (pAppliedImmediately != NULL)
@@ -2643,14 +3003,24 @@ bool TryApplyBuySelectionToPlayer(CBasePlayer *pPlayer, bool allowBaseFallback, 
         return false;
     }
 
-    const char *loadoutMode = GetSelectedBuyWeaponForPlayer(pPlayer);
+    ExpBuyPlayerState *state = GetBuyPlayerState(pPlayer);
+    if (state == NULL)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "player buy state is unavailable");
+        }
+        return false;
+    }
+
+    const char *loadoutMode = state->selectedWeapon;
     if (loadoutMode[0] == '\0')
     {
-        if (!allowBaseFallback)
+        if (!allowBaseFallback && !BuyStateHasEquipmentSelection(state))
         {
             if (failureReason != NULL && failureReasonSize > 0)
             {
-                strcpy_s(failureReason, failureReasonSize, "no bought weapon is selected for that player");
+                strcpy_s(failureReason, failureReasonSize, "no bought item is selected for that player");
             }
             return false;
         }
@@ -2672,7 +3042,7 @@ bool TryApplyBuySelectionToPlayer(CBasePlayer *pPlayer, bool allowBaseFallback, 
     ApplyRoundGrantToPlayerForMode(pPlayer, loadoutMode, true);
     pPlayer->pev->health = GetResolvedRoundStartHealthForPlayer(pPlayer);
     pPlayer->pev->max_health = GetResolvedRoundStartHealthForPlayer(pPlayer);
-    pPlayer->pev->armorvalue = GetResolvedRoundStartArmorForPlayer(pPlayer);
+    ApplyRoundArmorUtilityStateToPlayer(pPlayer);
     pPlayer->m_iAutoWepSwitch = savedAutoSwitch;
 
     if (pAppliedImmediately != NULL)
@@ -2716,6 +3086,24 @@ void PrintBuyCatalog()
         "buy item: weapon=shotgun allowed=%s cost=%d",
         sv_exp_buy_allow_shotgun.value != 0.0f ? "yes" : "no",
         GetBuyWeaponCost("shotgun"));
+    PrintLabDummyConsoleLine(
+        "buy item: weapon=armor allowed=%s cost=%d armor_mode=%s start_value=%.1f max_value=%.1f",
+        IsBuyItemAllowed("armor") ? "yes" : "no",
+        GetBuyItemCost("armor"),
+        ArmorModeConfigured() ? "on" : "off",
+        ClampFloat(sv_exp_armor_start_value.value, 0.0f, 999999.0f),
+        ClampFloat(sv_exp_armor_max_value.value, 0.0f, 999999.0f));
+    PrintLabDummyConsoleLine(
+        "buy item: weapon=helmet allowed=%s cost=%d helmet_mode=%s start_enabled=%s headshot_protection=%s",
+        IsBuyItemAllowed("helmet") ? "yes" : "no",
+        GetBuyItemCost("helmet"),
+        HelmetModeConfigured() ? "on" : "off",
+        sv_exp_helmet_start_enabled.value != 0.0f ? "yes" : "no",
+        sv_exp_helmet_headshot_protection.value != 0.0f ? "yes" : "no");
+    PrintLabDummyConsoleLine(
+        "buy item: weapon=handgrenade allowed=%s cost=%d",
+        IsBuyItemAllowed("handgrenade") ? "yes" : "no",
+        GetBuyItemCost("handgrenade"));
 
     if (TeamRoundModeConfigured() && !BuyTeamSharedCatalog())
     {
@@ -2732,16 +3120,48 @@ void PrintBuyPlayerStateLine(CBasePlayer *pPlayer)
     }
 
     PrintLabDummyConsoleLine(
-        "buy player: name=%s entindex=%d userid=%d team=%s money=%d selected=%s selected_cost=%d bought_this_freeze=%s alive=%s",
+        "buy player: name=%s entindex=%d userid=%d team=%s money=%d health=%.1f armor=%.1f helmet=%s head_protected=%s selected=%s selected_cost=%d armor_buy=%s helmet_buy=%s handgrenade=%d bought_this_freeze=%s alive=%s",
         GetSafePlayerName(pPlayer),
         GetPlayerEntityIndex(pPlayer),
         GetPlayerUserId(pPlayer),
         GetBuyTeamNameForPlayer(pPlayer),
         state->money,
+        pPlayer->pev != NULL ? pPlayer->pev->health : 0.0f,
+        pPlayer->pev != NULL ? pPlayer->pev->armorvalue : 0.0f,
+        GetEffectiveHelmetStateForPlayer(pPlayer) ? "yes" : "no",
+        FutureGameplayPlayerHeadProtectionActive(pPlayer) ? "yes" : "no",
         state->selectedWeapon[0] != '\0' ? state->selectedWeapon : "none",
         state->selectedCost,
+        state->boughtArmorThisFreeze ? "yes" : "no",
+        state->boughtHelmetThisFreeze ? "yes" : "no",
+        max(state->handGrenadeCount, GetPlayerHandGrenadeAmmoCount(pPlayer)),
         state->boughtThisFreeze ? "yes" : "no",
         (pPlayer->IsAlive() && pPlayer->pev != NULL && pPlayer->pev->deadflag == DEAD_NO) ? "yes" : "no");
+}
+
+void PrintArmorStatusForPlayer(CBasePlayer *pPlayer)
+{
+    if (pPlayer == NULL || pPlayer->pev == NULL)
+    {
+        return;
+    }
+
+    ExpBuyPlayerState *state = GetBuyPlayerState(pPlayer);
+    PrintLabDummyConsoleLine(
+        "armor status: name=%s entindex=%d userid=%d team=%s health=%.1f armor=%.1f helmet=%s head_protected=%s money=%d bought_items=\"weapon=%s armor=%s helmet=%s handgrenade=%d\"",
+        GetSafePlayerName(pPlayer),
+        GetPlayerEntityIndex(pPlayer),
+        GetPlayerUserId(pPlayer),
+        GetBuyTeamNameForPlayer(pPlayer),
+        pPlayer->pev->health,
+        pPlayer->pev->armorvalue,
+        GetEffectiveHelmetStateForPlayer(pPlayer) ? "yes" : "no",
+        FutureGameplayPlayerHeadProtectionActive(pPlayer) ? "yes" : "no",
+        state != NULL ? state->money : 0,
+        state != NULL && state->selectedWeapon[0] != '\0' ? state->selectedWeapon : "none",
+        state != NULL && state->boughtArmorThisFreeze ? "yes" : "no",
+        state != NULL && state->boughtHelmetThisFreeze ? "yes" : "no",
+        state != NULL ? max(state->handGrenadeCount, GetPlayerHandGrenadeAmmoCount(pPlayer)) : GetPlayerHandGrenadeAmmoCount(pPlayer));
 }
 
 void PrintBuyStatus()
@@ -3308,6 +3728,16 @@ void PrintRoundStatus()
         validLoadout ? "yes" : "no",
         ExpRoundWeaponProfile()[0] != '\0' ? ExpRoundWeaponProfile() : "none");
     PrintLabDummyConsoleLine(
+        "armor config: mode=%s start_value=%.1f max_value=%.1f health_fraction=%.2f drain_scale=%.2f helmet_mode=%s helmet_start=%s headshot_protection=%s",
+        ArmorModeConfigured() ? "on" : "off",
+        ClampFloat(sv_exp_armor_start_value.value, 0.0f, 999999.0f),
+        ClampFloat(sv_exp_armor_max_value.value, 0.0f, 999999.0f),
+        ClampFloat(sv_exp_armor_health_fraction.value, 0.0f, 1.0f),
+        ClampFloat(sv_exp_armor_drain_scale.value, 0.0f, 999999.0f),
+        HelmetModeConfigured() ? "on" : "off",
+        sv_exp_helmet_start_enabled.value != 0.0f ? "yes" : "no",
+        sv_exp_helmet_headshot_protection.value != 0.0f ? "yes" : "no");
+    PrintLabDummyConsoleLine(
         "buy config: enabled=%s phase=%s freeze_only=%s start_money=%d win_reward=%d loss_reward=%d max_money=%d",
         BuyModeConfigured() ? "yes" : "no",
         GetBuyPhaseStateLabel(),
@@ -3385,7 +3815,7 @@ void PrintRoundStatus()
     PrintLabDummyConsoleLine("commands: exp_round_start | exp_round_restart | exp_round_status | exp_round_stop | exp_round_slay [all|team1|team2]");
     PrintLabDummyConsoleLine("team commands: exp_team_join <player> <team> | exp_team_autoassign | exp_team_status | exp_team_fake_add <team> [name] | exp_team_fake_clear");
     PrintLabDummyConsoleLine("team spawn commands: exp_team_spawn_mark <team> [name] | exp_team_spawn_unmark <team> <name> | exp_team_spawn_list | exp_team_spawn_use <team> <name> | exp_team_spawn_status");
-    PrintLabDummyConsoleLine("buy commands: exp_buy_list | exp_buy_status | exp_buy <weapon> [player] | exp_buy_clear [player] | exp_buy_grant [player] | exp_buy_setmoney <player> <amount>");
+    PrintLabDummyConsoleLine("buy commands: exp_buy_list | exp_buy_status | exp_buy <item> [player] | exp_buy_clear [player] | exp_buy_grant [player] | exp_buy_setmoney <player> <amount> | exp_armor_status [player]");
 }
 
 void ExpBuyListCommand()
@@ -3398,21 +3828,66 @@ void ExpBuyStatusCommand()
     PrintBuyStatus();
 }
 
+void ExpArmorStatusCommand()
+{
+    bool anyPlayers = false;
+
+    if (CMD_ARGC() > 1)
+    {
+        CBasePlayer *pPlayer = NULL;
+        char failureReason[256];
+        if (!TryResolveRoundPlayerToken(CMD_ARGV(1), &pPlayer, failureReason, sizeof(failureReason)))
+        {
+            PrintLabDummyConsoleLine("armor status failed: %s", failureReason);
+            return;
+        }
+
+        PrintArmorStatusForPlayer(pPlayer);
+        return;
+    }
+
+    if (gpGlobals != NULL)
+    {
+        for (int playerIndex = 1; playerIndex <= gpGlobals->maxClients; ++playerIndex)
+        {
+            CBaseEntity *pEntity = UTIL_PlayerByIndex(playerIndex);
+            if (pEntity == NULL || !pEntity->IsPlayer() || pEntity->pev == NULL)
+            {
+                continue;
+            }
+
+            CBasePlayer *pPlayer = (CBasePlayer *)pEntity;
+            if (!IsRoundManagedPlayer(pPlayer))
+            {
+                continue;
+            }
+
+            anyPlayers = true;
+            PrintArmorStatusForPlayer(pPlayer);
+        }
+    }
+
+    if (!anyPlayers)
+    {
+        PrintLabDummyConsoleLine("armor status: no managed players");
+    }
+}
+
 void ExpBuyCommand()
 {
     if (CMD_ARGC() < 2)
     {
-        PrintLabDummyConsoleLine("usage: exp_buy <weapon> [player]");
+        PrintLabDummyConsoleLine("usage: exp_buy <item> [player]");
         PrintBuyCatalog();
         return;
     }
 
-    char requestedWeapon[32];
-    TrimCfgRequestString(CMD_ARGV(1), requestedWeapon, sizeof(requestedWeapon));
-    const char *weaponToken = GetResolvedBuyWeaponToken(requestedWeapon);
-    if (weaponToken[0] == '\0')
+    char requestedItem[32];
+    TrimCfgRequestString(CMD_ARGV(1), requestedItem, sizeof(requestedItem));
+    const char *itemToken = GetResolvedBuyItemToken(requestedItem);
+    if (itemToken[0] == '\0')
     {
-        PrintLabDummyConsoleLine("buy failed: unknown weapon \"%s\". Use glock, mp5, 357, or shotgun.", requestedWeapon);
+        PrintLabDummyConsoleLine("buy failed: unknown item \"%s\". Use glock, mp5, 357, shotgun, armor, helmet, or handgrenade.", requestedItem);
         return;
     }
 
@@ -3433,8 +3908,8 @@ void ExpBuyCommand()
             GetBuyTeamNameForPlayer(pPlayer),
             GetRoundStateName(g_expRoundState.state),
             IsBuyPhaseOpen(),
-            weaponToken,
-            GetBuyWeaponCost(weaponToken),
+            itemToken,
+            GetBuyItemCost(itemToken),
             state != NULL ? state->money : 0,
             state != NULL ? state->money : 0,
             false,
@@ -3450,7 +3925,35 @@ void ExpBuyCommand()
         return;
     }
 
-    if (state->selectedWeapon[0] != '\0')
+    if (PlayerAlreadyOwnsBuyItem(pPlayer, state, itemToken))
+    {
+        PrintLabDummyConsoleLine(
+            "buy failed: %s already owns %s for this freeze. Use exp_buy_clear%s first.",
+            GetSafePlayerName(pPlayer),
+            itemToken,
+            CMD_ARGC() > 2 ? UTIL_VarArgs(" %s", GetSafePlayerName(pPlayer)) : "");
+        return;
+    }
+
+    if (!IsBuyItemAllowed(itemToken))
+    {
+        LogBuyEvent(
+            "buy_attempt",
+            pPlayer,
+            GetBuyTeamNameForPlayer(pPlayer),
+            GetRoundStateName(g_expRoundState.state),
+            IsBuyPhaseOpen(),
+            itemToken,
+            GetBuyItemCost(itemToken),
+            state->money,
+            state->money,
+            false,
+            "item_disallowed");
+        PrintLabDummyConsoleLine("buy failed: %s is disabled in the current shop catalog or its mode is off.", itemToken);
+        return;
+    }
+
+    if (IsBuyWeaponToken(itemToken) && state->selectedWeapon[0] != '\0')
     {
         PrintLabDummyConsoleLine(
             "buy failed: %s already bought %s this freeze. Use exp_buy_clear%s first.",
@@ -3460,25 +3963,7 @@ void ExpBuyCommand()
         return;
     }
 
-    if (!IsBuyWeaponAllowed(weaponToken))
-    {
-        LogBuyEvent(
-            "buy_attempt",
-            pPlayer,
-            GetBuyTeamNameForPlayer(pPlayer),
-            GetRoundStateName(g_expRoundState.state),
-            IsBuyPhaseOpen(),
-            weaponToken,
-            GetBuyWeaponCost(weaponToken),
-            state->money,
-            state->money,
-            false,
-            "weapon_disallowed");
-        PrintLabDummyConsoleLine("buy failed: %s is disabled in the current shop catalog.", weaponToken);
-        return;
-    }
-
-    const int cost = GetBuyWeaponCost(weaponToken);
+    const int cost = GetBuyItemCost(itemToken);
     const int moneyBefore = state->money;
     if (moneyBefore < cost)
     {
@@ -3488,7 +3973,7 @@ void ExpBuyCommand()
             GetBuyTeamNameForPlayer(pPlayer),
             GetRoundStateName(g_expRoundState.state),
             IsBuyPhaseOpen(),
-            weaponToken,
+            itemToken,
             cost,
             moneyBefore,
             moneyBefore,
@@ -3496,32 +3981,49 @@ void ExpBuyCommand()
             "insufficient_money");
         PrintLabDummyConsoleLine(
             "buy failed: %s costs %d but %s only has %d.",
-            weaponToken,
+            itemToken,
             cost,
             GetSafePlayerName(pPlayer),
             moneyBefore);
         return;
     }
 
+    const ExpBuyPlayerState stateBefore = *state;
     state->money = ClampBuyMoney(state->money - cost);
-    state->selectedCost = cost;
     state->boughtThisFreeze = true;
-    strncpy_s(state->selectedWeapon, sizeof(state->selectedWeapon), weaponToken, _TRUNCATE);
+    if (IsBuyWeaponToken(itemToken))
+    {
+        state->selectedCost = cost;
+        strncpy_s(state->selectedWeapon, sizeof(state->selectedWeapon), itemToken, _TRUNCATE);
+    }
+    else if (StringEqualsIgnoreCase(itemToken, "armor"))
+    {
+        state->boughtArmorThisFreeze = true;
+        state->armorCost = cost;
+    }
+    else if (StringEqualsIgnoreCase(itemToken, "helmet"))
+    {
+        state->boughtHelmetThisFreeze = true;
+        state->helmetCost = cost;
+        state->helmetEquipped = HelmetModeConfigured();
+    }
+    else if (StringEqualsIgnoreCase(itemToken, "handgrenade"))
+    {
+        state->handGrenadeCount = 1;
+        state->handGrenadeCost = cost;
+    }
 
     bool appliedImmediately = false;
     if (!TryApplyBuySelectionToPlayer(pPlayer, false, &appliedImmediately, failureReason, sizeof(failureReason)))
     {
-        state->money = moneyBefore;
-        state->selectedCost = 0;
-        state->boughtThisFreeze = false;
-        state->selectedWeapon[0] = '\0';
+        *state = stateBefore;
         LogBuyEvent(
             "buy_attempt",
             pPlayer,
             GetBuyTeamNameForPlayer(pPlayer),
             GetRoundStateName(g_expRoundState.state),
             IsBuyPhaseOpen(),
-            weaponToken,
+            itemToken,
             cost,
             moneyBefore,
             moneyBefore,
@@ -3537,7 +4039,7 @@ void ExpBuyCommand()
         GetBuyTeamNameForPlayer(pPlayer),
         GetRoundStateName(g_expRoundState.state),
         IsBuyPhaseOpen(),
-        weaponToken,
+        itemToken,
         cost,
         moneyBefore,
         state->money,
@@ -3551,7 +4053,7 @@ void ExpBuyCommand()
             GetBuyTeamNameForPlayer(pPlayer),
             GetRoundStateName(g_expRoundState.state),
             IsBuyPhaseOpen(),
-            weaponToken,
+            itemToken,
             cost,
             moneyBefore,
             state->money,
@@ -3562,7 +4064,7 @@ void ExpBuyCommand()
     PrintLabDummyConsoleLine(
         "buy success: %s bought %s for %d. money=%d grant=%s",
         GetSafePlayerName(pPlayer),
-        weaponToken,
+        itemToken,
         cost,
         state->money,
         appliedImmediately ? "immediate" : "pending");
@@ -3585,20 +4087,18 @@ void ExpBuyClearCommand()
     }
 
     ExpBuyPlayerState *state = GetBuyPlayerState(pPlayer);
-    if (state == NULL || state->selectedWeapon[0] == '\0')
+    if (state == NULL || !BuyStateHasAnySelection(state))
     {
-        PrintLabDummyConsoleLine("buy clear: %s has no bought weapon selected for this freeze.", GetSafePlayerName(pPlayer));
+        PrintLabDummyConsoleLine("buy clear: %s has no bought items selected for this freeze.", GetSafePlayerName(pPlayer));
         return;
     }
 
-    char clearedWeapon[16];
-    strncpy_s(clearedWeapon, sizeof(clearedWeapon), state->selectedWeapon, _TRUNCATE);
-    const int refund = state->selectedCost;
+    char clearedItems[64];
+    DescribeBuySelections(state, clearedItems, sizeof(clearedItems));
+    const int refund = GetBuyStateRefundAmount(state);
     const int moneyBefore = state->money;
     state->money = ClampBuyMoney(state->money + refund);
-    state->selectedWeapon[0] = '\0';
-    state->selectedCost = 0;
-    state->boughtThisFreeze = false;
+    ResetBuyStateSelections(state);
 
     bool appliedImmediately = false;
     (void)TryApplyBuySelectionToPlayer(pPlayer, true, &appliedImmediately, failureReason, sizeof(failureReason));
@@ -3608,7 +4108,7 @@ void ExpBuyClearCommand()
         GetBuyTeamNameForPlayer(pPlayer),
         GetRoundStateName(g_expRoundState.state),
         IsBuyPhaseOpen(),
-        clearedWeapon,
+        clearedItems,
         refund,
         moneyBefore,
         state->money,
@@ -3618,7 +4118,7 @@ void ExpBuyClearCommand()
         "buy clear: %s refunded %d from %s. money=%d",
         GetSafePlayerName(pPlayer),
         refund,
-        clearedWeapon,
+        clearedItems,
         state->money);
 }
 
@@ -3638,13 +4138,15 @@ void ExpBuyGrantCommand()
         return;
     }
 
-    const char *selectedWeapon = GetSelectedBuyWeaponForPlayer(pPlayer);
-    if (selectedWeapon[0] == '\0')
+    ExpBuyPlayerState *state = GetBuyPlayerState(pPlayer);
+    if (state == NULL || !BuyStateHasAnySelection(state))
     {
-        PrintLabDummyConsoleLine("buy grant failed: %s has no bought weapon selected.", GetSafePlayerName(pPlayer));
+        PrintLabDummyConsoleLine("buy grant failed: %s has no bought items selected.", GetSafePlayerName(pPlayer));
         return;
     }
 
+    char selectedItems[64];
+    DescribeBuySelections(state, selectedItems, sizeof(selectedItems));
     bool appliedImmediately = false;
     if (!TryApplyBuySelectionToPlayer(pPlayer, false, &appliedImmediately, failureReason, sizeof(failureReason)))
     {
@@ -3654,8 +4156,8 @@ void ExpBuyGrantCommand()
             GetBuyTeamNameForPlayer(pPlayer),
             GetRoundStateName(g_expRoundState.state),
             IsBuyPhaseOpen(),
-            selectedWeapon,
-            GetBuyWeaponCost(selectedWeapon),
+            selectedItems,
+            GetBuyStateRefundAmount(state),
             GetBuyPlayerState(pPlayer) != NULL ? GetBuyPlayerState(pPlayer)->money : 0,
             GetBuyPlayerState(pPlayer) != NULL ? GetBuyPlayerState(pPlayer)->money : 0,
             false,
@@ -3670,8 +4172,8 @@ void ExpBuyGrantCommand()
         GetBuyTeamNameForPlayer(pPlayer),
         GetRoundStateName(g_expRoundState.state),
         IsBuyPhaseOpen(),
-        selectedWeapon,
-        GetBuyWeaponCost(selectedWeapon),
+        selectedItems,
+        0,
         GetBuyPlayerState(pPlayer) != NULL ? GetBuyPlayerState(pPlayer)->money : 0,
         GetBuyPlayerState(pPlayer) != NULL ? GetBuyPlayerState(pPlayer)->money : 0,
         true,
@@ -3679,7 +4181,7 @@ void ExpBuyGrantCommand()
     PrintLabDummyConsoleLine(
         "buy grant: %s %s for %s.",
         appliedImmediately ? "reapplied" : "kept pending",
-        selectedWeapon,
+        selectedItems,
         GetSafePlayerName(pPlayer));
 }
 
@@ -9479,6 +9981,7 @@ void RegisterFutureGameplayCommands()
     g_engfuncs.pfnAddServerCommand((char *)"exp_team_spawn_status", ExpTeamSpawnStatusCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_buy_list", ExpBuyListCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_buy_status", ExpBuyStatusCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_armor_status", ExpArmorStatusCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_buy", ExpBuyCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_buy_clear", ExpBuyClearCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_buy_grant", ExpBuyGrantCommand);
@@ -9711,10 +10214,24 @@ void RegisterFutureGameplayCvars()
     CVAR_REGISTER(&sv_exp_buy_allow_mp5);
     CVAR_REGISTER(&sv_exp_buy_allow_357);
     CVAR_REGISTER(&sv_exp_buy_allow_shotgun);
+    CVAR_REGISTER(&sv_exp_buy_allow_armor);
+    CVAR_REGISTER(&sv_exp_buy_allow_helmet);
+    CVAR_REGISTER(&sv_exp_buy_allow_handgrenade);
     CVAR_REGISTER(&sv_exp_buy_cost_glock);
     CVAR_REGISTER(&sv_exp_buy_cost_mp5);
     CVAR_REGISTER(&sv_exp_buy_cost_357);
     CVAR_REGISTER(&sv_exp_buy_cost_shotgun);
+    CVAR_REGISTER(&sv_exp_buy_cost_armor);
+    CVAR_REGISTER(&sv_exp_buy_cost_helmet);
+    CVAR_REGISTER(&sv_exp_buy_cost_handgrenade);
+    CVAR_REGISTER(&sv_exp_armor_mode);
+    CVAR_REGISTER(&sv_exp_armor_start_value);
+    CVAR_REGISTER(&sv_exp_armor_max_value);
+    CVAR_REGISTER(&sv_exp_armor_health_fraction);
+    CVAR_REGISTER(&sv_exp_armor_drain_scale);
+    CVAR_REGISTER(&sv_exp_helmet_mode);
+    CVAR_REGISTER(&sv_exp_helmet_start_enabled);
+    CVAR_REGISTER(&sv_exp_helmet_headshot_protection);
     CVAR_REGISTER(&sv_exp_debug_weaponlog);
     CVAR_REGISTER(&sv_exp_debug_weaponlog_rejections);
     CVAR_REGISTER(&sv_exp_glock_lab_dummy);
@@ -10428,6 +10945,21 @@ bool ExpBuyAllowShotgun()
     return sv_exp_buy_allow_shotgun.value != 0.0f;
 }
 
+bool ExpBuyAllowArmor()
+{
+    return sv_exp_buy_allow_armor.value != 0.0f;
+}
+
+bool ExpBuyAllowHelmet()
+{
+    return sv_exp_buy_allow_helmet.value != 0.0f;
+}
+
+bool ExpBuyAllowHandGrenade()
+{
+    return sv_exp_buy_allow_handgrenade.value != 0.0f;
+}
+
 float ExpBuyCostGlock()
 {
     return (float)GetBuyWeaponCost("glock");
@@ -10446,6 +10978,107 @@ float ExpBuyCost357()
 float ExpBuyCostShotgun()
 {
     return (float)GetBuyWeaponCost("shotgun");
+}
+
+float ExpBuyCostArmor()
+{
+    return (float)GetBuyItemCost("armor");
+}
+
+float ExpBuyCostHelmet()
+{
+    return (float)GetBuyItemCost("helmet");
+}
+
+float ExpBuyCostHandGrenade()
+{
+    return (float)GetBuyItemCost("handgrenade");
+}
+
+bool ExpArmorModeEnabled()
+{
+    return ArmorModeConfigured();
+}
+
+float ExpArmorStartValue()
+{
+    return ClampFloat(sv_exp_armor_start_value.value, 0.0f, 999999.0f);
+}
+
+float ExpArmorMaxValue()
+{
+    return ClampFloat(sv_exp_armor_max_value.value, 0.0f, 999999.0f);
+}
+
+float ExpArmorHealthFraction()
+{
+    return ClampFloat(sv_exp_armor_health_fraction.value, 0.0f, 1.0f);
+}
+
+float ExpArmorDrainScale()
+{
+    return ClampFloat(sv_exp_armor_drain_scale.value, 0.0f, 999999.0f);
+}
+
+bool ExpHelmetModeEnabled()
+{
+    return HelmetModeConfigured();
+}
+
+bool ExpHelmetStartEnabled()
+{
+    return sv_exp_helmet_start_enabled.value != 0.0f;
+}
+
+bool ExpHelmetHeadshotProtectionEnabled()
+{
+    return sv_exp_helmet_headshot_protection.value != 0.0f;
+}
+
+bool FutureGameplayPlayerHasHelmet(CBasePlayer *pPlayer)
+{
+    if (pPlayer == NULL)
+    {
+        return false;
+    }
+
+    return GetEffectiveHelmetStateForPlayer(pPlayer);
+}
+
+bool FutureGameplayPlayerHeadProtectionActive(CBasePlayer *pPlayer)
+{
+    if (pPlayer == NULL)
+    {
+        return false;
+    }
+
+    return HelmetModeConfigured() && ExpHelmetHeadshotProtectionEnabled() && FutureGameplayPlayerHasHelmet(pPlayer);
+}
+
+void FutureGameplayMarkPlayerBulletArmorHandled(CBasePlayer *pPlayer)
+{
+    ExpBuyPlayerState *state = GetBuyPlayerState(pPlayer);
+    if (state != NULL)
+    {
+        state->customArmorHandled = true;
+    }
+}
+
+bool FutureGameplayConsumePlayerBulletArmorHandled(CBasePlayer *pPlayer, int bitsDamageType)
+{
+    if (pPlayer == NULL || (bitsDamageType & DMG_BULLET) == 0)
+    {
+        return false;
+    }
+
+    ExpBuyPlayerState *state = FindBuyPlayerState(pPlayer);
+    if (state == NULL || !state->customArmorHandled)
+    {
+        return false;
+    }
+
+    state->customArmorHandled = false;
+    return true;
 }
 
 int ExpRoundConnectedPlayersForTeam(int teamId)
