@@ -207,6 +207,40 @@ ProjectDocument CreateDefaultProject() {
     document.targetDummy.offsetUp = L"0.0";
     document.targetDummy.model = L"models/barney.mdl";
 
+    document.roundMode.freezeTime = L"3.0";
+    document.roundMode.restartDelay = L"3.0";
+    document.roundMode.startHealth = L"100.0";
+    document.roundMode.startArmor = L"0.0";
+    document.roundMode.weaponProfile = L"";
+    document.roundMode.loadoutMode = L"none";
+
+    document.teamRound.spawnMode = L"dm_spawns";
+    document.teamRound.team1Name = L"team1";
+    document.teamRound.team2Name = L"team2";
+    document.teamRound.team1Loadout = L"";
+    document.teamRound.team2Loadout = L"";
+    document.teamRound.team1Health = L"-1.0";
+    document.teamRound.team2Health = L"-1.0";
+    document.teamRound.team1Armor = L"-1.0";
+    document.teamRound.team2Armor = L"-1.0";
+
+    document.buy.startMoney = L"2000";
+    document.buy.roundWinReward = L"1000";
+    document.buy.roundLossReward = L"500";
+    document.buy.maxMoney = L"16000";
+    document.buy.costGlock = L"200";
+    document.buy.costMp5 = L"1500";
+    document.buy.cost357 = L"1200";
+    document.buy.costShotgun = L"1700";
+    document.buy.costArmor = L"650";
+    document.buy.costHelmet = L"350";
+    document.buy.costHandgrenade = L"300";
+
+    document.armorEquipment.armorStartValue = L"0.0";
+    document.armorEquipment.armorMaxValue = L"100.0";
+    document.armorEquipment.armorHealthFraction = L"0.5";
+    document.armorEquipment.armorDrainScale = L"1.0";
+
     return document;
 }
 
@@ -360,6 +394,63 @@ bool SaveProjectDocumentToFile(const ProjectDocument& document, const std::wstri
     SetBool(targetDummy, L"sv_exp_glock_lab_dummy_face_player", document.targetDummy.facePlayer);
     SetString(targetDummy, L"sv_exp_glock_lab_dummy_model", document.targetDummy.model);
 
+    JsonValue::Object& roundMode = AddObjectMember(rootObject, L"roundMode");
+    SetBool(roundMode, L"sv_exp_round_mode", document.roundMode.enabled);
+    SetString(roundMode, L"sv_exp_round_freeze_time", document.roundMode.freezeTime);
+    SetString(roundMode, L"sv_exp_round_restart_delay", document.roundMode.restartDelay);
+    SetString(roundMode, L"sv_exp_round_start_health", document.roundMode.startHealth);
+    SetString(roundMode, L"sv_exp_round_start_armor", document.roundMode.startArmor);
+    SetBool(roundMode, L"sv_exp_round_no_respawn", document.roundMode.noRespawn);
+    SetBool(roundMode, L"sv_exp_round_friendlyfire", document.roundMode.friendlyFire);
+    SetString(roundMode, L"sv_exp_round_weapon_profile", document.roundMode.weaponProfile);
+    SetString(roundMode, L"sv_exp_round_loadout_mode", document.roundMode.loadoutMode);
+
+    JsonValue::Object& teamRound = AddObjectMember(rootObject, L"teamRound");
+    SetBool(teamRound, L"sv_exp_team_round_mode", document.teamRound.enabled);
+    SetBool(teamRound, L"sv_exp_team_round_teamplay", document.teamRound.teamplay);
+    SetString(teamRound, L"sv_exp_team_round_spawn_mode", document.teamRound.spawnMode);
+    SetString(teamRound, L"sv_exp_team_round_team1_name", document.teamRound.team1Name);
+    SetString(teamRound, L"sv_exp_team_round_team2_name", document.teamRound.team2Name);
+    SetString(teamRound, L"sv_exp_team_round_team1_loadout", document.teamRound.team1Loadout);
+    SetString(teamRound, L"sv_exp_team_round_team2_loadout", document.teamRound.team2Loadout);
+    SetString(teamRound, L"sv_exp_team_round_team1_health", document.teamRound.team1Health);
+    SetString(teamRound, L"sv_exp_team_round_team2_health", document.teamRound.team2Health);
+    SetString(teamRound, L"sv_exp_team_round_team1_armor", document.teamRound.team1Armor);
+    SetString(teamRound, L"sv_exp_team_round_team2_armor", document.teamRound.team2Armor);
+
+    JsonValue::Object& buy = AddObjectMember(rootObject, L"buy");
+    SetBool(buy, L"sv_exp_buy_mode", document.buy.enabled);
+    SetBool(buy, L"sv_exp_buy_freeze_only", document.buy.freezeOnly);
+    SetBool(buy, L"sv_exp_buy_team_shared_catalog", document.buy.teamSharedCatalog);
+    SetString(buy, L"sv_exp_buy_start_money", document.buy.startMoney);
+    SetString(buy, L"sv_exp_buy_round_win_reward", document.buy.roundWinReward);
+    SetString(buy, L"sv_exp_buy_round_loss_reward", document.buy.roundLossReward);
+    SetString(buy, L"sv_exp_buy_max_money", document.buy.maxMoney);
+    SetBool(buy, L"sv_exp_buy_allow_glock", document.buy.allowGlock);
+    SetBool(buy, L"sv_exp_buy_allow_mp5", document.buy.allowMp5);
+    SetBool(buy, L"sv_exp_buy_allow_357", document.buy.allow357);
+    SetBool(buy, L"sv_exp_buy_allow_shotgun", document.buy.allowShotgun);
+    SetBool(buy, L"sv_exp_buy_allow_armor", document.buy.allowArmor);
+    SetBool(buy, L"sv_exp_buy_allow_helmet", document.buy.allowHelmet);
+    SetBool(buy, L"sv_exp_buy_allow_handgrenade", document.buy.allowHandgrenade);
+    SetString(buy, L"sv_exp_buy_cost_glock", document.buy.costGlock);
+    SetString(buy, L"sv_exp_buy_cost_mp5", document.buy.costMp5);
+    SetString(buy, L"sv_exp_buy_cost_357", document.buy.cost357);
+    SetString(buy, L"sv_exp_buy_cost_shotgun", document.buy.costShotgun);
+    SetString(buy, L"sv_exp_buy_cost_armor", document.buy.costArmor);
+    SetString(buy, L"sv_exp_buy_cost_helmet", document.buy.costHelmet);
+    SetString(buy, L"sv_exp_buy_cost_handgrenade", document.buy.costHandgrenade);
+
+    JsonValue::Object& armorEquipment = AddObjectMember(rootObject, L"armorEquipment");
+    SetBool(armorEquipment, L"sv_exp_armor_mode", document.armorEquipment.armorMode);
+    SetString(armorEquipment, L"sv_exp_armor_start_value", document.armorEquipment.armorStartValue);
+    SetString(armorEquipment, L"sv_exp_armor_max_value", document.armorEquipment.armorMaxValue);
+    SetString(armorEquipment, L"sv_exp_armor_health_fraction", document.armorEquipment.armorHealthFraction);
+    SetString(armorEquipment, L"sv_exp_armor_drain_scale", document.armorEquipment.armorDrainScale);
+    SetBool(armorEquipment, L"sv_exp_helmet_mode", document.armorEquipment.helmetMode);
+    SetBool(armorEquipment, L"sv_exp_helmet_start_enabled", document.armorEquipment.helmetStartEnabled);
+    SetBool(armorEquipment, L"sv_exp_helmet_headshot_protection", document.armorEquipment.helmetHeadshotProtection);
+
     return WriteUtf8TextFile(path, SerializeJsonText(root), errorMessage);
 }
 
@@ -493,6 +584,68 @@ bool LoadProjectDocumentFromFile(const std::wstring& path, ProjectDocument& docu
         loaded.targetDummy.offsetUp = ReadStringValue(*targetDummy, L"sv_exp_glock_lab_dummy_offset_up", loaded.targetDummy.offsetUp);
         loaded.targetDummy.facePlayer = ReadBoolValue(*targetDummy, L"sv_exp_glock_lab_dummy_face_player", loaded.targetDummy.facePlayer);
         loaded.targetDummy.model = ReadStringValue(*targetDummy, L"sv_exp_glock_lab_dummy_model", loaded.targetDummy.model);
+    }
+
+    if (const JsonValue::Object* roundMode = FindObject(rootObject, L"roundMode")) {
+        loaded.roundMode.enabled = ReadBoolValue(*roundMode, L"sv_exp_round_mode", loaded.roundMode.enabled);
+        loaded.roundMode.freezeTime = ReadStringValue(*roundMode, L"sv_exp_round_freeze_time", loaded.roundMode.freezeTime);
+        loaded.roundMode.restartDelay = ReadStringValue(*roundMode, L"sv_exp_round_restart_delay", loaded.roundMode.restartDelay);
+        loaded.roundMode.startHealth = ReadStringValue(*roundMode, L"sv_exp_round_start_health", loaded.roundMode.startHealth);
+        loaded.roundMode.startArmor = ReadStringValue(*roundMode, L"sv_exp_round_start_armor", loaded.roundMode.startArmor);
+        loaded.roundMode.noRespawn = ReadBoolValue(*roundMode, L"sv_exp_round_no_respawn", loaded.roundMode.noRespawn);
+        loaded.roundMode.friendlyFire = ReadBoolValue(*roundMode, L"sv_exp_round_friendlyfire", loaded.roundMode.friendlyFire);
+        loaded.roundMode.weaponProfile = ReadStringValue(*roundMode, L"sv_exp_round_weapon_profile", loaded.roundMode.weaponProfile);
+        loaded.roundMode.loadoutMode = ReadStringValue(*roundMode, L"sv_exp_round_loadout_mode", loaded.roundMode.loadoutMode);
+    }
+
+    if (const JsonValue::Object* teamRound = FindObject(rootObject, L"teamRound")) {
+        loaded.teamRound.enabled = ReadBoolValue(*teamRound, L"sv_exp_team_round_mode", loaded.teamRound.enabled);
+        loaded.teamRound.teamplay = ReadBoolValue(*teamRound, L"sv_exp_team_round_teamplay", loaded.teamRound.teamplay);
+        loaded.teamRound.spawnMode = ReadStringValue(*teamRound, L"sv_exp_team_round_spawn_mode", loaded.teamRound.spawnMode);
+        loaded.teamRound.team1Name = ReadStringValue(*teamRound, L"sv_exp_team_round_team1_name", loaded.teamRound.team1Name);
+        loaded.teamRound.team2Name = ReadStringValue(*teamRound, L"sv_exp_team_round_team2_name", loaded.teamRound.team2Name);
+        loaded.teamRound.team1Loadout = ReadStringValue(*teamRound, L"sv_exp_team_round_team1_loadout", loaded.teamRound.team1Loadout);
+        loaded.teamRound.team2Loadout = ReadStringValue(*teamRound, L"sv_exp_team_round_team2_loadout", loaded.teamRound.team2Loadout);
+        loaded.teamRound.team1Health = ReadStringValue(*teamRound, L"sv_exp_team_round_team1_health", loaded.teamRound.team1Health);
+        loaded.teamRound.team2Health = ReadStringValue(*teamRound, L"sv_exp_team_round_team2_health", loaded.teamRound.team2Health);
+        loaded.teamRound.team1Armor = ReadStringValue(*teamRound, L"sv_exp_team_round_team1_armor", loaded.teamRound.team1Armor);
+        loaded.teamRound.team2Armor = ReadStringValue(*teamRound, L"sv_exp_team_round_team2_armor", loaded.teamRound.team2Armor);
+    }
+
+    if (const JsonValue::Object* buy = FindObject(rootObject, L"buy")) {
+        loaded.buy.enabled = ReadBoolValue(*buy, L"sv_exp_buy_mode", loaded.buy.enabled);
+        loaded.buy.freezeOnly = ReadBoolValue(*buy, L"sv_exp_buy_freeze_only", loaded.buy.freezeOnly);
+        loaded.buy.teamSharedCatalog = ReadBoolValue(*buy, L"sv_exp_buy_team_shared_catalog", loaded.buy.teamSharedCatalog);
+        loaded.buy.startMoney = ReadStringValue(*buy, L"sv_exp_buy_start_money", loaded.buy.startMoney);
+        loaded.buy.roundWinReward = ReadStringValue(*buy, L"sv_exp_buy_round_win_reward", loaded.buy.roundWinReward);
+        loaded.buy.roundLossReward = ReadStringValue(*buy, L"sv_exp_buy_round_loss_reward", loaded.buy.roundLossReward);
+        loaded.buy.maxMoney = ReadStringValue(*buy, L"sv_exp_buy_max_money", loaded.buy.maxMoney);
+        loaded.buy.allowGlock = ReadBoolValue(*buy, L"sv_exp_buy_allow_glock", loaded.buy.allowGlock);
+        loaded.buy.allowMp5 = ReadBoolValue(*buy, L"sv_exp_buy_allow_mp5", loaded.buy.allowMp5);
+        loaded.buy.allow357 = ReadBoolValue(*buy, L"sv_exp_buy_allow_357", loaded.buy.allow357);
+        loaded.buy.allowShotgun = ReadBoolValue(*buy, L"sv_exp_buy_allow_shotgun", loaded.buy.allowShotgun);
+        loaded.buy.allowArmor = ReadBoolValue(*buy, L"sv_exp_buy_allow_armor", loaded.buy.allowArmor);
+        loaded.buy.allowHelmet = ReadBoolValue(*buy, L"sv_exp_buy_allow_helmet", loaded.buy.allowHelmet);
+        loaded.buy.allowHandgrenade = ReadBoolValue(*buy, L"sv_exp_buy_allow_handgrenade", loaded.buy.allowHandgrenade);
+        loaded.buy.costGlock = ReadStringValue(*buy, L"sv_exp_buy_cost_glock", loaded.buy.costGlock);
+        loaded.buy.costMp5 = ReadStringValue(*buy, L"sv_exp_buy_cost_mp5", loaded.buy.costMp5);
+        loaded.buy.cost357 = ReadStringValue(*buy, L"sv_exp_buy_cost_357", loaded.buy.cost357);
+        loaded.buy.costShotgun = ReadStringValue(*buy, L"sv_exp_buy_cost_shotgun", loaded.buy.costShotgun);
+        loaded.buy.costArmor = ReadStringValue(*buy, L"sv_exp_buy_cost_armor", loaded.buy.costArmor);
+        loaded.buy.costHelmet = ReadStringValue(*buy, L"sv_exp_buy_cost_helmet", loaded.buy.costHelmet);
+        loaded.buy.costHandgrenade = ReadStringValue(*buy, L"sv_exp_buy_cost_handgrenade", loaded.buy.costHandgrenade);
+    }
+
+    if (const JsonValue::Object* armorEquipment = FindObject(rootObject, L"armorEquipment")) {
+        loaded.armorEquipment.armorMode = ReadBoolValue(*armorEquipment, L"sv_exp_armor_mode", loaded.armorEquipment.armorMode);
+        loaded.armorEquipment.armorStartValue = ReadStringValue(*armorEquipment, L"sv_exp_armor_start_value", loaded.armorEquipment.armorStartValue);
+        loaded.armorEquipment.armorMaxValue = ReadStringValue(*armorEquipment, L"sv_exp_armor_max_value", loaded.armorEquipment.armorMaxValue);
+        loaded.armorEquipment.armorHealthFraction = ReadStringValue(*armorEquipment, L"sv_exp_armor_health_fraction", loaded.armorEquipment.armorHealthFraction);
+        loaded.armorEquipment.armorDrainScale = ReadStringValue(*armorEquipment, L"sv_exp_armor_drain_scale", loaded.armorEquipment.armorDrainScale);
+        loaded.armorEquipment.helmetMode = ReadBoolValue(*armorEquipment, L"sv_exp_helmet_mode", loaded.armorEquipment.helmetMode);
+        loaded.armorEquipment.helmetStartEnabled = ReadBoolValue(*armorEquipment, L"sv_exp_helmet_start_enabled", loaded.armorEquipment.helmetStartEnabled);
+        loaded.armorEquipment.helmetHeadshotProtection =
+            ReadBoolValue(*armorEquipment, L"sv_exp_helmet_headshot_protection", loaded.armorEquipment.helmetHeadshotProtection);
     }
 
     document = std::move(loaded);

@@ -11,5 +11,6 @@ void ApplyMp5Preset(ProjectDocument& document, const std::wstring& presetName);
 void Apply357Preset(ProjectDocument& document, const std::wstring& presetName);
 void ApplyShotgunPreset(ProjectDocument& document, const std::wstring& presetName);
 void ApplyDummyPreset(ProjectDocument& document, const std::wstring& presetName);
+void ApplyMatchPreset(ProjectDocument& document, const std::wstring& presetName);
 
 }  // namespace hlcfg

@@ -89,7 +89,7 @@ Simplest workflow:
 
 How to use the editor:
 
-1. Edit values on the `General`, `Glock`, `MP5`, `357`, `Shotgun`, and `Target Dummy` tabs.
+1. Edit values on the `General`, `Glock`, `MP5`, `357`, `Shotgun`, `Target Dummy`, `Round Mode`, `Team Round`, and `Buy & Equipment` tabs.
 2. Use `File -> Save` or `File -> Save As` to store the editable project as `.hlcfg.json`.
 3. Open the `Export` tab. The default filename follows the project or config name, for example `editor_glock_simple.cfg`.
 4. `Quick Export to Live Mod` is the primary action. It exports directly into `<HalfLifeRoot>\hlserver_testbed\` and prompts before overwriting an existing file.
@@ -98,6 +98,17 @@ How to use the editor:
 7. `Copy exec command` now defaults to `exec my_glock.cfg` when the cfg is exported to the live mod root.
 8. `Export to chosen folder` is still available for advanced/custom locations.
 9. `Copy launcher` still works for cfgs inside the live mod, including legacy `cfg_profiles\...` exports.
+
+The editor now covers the full currently checked-in server config surface in one project:
+
+- weapon tuning for Glock, MP5, 357, and shotgun
+- target dummy tuning
+- round-mode rules
+- team-round rules
+- buy prototype rules
+- armor, helmet, and first utility settings
+
+The `General` page now also shows a compact "What This Config Will Affect" summary so it is obvious whether the current project enables round mode, team round mode, buy mode, a specific main loadout, or armor and helmet support.
 
 JSON vs CFG:
 
@@ -110,6 +121,7 @@ Export behavior:
 - If the live root is not available, it falls back to `<repo-root>\testbed\mods\hlserver_testbed\`.
 - If you choose a custom folder inside `<HalfLifeRoot>\hlserver_testbed\cfg_profiles\`, the legacy `cfg_profiles\...` launcher and `exec cfg_profiles/...` workflow remains supported.
 - The editor does not hot-apply changes to a running server. Export the `.cfg`, then load it manually in HLDS or start a cfg-driven live session with the launcher commands below.
+- Exported `.cfg` files can now represent full match configs, not just weapon and dummy tuning. The generated file can include round, team round, buy, armor, and helmet cvars alongside the normal weapon and target settings.
 
 Troubleshooting:
 
@@ -122,7 +134,7 @@ Built-in self-test:
 
 - Run `<repo-root>\tools\HlConfigEditorCpp\bin\Debug\Win32\HlConfigEditorCpp.exe --self-test`.
 - When the editor resolves the repository root, it writes the summary to `<repo-root>\artifacts\HlConfigEditorCppSelfTest\selftest-summary.txt`.
-- When the live Half-Life root is available, the self-test writes example Glock, MP5, 357, and shotgun `.hlcfg.json` projects plus exported `.cfg` files such as `<HalfLifeRoot>\hlserver_testbed\editor_glock_simple.cfg`, `<HalfLifeRoot>\hlserver_testbed\editor_mp5_simple.cfg`, `<HalfLifeRoot>\hlserver_testbed\editor_357_test.cfg`, and `<HalfLifeRoot>\hlserver_testbed\editor_shotgun_test.cfg`.
+- When the live Half-Life root is available, the self-test writes example Glock, MP5, 357, shotgun, and full match `.hlcfg.json` projects plus exported `.cfg` files such as `<HalfLifeRoot>\hlserver_testbed\editor_glock_simple.cfg`, `<HalfLifeRoot>\hlserver_testbed\editor_mp5_simple.cfg`, `<HalfLifeRoot>\hlserver_testbed\editor_357_test.cfg`, `<HalfLifeRoot>\hlserver_testbed\editor_shotgun_test.cfg`, `<HalfLifeRoot>\hlserver_testbed\editor_duel_357.cfg`, `<HalfLifeRoot>\hlserver_testbed\editor_team_mp5.cfg`, and `<HalfLifeRoot>\hlserver_testbed\editor_buy_armor.cfg`.
 - If the live root is not available, the self-test falls back to `<repo-root>\testbed\mods\hlserver_testbed\`.
 
 For a step-by-step walkthrough with exact file paths, Glock and MP5 examples, and live launch commands, see [docs/cpp-config-editor.md](docs/cpp-config-editor.md).
@@ -163,6 +175,28 @@ This is the recommended integrated path for future server work. Legacy demo and 
 7. Change dummy presets on the fly with `exp_target_profile unarmored`, `exp_target_profile vest`, or `exp_target_profile vest_headprotected`.
 8. Inspect state any time with `exp_cfg_status`, `exp_target_list`, and `exp_target_status`.
 9. Test in-game, then review the normal weapon log and analyzer output.
+
+## Editor Match Config Workflow
+
+The editor can now build whole match-rule configs instead of only weapon or dummy presets. The intended daily path is:
+
+1. Open the deployed `HlConfigEditorCpp.exe` from `<HalfLifeRoot>\hlserver_testbed\`.
+2. Choose a weapon/loadout baseline on the weapon tabs.
+3. Configure the rules layer on `Round Mode`, `Team Round`, and `Buy & Equipment`.
+4. Use one of the built-in match templates when you want a starting point:
+   `duel_glock`, `duel_357`, `team_mp5`, `team_shotgun`, `armor_test`, or `buy_test`.
+5. Save the editable project as `.hlcfg.json`.
+6. Quick-export the runtime cfg into `<HalfLifeRoot>\hlserver_testbed\`.
+7. In the running server, load it with `exp_cfg_apply my_match.cfg` or legacy `exec my_match.cfg`.
+
+Practical examples:
+
+- Duel config: enable `sv_exp_round_mode`, keep `sv_exp_team_round_mode 0`, and set `sv_exp_round_loadout_mode` to `glock` or `357`.
+- Team config: enable both `sv_exp_round_mode` and `sv_exp_team_round_mode`, set team names, choose `dm_spawns` or `manual_spots`, and assign per-team loadouts.
+- Buy-enabled config: enable `sv_exp_buy_mode`, set freeze-only buying, start money, rewards, weapon catalog toggles, and costs.
+- Armor/helmet test config: enable `sv_exp_armor_mode` and `sv_exp_helmet_mode`, then export a cfg such as `editor_buy_armor.cfg`.
+
+One exported full-match config was verified live in a real client-attached session on `2026-04-22`: `exp_cfg_apply editor_buy_armor.cfg` flipped round, buy, armor, and helmet cvars on the running server, including `sv_exp_round_mode "1"`, `sv_exp_buy_mode "1"`, `sv_exp_armor_mode "1"`, and `sv_exp_helmet_mode "1"`.
 
 Integration provenance for this recommended path is recorded in [docs/stable-live-lab-state.md](/D:/DEV/CPP/HL-Server/docs/stable-live-lab-state.md).
 

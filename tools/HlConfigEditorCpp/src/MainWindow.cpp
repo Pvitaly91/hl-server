@@ -146,6 +146,66 @@ enum ControlId : int {
     IDC_DUMMY_PRESET_VEST,
     IDC_DUMMY_PRESET_VEST_HEADPROTECTED,
 
+    IDC_MATCH_SUMMARY = 1350,
+
+    IDC_MATCH_PRESET_DUEL_GLOCK = 1450,
+    IDC_MATCH_PRESET_DUEL_357,
+    IDC_MATCH_PRESET_TEAM_MP5,
+    IDC_MATCH_PRESET_TEAM_SHOTGUN,
+    IDC_MATCH_PRESET_ARMOR_TEST,
+    IDC_MATCH_PRESET_BUY_TEST,
+    IDC_ROUND_MODE,
+    IDC_ROUND_FREEZE_TIME,
+    IDC_ROUND_RESTART_DELAY,
+    IDC_ROUND_START_HEALTH,
+    IDC_ROUND_START_ARMOR,
+    IDC_ROUND_NO_RESPAWN,
+    IDC_ROUND_FRIENDLY_FIRE,
+    IDC_ROUND_WEAPON_PROFILE,
+    IDC_ROUND_LOADOUT_MODE,
+
+    IDC_TEAM_ROUND_MODE = 1500,
+    IDC_TEAM_ROUND_TEAMPLAY,
+    IDC_TEAM_ROUND_SPAWN_MODE,
+    IDC_TEAM_ROUND_TEAM1_NAME,
+    IDC_TEAM_ROUND_TEAM2_NAME,
+    IDC_TEAM_ROUND_TEAM1_LOADOUT,
+    IDC_TEAM_ROUND_TEAM2_LOADOUT,
+    IDC_TEAM_ROUND_TEAM1_HEALTH,
+    IDC_TEAM_ROUND_TEAM2_HEALTH,
+    IDC_TEAM_ROUND_TEAM1_ARMOR,
+    IDC_TEAM_ROUND_TEAM2_ARMOR,
+
+    IDC_BUY_MODE = 1550,
+    IDC_BUY_FREEZE_ONLY,
+    IDC_BUY_TEAM_SHARED_CATALOG,
+    IDC_BUY_START_MONEY,
+    IDC_BUY_ROUND_WIN_REWARD,
+    IDC_BUY_ROUND_LOSS_REWARD,
+    IDC_BUY_MAX_MONEY,
+    IDC_BUY_ALLOW_GLOCK,
+    IDC_BUY_ALLOW_MP5,
+    IDC_BUY_ALLOW_357,
+    IDC_BUY_ALLOW_SHOTGUN,
+    IDC_BUY_ALLOW_ARMOR,
+    IDC_BUY_ALLOW_HELMET,
+    IDC_BUY_ALLOW_HANDGRENADE,
+    IDC_BUY_COST_GLOCK,
+    IDC_BUY_COST_MP5,
+    IDC_BUY_COST_357,
+    IDC_BUY_COST_SHOTGUN,
+    IDC_BUY_COST_ARMOR,
+    IDC_BUY_COST_HELMET,
+    IDC_BUY_COST_HANDGRENADE,
+    IDC_ARMOR_MODE,
+    IDC_ARMOR_START_VALUE,
+    IDC_ARMOR_MAX_VALUE,
+    IDC_ARMOR_HEALTH_FRACTION,
+    IDC_ARMOR_DRAIN_SCALE,
+    IDC_HELMET_MODE,
+    IDC_HELMET_START_ENABLED,
+    IDC_HELMET_HEADSHOT_PROTECTION,
+
     IDC_LIVE_MOD_FOLDER_PREVIEW = 1400,
     IDC_EXPORT_FOLDER,
     IDC_BROWSE_EXPORT_FOLDER,
@@ -167,7 +227,11 @@ enum ControlId : int {
     IDC_EXPORT_STATUS,
 };
 
-constexpr int kPageCount = 7;
+constexpr int kPageCount = 10;
+constexpr int kRoundPageIndex = 6;
+constexpr int kTeamRoundPageIndex = 7;
+constexpr int kBuyEquipmentPageIndex = 8;
+constexpr int kExportPageIndex = 9;
 
 HFONT GetUiFont() {
     return static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
@@ -660,6 +724,24 @@ private:
         case IDC_DUMMY_PRESET_VEST_HEADPROTECTED:
             ApplyPreset([&] { hlcfg::ApplyDummyPreset(document_, L"vest_headprotected"); });
             return 0;
+        case IDC_MATCH_PRESET_DUEL_GLOCK:
+            ApplyPreset([&] { hlcfg::ApplyMatchPreset(document_, L"duel_glock"); });
+            return 0;
+        case IDC_MATCH_PRESET_DUEL_357:
+            ApplyPreset([&] { hlcfg::ApplyMatchPreset(document_, L"duel_357"); });
+            return 0;
+        case IDC_MATCH_PRESET_TEAM_MP5:
+            ApplyPreset([&] { hlcfg::ApplyMatchPreset(document_, L"team_mp5"); });
+            return 0;
+        case IDC_MATCH_PRESET_TEAM_SHOTGUN:
+            ApplyPreset([&] { hlcfg::ApplyMatchPreset(document_, L"team_shotgun"); });
+            return 0;
+        case IDC_MATCH_PRESET_ARMOR_TEST:
+            ApplyPreset([&] { hlcfg::ApplyMatchPreset(document_, L"armor_test"); });
+            return 0;
+        case IDC_MATCH_PRESET_BUY_TEST:
+            ApplyPreset([&] { hlcfg::ApplyMatchPreset(document_, L"buy_test"); });
+            return 0;
         case IDC_BROWSE_EXPORT_FOLDER:
             BrowseExportFolder();
             return 0;
@@ -703,7 +785,8 @@ private:
                 MaybeRefreshSuggestedCfgFileName(controlId);
                 dirty_ = true;
                 UpdateWindowTitle();
-                if (controlId == IDC_EXPORT_FOLDER || controlId == IDC_EXPORT_FILE_NAME || TabCtrl_GetCurSel(tab_) == 6) {
+                RefreshMatchSummary();
+                if (controlId == IDC_EXPORT_FOLDER || controlId == IDC_EXPORT_FILE_NAME || TabCtrl_GetCurSel(tab_) == kExportPageIndex) {
                     RefreshExportPreview(true);
                 }
             }
@@ -738,7 +821,18 @@ private:
     void CreateUi() {
         tab_ = CreateChildControl(hwnd_, WC_TABCONTROLW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS, 0, 10, 10, 100, 100, IDC_TAB);
 
-        const wchar_t* pageTitles[kPageCount] = {L"General", L"Glock", L"MP5", L"357", L"Shotgun", L"Target Dummy", L"Export"};
+        const wchar_t* pageTitles[kPageCount] = {
+            L"General",
+            L"Glock",
+            L"MP5",
+            L"357",
+            L"Shotgun",
+            L"Target Dummy",
+            L"Round Mode",
+            L"Team Round",
+            L"Buy & Equipment",
+            L"Export",
+        };
         for (int index = 0; index < kPageCount; ++index) {
             TCITEMW item{};
             item.mask = TCIF_TEXT;
@@ -755,6 +849,9 @@ private:
         Create357Page();
         CreateShotgunPage();
         CreateDummyPage();
+        CreateRoundPage();
+        CreateTeamRoundPage();
+        CreateBuyEquipmentPage();
         CreateExportPage();
         ShowActivePage(0);
     }
@@ -786,6 +883,10 @@ private:
 
         CreateGroupBox(page, L"How this editor works", 20, 220, 500, 120);
         CreateLabel(page, L"Save .hlcfg.json files for editing. Quick Export writes a live-mod .cfg that HLDS can load with exec my_config.cfg.", 40, 255, 450, 40);
+        CreateLabel(page, L"This build now covers weapon tuning, dummy settings, round rules, team rules, buy rules, and armor or helmet equipment.", 40, 295, 450, 30);
+
+        CreateGroupBox(page, L"What This Config Will Affect", 540, 300, 500, 165);
+        CreateMultiLineEdit(page, IDC_MATCH_SUMMARY, 560, 330, 450, 105, true);
     }
 
     void CreateGlockPage() {
@@ -994,8 +1095,147 @@ private:
         CreateEdit(page, IDC_DUMMY_MODEL, 790, 350, 220, 24);
     }
 
+    void CreateRoundPage() {
+        HWND page = pages_[kRoundPageIndex];
+        CreateGroupBox(page, L"Match Templates", 20, 20, 1040, 70);
+        CreateButton(page, L"Duel Glock", IDC_MATCH_PRESET_DUEL_GLOCK, 40, 45, 135, 24);
+        CreateButton(page, L"Duel 357", IDC_MATCH_PRESET_DUEL_357, 190, 45, 135, 24);
+        CreateButton(page, L"Team MP5", IDC_MATCH_PRESET_TEAM_MP5, 340, 45, 135, 24);
+        CreateButton(page, L"Team Shotgun", IDC_MATCH_PRESET_TEAM_SHOTGUN, 490, 45, 145, 24);
+        CreateButton(page, L"Armor Test", IDC_MATCH_PRESET_ARMOR_TEST, 650, 45, 135, 24);
+        CreateButton(page, L"Buy Test", IDC_MATCH_PRESET_BUY_TEST, 800, 45, 135, 24);
+
+        CreateGroupBox(page, L"Round Core", 20, 110, 500, 235);
+        CreateCheckBox(page, L"Enable round mode", IDC_ROUND_MODE, 40, 145, 180, 20);
+        CreateCheckBox(page, L"No respawn during round", IDC_ROUND_NO_RESPAWN, 240, 145, 220, 20);
+        CreateCheckBox(page, L"Friendly fire", IDC_ROUND_FRIENDLY_FIRE, 40, 180, 180, 20);
+        CreateLabel(page, L"Freeze time", 40, 220, 140, 20);
+        CreateEdit(page, IDC_ROUND_FREEZE_TIME, 220, 215, 120, 24);
+        CreateLabel(page, L"Restart delay", 40, 255, 140, 20);
+        CreateEdit(page, IDC_ROUND_RESTART_DELAY, 220, 250, 120, 24);
+        CreateLabel(page, L"Start health", 40, 290, 140, 20);
+        CreateEdit(page, IDC_ROUND_START_HEALTH, 220, 285, 120, 24);
+        CreateLabel(page, L"Start armor", 40, 325, 140, 20);
+        CreateEdit(page, IDC_ROUND_START_ARMOR, 220, 320, 120, 24);
+
+        CreateGroupBox(page, L"Loadout And Profile", 540, 110, 520, 180);
+        CreateLabel(page, L"Round weapon profile", 560, 145, 170, 20);
+        CreateEdit(page, IDC_ROUND_WEAPON_PROFILE, 770, 140, 240, 24);
+        CreateLabel(page, L"Round loadout mode", 560, 180, 170, 20);
+        HWND loadoutCombo = CreateCombo(page, IDC_ROUND_LOADOUT_MODE, 770, 175, 240, 200);
+        ComboBox_AddString(loadoutCombo, L"none");
+        ComboBox_AddString(loadoutCombo, L"glock");
+        ComboBox_AddString(loadoutCombo, L"mp5");
+        ComboBox_AddString(loadoutCombo, L"357");
+        ComboBox_AddString(loadoutCombo, L"shotgun");
+
+        CreateGroupBox(page, L"Notes", 20, 370, 1040, 110);
+        CreateLabel(page, L"Round mode settings export directly to sv_exp_round_* cvars. Use the team and buy pages to layer team-play and freeze-phase buying onto the same cfg.", 40, 405, 980, 36);
+    }
+
+    void CreateTeamRoundPage() {
+        HWND page = pages_[kTeamRoundPageIndex];
+        CreateGroupBox(page, L"Team Round Core", 20, 20, 500, 220);
+        CreateCheckBox(page, L"Enable team round mode", IDC_TEAM_ROUND_MODE, 40, 55, 220, 20);
+        CreateCheckBox(page, L"Enable teamplay rules", IDC_TEAM_ROUND_TEAMPLAY, 280, 55, 200, 20);
+        CreateLabel(page, L"Spawn mode", 40, 95, 120, 20);
+        HWND spawnCombo = CreateCombo(page, IDC_TEAM_ROUND_SPAWN_MODE, 220, 90, 220, 200);
+        ComboBox_AddString(spawnCombo, L"dm_spawns");
+        ComboBox_AddString(spawnCombo, L"manual_spots");
+        CreateLabel(page, L"Team 1 name", 40, 130, 120, 20);
+        CreateEdit(page, IDC_TEAM_ROUND_TEAM1_NAME, 220, 125, 220, 24);
+        CreateLabel(page, L"Team 2 name", 40, 165, 120, 20);
+        CreateEdit(page, IDC_TEAM_ROUND_TEAM2_NAME, 220, 160, 220, 24);
+
+        CreateGroupBox(page, L"Team 1 Setup", 540, 20, 250, 220);
+        CreateLabel(page, L"Loadout", 560, 60, 80, 20);
+        HWND team1LoadoutCombo = CreateCombo(page, IDC_TEAM_ROUND_TEAM1_LOADOUT, 640, 55, 120, 200);
+        ComboBox_AddString(team1LoadoutCombo, L"");
+        ComboBox_AddString(team1LoadoutCombo, L"none");
+        ComboBox_AddString(team1LoadoutCombo, L"glock");
+        ComboBox_AddString(team1LoadoutCombo, L"mp5");
+        ComboBox_AddString(team1LoadoutCombo, L"357");
+        ComboBox_AddString(team1LoadoutCombo, L"shotgun");
+        CreateLabel(page, L"Health", 560, 100, 80, 20);
+        CreateEdit(page, IDC_TEAM_ROUND_TEAM1_HEALTH, 640, 95, 120, 24);
+        CreateLabel(page, L"Armor", 560, 140, 80, 20);
+        CreateEdit(page, IDC_TEAM_ROUND_TEAM1_ARMOR, 640, 135, 120, 24);
+
+        CreateGroupBox(page, L"Team 2 Setup", 810, 20, 250, 220);
+        CreateLabel(page, L"Loadout", 830, 60, 80, 20);
+        HWND team2LoadoutCombo = CreateCombo(page, IDC_TEAM_ROUND_TEAM2_LOADOUT, 910, 55, 120, 200);
+        ComboBox_AddString(team2LoadoutCombo, L"");
+        ComboBox_AddString(team2LoadoutCombo, L"none");
+        ComboBox_AddString(team2LoadoutCombo, L"glock");
+        ComboBox_AddString(team2LoadoutCombo, L"mp5");
+        ComboBox_AddString(team2LoadoutCombo, L"357");
+        ComboBox_AddString(team2LoadoutCombo, L"shotgun");
+        CreateLabel(page, L"Health", 830, 100, 80, 20);
+        CreateEdit(page, IDC_TEAM_ROUND_TEAM2_HEALTH, 910, 95, 120, 24);
+        CreateLabel(page, L"Armor", 830, 140, 80, 20);
+        CreateEdit(page, IDC_TEAM_ROUND_TEAM2_ARMOR, 910, 135, 120, 24);
+
+        CreateGroupBox(page, L"Notes", 20, 270, 1040, 110);
+        CreateLabel(page, L"Use dm_spawns for simple team testing or manual_spots when the server has persisted team spawn markers. Empty per-team loadouts fall back to the round loadout or the server defaults.", 40, 305, 980, 36);
+    }
+
+    void CreateBuyEquipmentPage() {
+        HWND page = pages_[kBuyEquipmentPageIndex];
+        CreateGroupBox(page, L"Buy Phase", 20, 20, 500, 235);
+        CreateCheckBox(page, L"Enable buy mode", IDC_BUY_MODE, 40, 55, 180, 20);
+        CreateCheckBox(page, L"Freeze-time only buying", IDC_BUY_FREEZE_ONLY, 240, 55, 220, 20);
+        CreateCheckBox(page, L"Shared team catalog", IDC_BUY_TEAM_SHARED_CATALOG, 40, 90, 200, 20);
+        CreateLabel(page, L"Start money", 40, 130, 120, 20);
+        CreateEdit(page, IDC_BUY_START_MONEY, 220, 125, 120, 24);
+        CreateLabel(page, L"Round win reward", 40, 165, 120, 20);
+        CreateEdit(page, IDC_BUY_ROUND_WIN_REWARD, 220, 160, 120, 24);
+        CreateLabel(page, L"Round loss reward", 40, 200, 120, 20);
+        CreateEdit(page, IDC_BUY_ROUND_LOSS_REWARD, 220, 195, 120, 24);
+        CreateLabel(page, L"Max money", 40, 235, 120, 20);
+        CreateEdit(page, IDC_BUY_MAX_MONEY, 220, 230, 120, 24);
+
+        CreateGroupBox(page, L"Weapon Catalog", 540, 20, 520, 270);
+        CreateCheckBox(page, L"Glock", IDC_BUY_ALLOW_GLOCK, 560, 55, 120, 20);
+        CreateCheckBox(page, L"MP5", IDC_BUY_ALLOW_MP5, 560, 90, 120, 20);
+        CreateCheckBox(page, L"357", IDC_BUY_ALLOW_357, 560, 125, 120, 20);
+        CreateCheckBox(page, L"Shotgun", IDC_BUY_ALLOW_SHOTGUN, 560, 160, 120, 20);
+        CreateLabel(page, L"Glock cost", 760, 55, 110, 20);
+        CreateEdit(page, IDC_BUY_COST_GLOCK, 900, 50, 120, 24);
+        CreateLabel(page, L"MP5 cost", 760, 90, 110, 20);
+        CreateEdit(page, IDC_BUY_COST_MP5, 900, 85, 120, 24);
+        CreateLabel(page, L"357 cost", 760, 125, 110, 20);
+        CreateEdit(page, IDC_BUY_COST_357, 900, 120, 120, 24);
+        CreateLabel(page, L"Shotgun cost", 760, 160, 110, 20);
+        CreateEdit(page, IDC_BUY_COST_SHOTGUN, 900, 155, 120, 24);
+
+        CreateGroupBox(page, L"Armor, Helmet, And Utility", 20, 285, 500, 255);
+        CreateCheckBox(page, L"Enable armor mode", IDC_ARMOR_MODE, 40, 320, 180, 20);
+        CreateCheckBox(page, L"Enable helmet mode", IDC_HELMET_MODE, 240, 320, 180, 20);
+        CreateCheckBox(page, L"Helmet at round start", IDC_HELMET_START_ENABLED, 240, 355, 180, 20);
+        CreateCheckBox(page, L"Helmet headshot protection", IDC_HELMET_HEADSHOT_PROTECTION, 240, 390, 220, 20);
+        CreateLabel(page, L"Armor start value", 40, 355, 140, 20);
+        CreateEdit(page, IDC_ARMOR_START_VALUE, 40, 380, 120, 24);
+        CreateLabel(page, L"Armor max value", 40, 415, 140, 20);
+        CreateEdit(page, IDC_ARMOR_MAX_VALUE, 40, 440, 120, 24);
+        CreateLabel(page, L"Armor health fraction", 180, 415, 140, 20);
+        CreateEdit(page, IDC_ARMOR_HEALTH_FRACTION, 180, 440, 120, 24);
+        CreateLabel(page, L"Armor drain scale", 320, 415, 140, 20);
+        CreateEdit(page, IDC_ARMOR_DRAIN_SCALE, 320, 440, 120, 24);
+
+        CreateGroupBox(page, L"Equipment Catalog", 540, 310, 520, 230);
+        CreateCheckBox(page, L"Armor", IDC_BUY_ALLOW_ARMOR, 560, 345, 120, 20);
+        CreateCheckBox(page, L"Helmet", IDC_BUY_ALLOW_HELMET, 560, 380, 120, 20);
+        CreateCheckBox(page, L"Hand grenade", IDC_BUY_ALLOW_HANDGRENADE, 560, 415, 140, 20);
+        CreateLabel(page, L"Armor cost", 760, 345, 110, 20);
+        CreateEdit(page, IDC_BUY_COST_ARMOR, 900, 340, 120, 24);
+        CreateLabel(page, L"Helmet cost", 760, 380, 110, 20);
+        CreateEdit(page, IDC_BUY_COST_HELMET, 900, 375, 120, 24);
+        CreateLabel(page, L"Hand grenade cost", 760, 415, 125, 20);
+        CreateEdit(page, IDC_BUY_COST_HANDGRENADE, 900, 410, 120, 24);
+    }
+
     void CreateExportPage() {
-        HWND page = pages_[6];
+        HWND page = pages_[kExportPageIndex];
         CreateGroupBox(page, L"Resolved Paths And Targets", 20, 20, 1040, 255);
         CreateLabel(page, L"Half-Life root", 40, 55, 120, 20);
         CreateEdit(page, IDC_HALF_LIFE_ROOT_PREVIEW, 160, 50, 850, 24, ES_READONLY);
@@ -1055,7 +1295,7 @@ private:
             ShowWindow(pages_[index], index == pageIndex ? SW_SHOW : SW_HIDE);
         }
 
-        if (pageIndex == 6) {
+        if (pageIndex == kExportPageIndex) {
             RefreshExportPreview(true);
         }
     }
@@ -1327,6 +1567,27 @@ private:
         ComboBox_SetCurSel(control, 0);
     }
 
+    void SetComboSelectionValue(int controlId, const std::wstring& value) {
+        HWND control = FindControl(controlId);
+        if (control == nullptr) {
+            return;
+        }
+
+        const int itemCount = ComboBox_GetCount(control);
+        for (int index = 0; index < itemCount; ++index) {
+            wchar_t buffer[128];
+            ComboBox_GetLBText(control, index, buffer);
+            if (value == buffer) {
+                ComboBox_SetCurSel(control, index);
+                return;
+            }
+        }
+
+        if (itemCount > 0) {
+            ComboBox_SetCurSel(control, 0);
+        }
+    }
+
     std::wstring GetWeaponSelection() const {
         HWND control = FindControl(IDC_WEAPON_UNDER_TEST);
         if (control == nullptr) {
@@ -1341,6 +1602,81 @@ private:
         wchar_t buffer[64];
         ComboBox_GetLBText(control, index, buffer);
         return buffer;
+    }
+
+    std::wstring GetComboSelectionValue(int controlId) const {
+        HWND control = FindControl(controlId);
+        if (control == nullptr) {
+            return {};
+        }
+
+        const int index = ComboBox_GetCurSel(control);
+        if (index == CB_ERR) {
+            return {};
+        }
+
+        wchar_t buffer[128];
+        ComboBox_GetLBText(control, index, buffer);
+        return buffer;
+    }
+
+    std::wstring BuildMatchSummaryText() const {
+        hlcfg::ProjectDocument preview = document_;
+        preview.general.weaponUnderTest = GetWeaponSelection();
+        preview.roundMode.enabled = GetCheckValue(IDC_ROUND_MODE);
+        preview.roundMode.loadoutMode = GetComboSelectionValue(IDC_ROUND_LOADOUT_MODE);
+        preview.roundMode.weaponProfile = GetTextValue(IDC_ROUND_WEAPON_PROFILE);
+        preview.teamRound.enabled = GetCheckValue(IDC_TEAM_ROUND_MODE);
+        preview.teamRound.team1Loadout = GetComboSelectionValue(IDC_TEAM_ROUND_TEAM1_LOADOUT);
+        preview.teamRound.team2Loadout = GetComboSelectionValue(IDC_TEAM_ROUND_TEAM2_LOADOUT);
+        preview.buy.enabled = GetCheckValue(IDC_BUY_MODE);
+        preview.armorEquipment.armorMode = GetCheckValue(IDC_ARMOR_MODE);
+        preview.armorEquipment.helmetMode = GetCheckValue(IDC_HELMET_MODE);
+
+        std::wstring primaryLoadout = hlcfg::Trimmed(preview.roundMode.loadoutMode);
+        if (preview.teamRound.enabled) {
+            const std::wstring team1Loadout = hlcfg::Trimmed(preview.teamRound.team1Loadout);
+            const std::wstring team2Loadout = hlcfg::Trimmed(preview.teamRound.team2Loadout);
+            if (!team1Loadout.empty() || !team2Loadout.empty()) {
+                primaryLoadout = team1Loadout + L" / " + team2Loadout;
+            }
+        }
+
+        if (primaryLoadout.empty()) {
+            primaryLoadout = L"(server default)";
+        }
+
+        const std::wstring weaponProfile = hlcfg::Trimmed(preview.roundMode.weaponProfile).empty()
+                                               ? L"(none)"
+                                               : hlcfg::Trimmed(preview.roundMode.weaponProfile);
+
+        std::wstring summary;
+        summary += L"Round mode: ";
+        summary += preview.roundMode.enabled ? L"enabled" : L"off";
+        summary += L"\r\nTeam round mode: ";
+        summary += preview.teamRound.enabled ? L"enabled" : L"off";
+        summary += L"\r\nBuy mode: ";
+        summary += preview.buy.enabled ? L"enabled" : L"off";
+        summary += L"\r\nMain loadout: ";
+        summary += primaryLoadout;
+        summary += L"\r\nWeapon under test: ";
+        summary += hlcfg::Trimmed(preview.general.weaponUnderTest).empty() ? L"(unset)" : hlcfg::Trimmed(preview.general.weaponUnderTest);
+        summary += L"\r\nRound weapon profile: ";
+        summary += weaponProfile;
+        summary += L"\r\nArmor: ";
+        summary += preview.armorEquipment.armorMode ? L"enabled" : L"off";
+        summary += L"\r\nHelmet: ";
+        summary += preview.armorEquipment.helmetMode ? L"enabled" : L"off";
+        return summary;
+    }
+
+    void RefreshMatchSummary() {
+        if (HWND control = FindControl(IDC_MATCH_SUMMARY)) {
+            const bool wasLoadingControls = loadingControls_;
+            loadingControls_ = true;
+            SetTextOnWindow(control, BuildMatchSummaryText());
+            loadingControls_ = wasLoadingControls;
+        }
     }
 
     void LoadDocumentToControls() {
@@ -1439,9 +1775,65 @@ private:
         Button_SetCheck(FindControl(IDC_DUMMY_FACE_PLAYER), document_.targetDummy.facePlayer ? BST_CHECKED : BST_UNCHECKED);
         SetTextValue(IDC_DUMMY_MODEL, document_.targetDummy.model);
 
+        Button_SetCheck(FindControl(IDC_ROUND_MODE), document_.roundMode.enabled ? BST_CHECKED : BST_UNCHECKED);
+        SetTextValue(IDC_ROUND_FREEZE_TIME, document_.roundMode.freezeTime);
+        SetTextValue(IDC_ROUND_RESTART_DELAY, document_.roundMode.restartDelay);
+        SetTextValue(IDC_ROUND_START_HEALTH, document_.roundMode.startHealth);
+        SetTextValue(IDC_ROUND_START_ARMOR, document_.roundMode.startArmor);
+        Button_SetCheck(FindControl(IDC_ROUND_NO_RESPAWN), document_.roundMode.noRespawn ? BST_CHECKED : BST_UNCHECKED);
+        Button_SetCheck(FindControl(IDC_ROUND_FRIENDLY_FIRE), document_.roundMode.friendlyFire ? BST_CHECKED : BST_UNCHECKED);
+        SetTextValue(IDC_ROUND_WEAPON_PROFILE, document_.roundMode.weaponProfile);
+        SetComboSelectionValue(IDC_ROUND_LOADOUT_MODE, document_.roundMode.loadoutMode);
+
+        Button_SetCheck(FindControl(IDC_TEAM_ROUND_MODE), document_.teamRound.enabled ? BST_CHECKED : BST_UNCHECKED);
+        Button_SetCheck(FindControl(IDC_TEAM_ROUND_TEAMPLAY), document_.teamRound.teamplay ? BST_CHECKED : BST_UNCHECKED);
+        SetComboSelectionValue(IDC_TEAM_ROUND_SPAWN_MODE, document_.teamRound.spawnMode);
+        SetTextValue(IDC_TEAM_ROUND_TEAM1_NAME, document_.teamRound.team1Name);
+        SetTextValue(IDC_TEAM_ROUND_TEAM2_NAME, document_.teamRound.team2Name);
+        SetComboSelectionValue(IDC_TEAM_ROUND_TEAM1_LOADOUT, document_.teamRound.team1Loadout);
+        SetComboSelectionValue(IDC_TEAM_ROUND_TEAM2_LOADOUT, document_.teamRound.team2Loadout);
+        SetTextValue(IDC_TEAM_ROUND_TEAM1_HEALTH, document_.teamRound.team1Health);
+        SetTextValue(IDC_TEAM_ROUND_TEAM2_HEALTH, document_.teamRound.team2Health);
+        SetTextValue(IDC_TEAM_ROUND_TEAM1_ARMOR, document_.teamRound.team1Armor);
+        SetTextValue(IDC_TEAM_ROUND_TEAM2_ARMOR, document_.teamRound.team2Armor);
+
+        Button_SetCheck(FindControl(IDC_BUY_MODE), document_.buy.enabled ? BST_CHECKED : BST_UNCHECKED);
+        Button_SetCheck(FindControl(IDC_BUY_FREEZE_ONLY), document_.buy.freezeOnly ? BST_CHECKED : BST_UNCHECKED);
+        Button_SetCheck(FindControl(IDC_BUY_TEAM_SHARED_CATALOG), document_.buy.teamSharedCatalog ? BST_CHECKED : BST_UNCHECKED);
+        SetTextValue(IDC_BUY_START_MONEY, document_.buy.startMoney);
+        SetTextValue(IDC_BUY_ROUND_WIN_REWARD, document_.buy.roundWinReward);
+        SetTextValue(IDC_BUY_ROUND_LOSS_REWARD, document_.buy.roundLossReward);
+        SetTextValue(IDC_BUY_MAX_MONEY, document_.buy.maxMoney);
+        Button_SetCheck(FindControl(IDC_BUY_ALLOW_GLOCK), document_.buy.allowGlock ? BST_CHECKED : BST_UNCHECKED);
+        Button_SetCheck(FindControl(IDC_BUY_ALLOW_MP5), document_.buy.allowMp5 ? BST_CHECKED : BST_UNCHECKED);
+        Button_SetCheck(FindControl(IDC_BUY_ALLOW_357), document_.buy.allow357 ? BST_CHECKED : BST_UNCHECKED);
+        Button_SetCheck(FindControl(IDC_BUY_ALLOW_SHOTGUN), document_.buy.allowShotgun ? BST_CHECKED : BST_UNCHECKED);
+        Button_SetCheck(FindControl(IDC_BUY_ALLOW_ARMOR), document_.buy.allowArmor ? BST_CHECKED : BST_UNCHECKED);
+        Button_SetCheck(FindControl(IDC_BUY_ALLOW_HELMET), document_.buy.allowHelmet ? BST_CHECKED : BST_UNCHECKED);
+        Button_SetCheck(FindControl(IDC_BUY_ALLOW_HANDGRENADE), document_.buy.allowHandgrenade ? BST_CHECKED : BST_UNCHECKED);
+        SetTextValue(IDC_BUY_COST_GLOCK, document_.buy.costGlock);
+        SetTextValue(IDC_BUY_COST_MP5, document_.buy.costMp5);
+        SetTextValue(IDC_BUY_COST_357, document_.buy.cost357);
+        SetTextValue(IDC_BUY_COST_SHOTGUN, document_.buy.costShotgun);
+        SetTextValue(IDC_BUY_COST_ARMOR, document_.buy.costArmor);
+        SetTextValue(IDC_BUY_COST_HELMET, document_.buy.costHelmet);
+        SetTextValue(IDC_BUY_COST_HANDGRENADE, document_.buy.costHandgrenade);
+
+        Button_SetCheck(FindControl(IDC_ARMOR_MODE), document_.armorEquipment.armorMode ? BST_CHECKED : BST_UNCHECKED);
+        SetTextValue(IDC_ARMOR_START_VALUE, document_.armorEquipment.armorStartValue);
+        SetTextValue(IDC_ARMOR_MAX_VALUE, document_.armorEquipment.armorMaxValue);
+        SetTextValue(IDC_ARMOR_HEALTH_FRACTION, document_.armorEquipment.armorHealthFraction);
+        SetTextValue(IDC_ARMOR_DRAIN_SCALE, document_.armorEquipment.armorDrainScale);
+        Button_SetCheck(FindControl(IDC_HELMET_MODE), document_.armorEquipment.helmetMode ? BST_CHECKED : BST_UNCHECKED);
+        Button_SetCheck(FindControl(IDC_HELMET_START_ENABLED), document_.armorEquipment.helmetStartEnabled ? BST_CHECKED : BST_UNCHECKED);
+        Button_SetCheck(
+            FindControl(IDC_HELMET_HEADSHOT_PROTECTION),
+            document_.armorEquipment.helmetHeadshotProtection ? BST_CHECKED : BST_UNCHECKED);
+
         SetTextValue(IDC_EXPORT_FOLDER, document_.exportSettings.exportFolder);
         SetTextValue(IDC_EXPORT_FILE_NAME, document_.exportSettings.cfgFileName);
         RefreshResolvedExportInfo();
+        RefreshMatchSummary();
 
         if (lastActionStatus_.empty()) {
             lastActionStatus_ = L"Ready.\n\nQuick export target:\n" + BuildQuickExportTargetPathPreview();
@@ -1544,6 +1936,59 @@ private:
         document_.targetDummy.offsetUp = GetTextValue(IDC_DUMMY_OFFSET_UP);
         document_.targetDummy.facePlayer = GetCheckValue(IDC_DUMMY_FACE_PLAYER);
         document_.targetDummy.model = GetTextValue(IDC_DUMMY_MODEL);
+
+        document_.roundMode.enabled = GetCheckValue(IDC_ROUND_MODE);
+        document_.roundMode.freezeTime = GetTextValue(IDC_ROUND_FREEZE_TIME);
+        document_.roundMode.restartDelay = GetTextValue(IDC_ROUND_RESTART_DELAY);
+        document_.roundMode.startHealth = GetTextValue(IDC_ROUND_START_HEALTH);
+        document_.roundMode.startArmor = GetTextValue(IDC_ROUND_START_ARMOR);
+        document_.roundMode.noRespawn = GetCheckValue(IDC_ROUND_NO_RESPAWN);
+        document_.roundMode.friendlyFire = GetCheckValue(IDC_ROUND_FRIENDLY_FIRE);
+        document_.roundMode.weaponProfile = GetTextValue(IDC_ROUND_WEAPON_PROFILE);
+        document_.roundMode.loadoutMode = GetComboSelectionValue(IDC_ROUND_LOADOUT_MODE);
+
+        document_.teamRound.enabled = GetCheckValue(IDC_TEAM_ROUND_MODE);
+        document_.teamRound.teamplay = GetCheckValue(IDC_TEAM_ROUND_TEAMPLAY);
+        document_.teamRound.spawnMode = GetComboSelectionValue(IDC_TEAM_ROUND_SPAWN_MODE);
+        document_.teamRound.team1Name = GetTextValue(IDC_TEAM_ROUND_TEAM1_NAME);
+        document_.teamRound.team2Name = GetTextValue(IDC_TEAM_ROUND_TEAM2_NAME);
+        document_.teamRound.team1Loadout = GetComboSelectionValue(IDC_TEAM_ROUND_TEAM1_LOADOUT);
+        document_.teamRound.team2Loadout = GetComboSelectionValue(IDC_TEAM_ROUND_TEAM2_LOADOUT);
+        document_.teamRound.team1Health = GetTextValue(IDC_TEAM_ROUND_TEAM1_HEALTH);
+        document_.teamRound.team2Health = GetTextValue(IDC_TEAM_ROUND_TEAM2_HEALTH);
+        document_.teamRound.team1Armor = GetTextValue(IDC_TEAM_ROUND_TEAM1_ARMOR);
+        document_.teamRound.team2Armor = GetTextValue(IDC_TEAM_ROUND_TEAM2_ARMOR);
+
+        document_.buy.enabled = GetCheckValue(IDC_BUY_MODE);
+        document_.buy.freezeOnly = GetCheckValue(IDC_BUY_FREEZE_ONLY);
+        document_.buy.teamSharedCatalog = GetCheckValue(IDC_BUY_TEAM_SHARED_CATALOG);
+        document_.buy.startMoney = GetTextValue(IDC_BUY_START_MONEY);
+        document_.buy.roundWinReward = GetTextValue(IDC_BUY_ROUND_WIN_REWARD);
+        document_.buy.roundLossReward = GetTextValue(IDC_BUY_ROUND_LOSS_REWARD);
+        document_.buy.maxMoney = GetTextValue(IDC_BUY_MAX_MONEY);
+        document_.buy.allowGlock = GetCheckValue(IDC_BUY_ALLOW_GLOCK);
+        document_.buy.allowMp5 = GetCheckValue(IDC_BUY_ALLOW_MP5);
+        document_.buy.allow357 = GetCheckValue(IDC_BUY_ALLOW_357);
+        document_.buy.allowShotgun = GetCheckValue(IDC_BUY_ALLOW_SHOTGUN);
+        document_.buy.allowArmor = GetCheckValue(IDC_BUY_ALLOW_ARMOR);
+        document_.buy.allowHelmet = GetCheckValue(IDC_BUY_ALLOW_HELMET);
+        document_.buy.allowHandgrenade = GetCheckValue(IDC_BUY_ALLOW_HANDGRENADE);
+        document_.buy.costGlock = GetTextValue(IDC_BUY_COST_GLOCK);
+        document_.buy.costMp5 = GetTextValue(IDC_BUY_COST_MP5);
+        document_.buy.cost357 = GetTextValue(IDC_BUY_COST_357);
+        document_.buy.costShotgun = GetTextValue(IDC_BUY_COST_SHOTGUN);
+        document_.buy.costArmor = GetTextValue(IDC_BUY_COST_ARMOR);
+        document_.buy.costHelmet = GetTextValue(IDC_BUY_COST_HELMET);
+        document_.buy.costHandgrenade = GetTextValue(IDC_BUY_COST_HANDGRENADE);
+
+        document_.armorEquipment.armorMode = GetCheckValue(IDC_ARMOR_MODE);
+        document_.armorEquipment.armorStartValue = GetTextValue(IDC_ARMOR_START_VALUE);
+        document_.armorEquipment.armorMaxValue = GetTextValue(IDC_ARMOR_MAX_VALUE);
+        document_.armorEquipment.armorHealthFraction = GetTextValue(IDC_ARMOR_HEALTH_FRACTION);
+        document_.armorEquipment.armorDrainScale = GetTextValue(IDC_ARMOR_DRAIN_SCALE);
+        document_.armorEquipment.helmetMode = GetCheckValue(IDC_HELMET_MODE);
+        document_.armorEquipment.helmetStartEnabled = GetCheckValue(IDC_HELMET_START_ENABLED);
+        document_.armorEquipment.helmetHeadshotProtection = GetCheckValue(IDC_HELMET_HEADSHOT_PROTECTION);
 
         document_.exportSettings.exportFolder = GetTextValue(IDC_EXPORT_FOLDER);
         document_.exportSettings.cfgFileName = hlcfg::EnsureCfgFileName(GetTextValue(IDC_EXPORT_FILE_NAME));
@@ -1981,6 +2426,98 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
         return 1;
     }
 
+    hlcfg::ProjectDocument duel357 = hlcfg::CreateDefaultProject();
+    duel357.metadata.projectName = L"SelfTest Duel 357";
+    duel357.general.sessionTag = L"editor_match_test";
+    duel357.exportSettings.exportFolder = exportRoot.wstring();
+    duel357.exportSettings.cfgFileName = L"editor_duel_357.cfg";
+    hlcfg::ApplyMatchPreset(duel357, L"duel_357");
+
+    const std::filesystem::path duel357ProjectPath = root / L"editor_duel_357.hlcfg.json";
+    if (!hlcfg::SaveProjectDocumentToFile(duel357, duel357ProjectPath.wstring(), errorMessage)) {
+        return 1;
+    }
+
+    hlcfg::ProjectDocument loadedDuel357;
+    if (!hlcfg::LoadProjectDocumentFromFile(duel357ProjectPath.wstring(), loadedDuel357, errorMessage)) {
+        return 1;
+    }
+
+    hlcfg::ExportResult duel357Export;
+    if (!hlcfg::ExportCfgToFile(loadedDuel357, environment, duel357Export, errorMessage)) {
+        return 1;
+    }
+
+    if (!ValidateContains(duel357Export.cfgText, L"sv_exp_round_mode 1") ||
+        !ValidateContains(duel357Export.cfgText, L"sv_exp_round_loadout_mode \"357\"") ||
+        !ValidateContains(duel357Export.cfgText, L"sv_exp_round_weapon_profile \"duel_357\"") ||
+        duel357Export.execCommand != L"exec editor_duel_357.cfg" ||
+        duel357Export.launcherCommand != L"scripts\\play-hlserver-testbed-direct.bat -CfgProfile \"editor_duel_357.cfg\"") {
+        return 1;
+    }
+
+    hlcfg::ProjectDocument teamMp5 = hlcfg::CreateDefaultProject();
+    teamMp5.metadata.projectName = L"SelfTest Team MP5";
+    teamMp5.general.sessionTag = L"editor_match_test";
+    teamMp5.exportSettings.exportFolder = exportRoot.wstring();
+    teamMp5.exportSettings.cfgFileName = L"editor_team_mp5.cfg";
+    hlcfg::ApplyMatchPreset(teamMp5, L"team_mp5");
+
+    const std::filesystem::path teamMp5ProjectPath = root / L"editor_team_mp5.hlcfg.json";
+    if (!hlcfg::SaveProjectDocumentToFile(teamMp5, teamMp5ProjectPath.wstring(), errorMessage)) {
+        return 1;
+    }
+
+    hlcfg::ProjectDocument loadedTeamMp5;
+    if (!hlcfg::LoadProjectDocumentFromFile(teamMp5ProjectPath.wstring(), loadedTeamMp5, errorMessage)) {
+        return 1;
+    }
+
+    hlcfg::ExportResult teamMp5Export;
+    if (!hlcfg::ExportCfgToFile(loadedTeamMp5, environment, teamMp5Export, errorMessage)) {
+        return 1;
+    }
+
+    if (!ValidateContains(teamMp5Export.cfgText, L"sv_exp_round_mode 1") ||
+        !ValidateContains(teamMp5Export.cfgText, L"sv_exp_team_round_mode 1") ||
+        !ValidateContains(teamMp5Export.cfgText, L"sv_exp_team_round_team1_loadout \"mp5\"") ||
+        !ValidateContains(teamMp5Export.cfgText, L"sv_exp_team_round_team2_loadout \"mp5\"") ||
+        teamMp5Export.execCommand != L"exec editor_team_mp5.cfg" ||
+        teamMp5Export.launcherCommand != L"scripts\\play-hlserver-testbed-direct.bat -CfgProfile \"editor_team_mp5.cfg\"") {
+        return 1;
+    }
+
+    hlcfg::ProjectDocument buyArmor = hlcfg::CreateDefaultProject();
+    buyArmor.metadata.projectName = L"SelfTest Buy Armor";
+    buyArmor.general.sessionTag = L"editor_match_test";
+    buyArmor.exportSettings.exportFolder = exportRoot.wstring();
+    buyArmor.exportSettings.cfgFileName = L"editor_buy_armor.cfg";
+    hlcfg::ApplyMatchPreset(buyArmor, L"buy_test");
+
+    const std::filesystem::path buyArmorProjectPath = root / L"editor_buy_armor.hlcfg.json";
+    if (!hlcfg::SaveProjectDocumentToFile(buyArmor, buyArmorProjectPath.wstring(), errorMessage)) {
+        return 1;
+    }
+
+    hlcfg::ProjectDocument loadedBuyArmor;
+    if (!hlcfg::LoadProjectDocumentFromFile(buyArmorProjectPath.wstring(), loadedBuyArmor, errorMessage)) {
+        return 1;
+    }
+
+    hlcfg::ExportResult buyArmorExport;
+    if (!hlcfg::ExportCfgToFile(loadedBuyArmor, environment, buyArmorExport, errorMessage)) {
+        return 1;
+    }
+
+    if (!ValidateContains(buyArmorExport.cfgText, L"sv_exp_buy_mode 1") ||
+        !ValidateContains(buyArmorExport.cfgText, L"sv_exp_armor_mode 1") ||
+        !ValidateContains(buyArmorExport.cfgText, L"sv_exp_helmet_mode 1") ||
+        !ValidateContains(buyArmorExport.cfgText, L"sv_exp_buy_cost_handgrenade") ||
+        buyArmorExport.execCommand != L"exec editor_buy_armor.cfg" ||
+        buyArmorExport.launcherCommand != L"scripts\\play-hlserver-testbed-direct.bat -CfgProfile \"editor_buy_armor.cfg\"") {
+        return 1;
+    }
+
     std::wostringstream summary;
     summary << L"glock_project=" << glockProjectPath.wstring() << L"\n";
     summary << L"glock_cfg=" << glockExport.exportPath << L"\n";
@@ -1994,6 +2531,15 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
     summary << L"shotgun_project=" << shotgunProjectPath.wstring() << L"\n";
     summary << L"shotgun_cfg=" << shotgunExport.exportPath << L"\n";
     summary << L"shotgun_exec=" << shotgunExport.execCommand << L"\n";
+    summary << L"duel357_project=" << duel357ProjectPath.wstring() << L"\n";
+    summary << L"duel357_cfg=" << duel357Export.exportPath << L"\n";
+    summary << L"duel357_exec=" << duel357Export.execCommand << L"\n";
+    summary << L"team_mp5_project=" << teamMp5ProjectPath.wstring() << L"\n";
+    summary << L"team_mp5_cfg=" << teamMp5Export.exportPath << L"\n";
+    summary << L"team_mp5_exec=" << teamMp5Export.execCommand << L"\n";
+    summary << L"buy_armor_project=" << buyArmorProjectPath.wstring() << L"\n";
+    summary << L"buy_armor_cfg=" << buyArmorExport.exportPath << L"\n";
+    summary << L"buy_armor_exec=" << buyArmorExport.execCommand << L"\n";
 
     if (!WriteSummaryFile(root / L"selftest-summary.txt", summary.str())) {
         return 1;

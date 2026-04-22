@@ -116,8 +116,69 @@ struct TargetDummyConfig {
     std::wstring model;
 };
 
+struct RoundModeConfig {
+    bool enabled = false;
+    std::wstring freezeTime;
+    std::wstring restartDelay;
+    std::wstring startHealth;
+    std::wstring startArmor;
+    bool noRespawn = true;
+    bool friendlyFire = false;
+    std::wstring weaponProfile;
+    std::wstring loadoutMode;
+};
+
+struct TeamRoundConfig {
+    bool enabled = false;
+    bool teamplay = true;
+    std::wstring spawnMode;
+    std::wstring team1Name;
+    std::wstring team2Name;
+    std::wstring team1Loadout;
+    std::wstring team2Loadout;
+    std::wstring team1Health;
+    std::wstring team2Health;
+    std::wstring team1Armor;
+    std::wstring team2Armor;
+};
+
+struct BuyConfig {
+    bool enabled = false;
+    bool freezeOnly = true;
+    bool teamSharedCatalog = true;
+    std::wstring startMoney;
+    std::wstring roundWinReward;
+    std::wstring roundLossReward;
+    std::wstring maxMoney;
+    bool allowGlock = true;
+    bool allowMp5 = true;
+    bool allow357 = true;
+    bool allowShotgun = true;
+    bool allowArmor = true;
+    bool allowHelmet = true;
+    bool allowHandgrenade = true;
+    std::wstring costGlock;
+    std::wstring costMp5;
+    std::wstring cost357;
+    std::wstring costShotgun;
+    std::wstring costArmor;
+    std::wstring costHelmet;
+    std::wstring costHandgrenade;
+};
+
+struct ArmorEquipmentConfig {
+    bool armorMode = false;
+    std::wstring armorStartValue;
+    std::wstring armorMaxValue;
+    std::wstring armorHealthFraction;
+    std::wstring armorDrainScale;
+    bool helmetMode = false;
+    bool helmetStartEnabled = false;
+    bool helmetHeadshotProtection = true;
+};
+
 struct ProjectDocument {
-    static constexpr int kSchemaVersion = 1;
+    static constexpr int kSchemaVersion = 2;
 
     int schemaVersion = kSchemaVersion;
     ProjectMetadata metadata;
@@ -128,6 +189,10 @@ struct ProjectDocument {
     Weapon357Config weapon357;
     ShotgunConfig shotgun;
     TargetDummyConfig targetDummy;
+    RoundModeConfig roundMode;
+    TeamRoundConfig teamRound;
+    BuyConfig buy;
+    ArmorEquipmentConfig armorEquipment;
 };
 
 ProjectDocument CreateDefaultProject();

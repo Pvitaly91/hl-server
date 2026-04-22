@@ -33,7 +33,7 @@ This is now the default path:
 
 1. Build `HlConfigEditorCpp` in Visual Studio 2022.
 2. Run `<HalfLifeRoot>\hlserver_testbed\HlConfigEditorCpp.exe`.
-3. Edit values on the `General`, `Glock`, `MP5`, `357`, `Shotgun`, and `Target Dummy` tabs.
+3. Edit values on the `General`, `Glock`, `MP5`, `357`, `Shotgun`, `Target Dummy`, `Round Mode`, `Team Round`, and `Buy & Equipment` tabs.
 4. Save the editable project as `.hlcfg.json`.
 5. Open the `Export` tab.
 6. Confirm the resolved-path fields show the expected Half-Life root, live mod root, and quick-export target.
@@ -45,6 +45,17 @@ This is now the default path:
 12. Click `Copy exec command`.
 13. In the running HLDS console, run `exp_cfg_apply my_glock.cfg` to refresh the cfg or `exp_lab_apply my_glock.cfg` to refresh the cfg and rebuild the dummy in one command.
 14. `exec my_glock.cfg` remains available as a legacy fallback.
+
+The editor project now covers more than weapon tuning:
+
+- weapon tuning for Glock, MP5, 357, and shotgun
+- target dummy settings
+- round-mode rules
+- team-round rules
+- buy prototype rules
+- armor, helmet, and first utility settings
+
+The `General` page also shows a small "What This Config Will Affect" summary so you can see at a glance whether the current project enables round mode, team mode, buy mode, armor, helmet, and which main loadout it implies.
 
 In the simple path, the editor writes directly into:
 
@@ -81,6 +92,7 @@ The `Export` tab now emphasizes the simple live-mod workflow first:
 - `Export to chosen folder` is still available for advanced/custom destinations.
 - `Copy launcher`, `Copy raw cfg`, `Open export folder`, and `Open live mod` all provide visible success or error feedback instead of failing silently.
 - `Copy launcher` still works when the exported cfg resolves to a live-mod-relative path.
+- Exported cfgs now include the current round, team-round, buy, armor, and helmet sections when those settings are present in the project, so one exported file can represent a full live match setup.
 
 The default cfg filename is derived from the current project/config name so the common path does not start from a generic placeholder. Example defaults include `editor_glock_simple.cfg`, `editor_mp5_simple.cfg`, `editor_357_test.cfg`, and `editor_shotgun_test.cfg`.
 
@@ -160,6 +172,101 @@ For shotgun specifically, the same editor path applies:
 6. Use `exp_target_profile unarmored` when you want deterministic close-range dummy checks.
 7. Review shotgun-only telemetry with `.\scripts\analyze-weapon-log.ps1 -Latest -Weapon shotgun`.
 
+## Match-rule configs
+
+The editor can now create full match configs in addition to weapon-only test configs.
+
+Recommended tab layout:
+
+- `General`
+- `Glock`
+- `MP5`
+- `357`
+- `Shotgun`
+- `Target Dummy`
+- `Round Mode`
+- `Team Round`
+- `Buy & Equipment`
+- `Export`
+
+Round-mode coverage now includes:
+
+- `sv_exp_round_mode`
+- `sv_exp_round_freeze_time`
+- `sv_exp_round_restart_delay`
+- `sv_exp_round_start_health`
+- `sv_exp_round_start_armor`
+- `sv_exp_round_no_respawn`
+- `sv_exp_round_friendlyfire`
+- `sv_exp_round_weapon_profile`
+- `sv_exp_round_loadout_mode`
+
+Team-round coverage now includes:
+
+- `sv_exp_team_round_mode`
+- `sv_exp_team_round_teamplay`
+- `sv_exp_team_round_spawn_mode`
+- `sv_exp_team_round_team1_name`
+- `sv_exp_team_round_team2_name`
+- `sv_exp_team_round_team1_loadout`
+- `sv_exp_team_round_team2_loadout`
+- `sv_exp_team_round_team1_health`
+- `sv_exp_team_round_team2_health`
+- `sv_exp_team_round_team1_armor`
+- `sv_exp_team_round_team2_armor`
+
+Buy and equipment coverage now includes:
+
+- `sv_exp_buy_mode`
+- `sv_exp_buy_freeze_only`
+- `sv_exp_buy_team_shared_catalog`
+- `sv_exp_buy_start_money`
+- `sv_exp_buy_round_win_reward`
+- `sv_exp_buy_round_loss_reward`
+- `sv_exp_buy_max_money`
+- `sv_exp_buy_allow_glock`
+- `sv_exp_buy_allow_mp5`
+- `sv_exp_buy_allow_357`
+- `sv_exp_buy_allow_shotgun`
+- `sv_exp_buy_allow_armor`
+- `sv_exp_buy_allow_helmet`
+- `sv_exp_buy_allow_handgrenade`
+- `sv_exp_buy_cost_glock`
+- `sv_exp_buy_cost_mp5`
+- `sv_exp_buy_cost_357`
+- `sv_exp_buy_cost_shotgun`
+- `sv_exp_buy_cost_armor`
+- `sv_exp_buy_cost_helmet`
+- `sv_exp_buy_cost_handgrenade`
+- `sv_exp_armor_mode`
+- `sv_exp_armor_start_value`
+- `sv_exp_armor_max_value`
+- `sv_exp_armor_health_fraction`
+- `sv_exp_armor_drain_scale`
+- `sv_exp_helmet_mode`
+- `sv_exp_helmet_start_enabled`
+- `sv_exp_helmet_headshot_protection`
+
+Built-in match templates now provide quick starting points:
+
+- `duel_glock`
+- `duel_357`
+- `team_mp5`
+- `team_shotgun`
+- `armor_test`
+- `buy_test`
+
+Practical usage examples:
+
+1. Duel config:
+   Set `Round Mode` on, keep `Team Round` off, choose `357` or `glock` as the round loadout, save `editor_duel_357.hlcfg.json`, then export `editor_duel_357.cfg`.
+2. Team config:
+   Enable both `Round Mode` and `Team Round`, set team names and loadouts, save `editor_team_mp5.hlcfg.json`, then export `editor_team_mp5.cfg`.
+3. Buy/armor config:
+   Enable `Buy & Equipment`, set `sv_exp_buy_mode`, armor, and helmet options, save `editor_buy_armor.hlcfg.json`, then export `editor_buy_armor.cfg`.
+
+Old `.hlcfg.json` projects still load. Missing newer match sections simply fall back to defaults instead of corrupting the project.
+
 Subsystem provenance for this recommended path is recorded in [docs/stable-live-lab-state.md](/D:/DEV/CPP/HL-Server/docs/stable-live-lab-state.md).
 
 Live lab console commands:
@@ -211,11 +318,13 @@ Run the built-in self-test with:
 The self-test:
 
 - saves example `.hlcfg.json` projects under `<repo-root>\artifacts\HlConfigEditorCppSelfTest\`
-- exports example cfgs such as `editor_glock_simple.cfg`, `editor_mp5_simple.cfg`, `editor_357_test.cfg`, and `editor_shotgun_test.cfg`
+- exports example cfgs such as `editor_glock_simple.cfg`, `editor_mp5_simple.cfg`, `editor_357_test.cfg`, `editor_shotgun_test.cfg`, `editor_duel_357.cfg`, `editor_team_mp5.cfg`, and `editor_buy_armor.cfg`
 - writes the summary file to `<repo-root>\artifacts\HlConfigEditorCppSelfTest\selftest-summary.txt`
-- records the expected simple exec commands, for example `exec editor_glock_simple.cfg`, `exec editor_357_test.cfg`, and `exec editor_shotgun_test.cfg`
+- records the expected simple exec commands, for example `exec editor_glock_simple.cfg`, `exec editor_357_test.cfg`, `exec editor_team_mp5.cfg`, and `exec editor_buy_armor.cfg`
 
 When the real Half-Life root is available, the self-test exports directly into `<HalfLifeRoot>\hlserver_testbed\`. If the live root is not available, it falls back to `<repo-root>\testbed\mods\hlserver_testbed\`.
+
+One exported full-match config was also verified in a real live session on `2026-04-22`: `exp_cfg_apply editor_buy_armor.cfg` on a running server with a connected client set `sv_exp_round_mode`, `sv_exp_buy_mode`, `sv_exp_armor_mode`, and `sv_exp_helmet_mode` to `1`, confirming that the expanded editor export path now reaches the live rules layer instead of only weapon tuning.
 
 ## Live-mod refresh behavior
 

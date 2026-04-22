@@ -395,6 +395,71 @@ bool IsDummyRelevant(const ProjectDocument& document) {
            !EqualTrimmed(document.targetDummy.model, defaults.targetDummy.model);
 }
 
+bool IsRoundRelevant(const ProjectDocument& document) {
+    const ProjectDocument defaults = CreateDefaultProject();
+    return document.roundMode.enabled != defaults.roundMode.enabled ||
+           !EqualTrimmed(document.roundMode.freezeTime, defaults.roundMode.freezeTime) ||
+           !EqualTrimmed(document.roundMode.restartDelay, defaults.roundMode.restartDelay) ||
+           !EqualTrimmed(document.roundMode.startHealth, defaults.roundMode.startHealth) ||
+           !EqualTrimmed(document.roundMode.startArmor, defaults.roundMode.startArmor) ||
+           document.roundMode.noRespawn != defaults.roundMode.noRespawn ||
+           document.roundMode.friendlyFire != defaults.roundMode.friendlyFire ||
+           !EqualTrimmed(document.roundMode.weaponProfile, defaults.roundMode.weaponProfile) ||
+           !EqualTrimmed(document.roundMode.loadoutMode, defaults.roundMode.loadoutMode);
+}
+
+bool IsTeamRoundRelevant(const ProjectDocument& document) {
+    const ProjectDocument defaults = CreateDefaultProject();
+    return document.teamRound.enabled != defaults.teamRound.enabled ||
+           document.teamRound.teamplay != defaults.teamRound.teamplay ||
+           !EqualTrimmed(document.teamRound.spawnMode, defaults.teamRound.spawnMode) ||
+           !EqualTrimmed(document.teamRound.team1Name, defaults.teamRound.team1Name) ||
+           !EqualTrimmed(document.teamRound.team2Name, defaults.teamRound.team2Name) ||
+           !EqualTrimmed(document.teamRound.team1Loadout, defaults.teamRound.team1Loadout) ||
+           !EqualTrimmed(document.teamRound.team2Loadout, defaults.teamRound.team2Loadout) ||
+           !EqualTrimmed(document.teamRound.team1Health, defaults.teamRound.team1Health) ||
+           !EqualTrimmed(document.teamRound.team2Health, defaults.teamRound.team2Health) ||
+           !EqualTrimmed(document.teamRound.team1Armor, defaults.teamRound.team1Armor) ||
+           !EqualTrimmed(document.teamRound.team2Armor, defaults.teamRound.team2Armor);
+}
+
+bool IsBuyRelevant(const ProjectDocument& document) {
+    const ProjectDocument defaults = CreateDefaultProject();
+    return document.buy.enabled != defaults.buy.enabled ||
+           document.buy.freezeOnly != defaults.buy.freezeOnly ||
+           document.buy.teamSharedCatalog != defaults.buy.teamSharedCatalog ||
+           !EqualTrimmed(document.buy.startMoney, defaults.buy.startMoney) ||
+           !EqualTrimmed(document.buy.roundWinReward, defaults.buy.roundWinReward) ||
+           !EqualTrimmed(document.buy.roundLossReward, defaults.buy.roundLossReward) ||
+           !EqualTrimmed(document.buy.maxMoney, defaults.buy.maxMoney) ||
+           document.buy.allowGlock != defaults.buy.allowGlock ||
+           document.buy.allowMp5 != defaults.buy.allowMp5 ||
+           document.buy.allow357 != defaults.buy.allow357 ||
+           document.buy.allowShotgun != defaults.buy.allowShotgun ||
+           document.buy.allowArmor != defaults.buy.allowArmor ||
+           document.buy.allowHelmet != defaults.buy.allowHelmet ||
+           document.buy.allowHandgrenade != defaults.buy.allowHandgrenade ||
+           !EqualTrimmed(document.buy.costGlock, defaults.buy.costGlock) ||
+           !EqualTrimmed(document.buy.costMp5, defaults.buy.costMp5) ||
+           !EqualTrimmed(document.buy.cost357, defaults.buy.cost357) ||
+           !EqualTrimmed(document.buy.costShotgun, defaults.buy.costShotgun) ||
+           !EqualTrimmed(document.buy.costArmor, defaults.buy.costArmor) ||
+           !EqualTrimmed(document.buy.costHelmet, defaults.buy.costHelmet) ||
+           !EqualTrimmed(document.buy.costHandgrenade, defaults.buy.costHandgrenade);
+}
+
+bool IsArmorRelevant(const ProjectDocument& document) {
+    const ProjectDocument defaults = CreateDefaultProject();
+    return document.armorEquipment.armorMode != defaults.armorEquipment.armorMode ||
+           !EqualTrimmed(document.armorEquipment.armorStartValue, defaults.armorEquipment.armorStartValue) ||
+           !EqualTrimmed(document.armorEquipment.armorMaxValue, defaults.armorEquipment.armorMaxValue) ||
+           !EqualTrimmed(document.armorEquipment.armorHealthFraction, defaults.armorEquipment.armorHealthFraction) ||
+           !EqualTrimmed(document.armorEquipment.armorDrainScale, defaults.armorEquipment.armorDrainScale) ||
+           document.armorEquipment.helmetMode != defaults.armorEquipment.helmetMode ||
+           document.armorEquipment.helmetStartEnabled != defaults.armorEquipment.helmetStartEnabled ||
+           document.armorEquipment.helmetHeadshotProtection != defaults.armorEquipment.helmetHeadshotProtection;
+}
+
 std::vector<std::wstring> SplitPathParts(const std::filesystem::path& path) {
     std::vector<std::wstring> parts;
     for (const auto& part : path.lexically_normal()) {
@@ -479,6 +544,10 @@ bool BuildCfgLines(const ProjectDocument& document, std::vector<std::wstring>& l
     const bool include357 = Is357Relevant(document);
     const bool includeShotgun = IsShotgunRelevant(document);
     const bool includeDummy = IsDummyRelevant(document);
+    const bool includeRound = IsRoundRelevant(document);
+    const bool includeTeamRound = IsTeamRoundRelevant(document);
+    const bool includeBuy = IsBuyRelevant(document);
+    const bool includeArmor = IsArmorRelevant(document);
 
     AddLine(lines, L"sv_exp_weapon_under_test", QuoteCfgString(document.general.weaponUnderTest));
     AddLine(lines, L"sv_exp_session_tag", QuoteCfgString(document.general.sessionTag));
@@ -735,6 +804,140 @@ bool BuildCfgLines(const ProjectDocument& document, std::vector<std::wstring>& l
         AddLine(lines, L"sv_exp_glock_lab_dummy_offset_up", normalized);
         AddLine(lines, L"sv_exp_glock_lab_dummy_face_player", document.targetDummy.facePlayer ? L"1" : L"0");
         AddLine(lines, L"sv_exp_glock_lab_dummy_model", QuoteCfgString(document.targetDummy.model));
+    }
+
+    if (includeRound) {
+        AddBlankLine(lines);
+        AddLine(lines, L"sv_exp_round_mode", document.roundMode.enabled ? L"1" : L"0");
+        if (!NormalizeFloatValue(document.roundMode.freezeTime, normalized, errorMessage, L"Round freeze time")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_round_freeze_time", normalized);
+        if (!NormalizeFloatValue(document.roundMode.restartDelay, normalized, errorMessage, L"Round restart delay")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_round_restart_delay", normalized);
+        if (!NormalizeFloatValue(document.roundMode.startHealth, normalized, errorMessage, L"Round start health")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_round_start_health", normalized);
+        if (!NormalizeFloatValue(document.roundMode.startArmor, normalized, errorMessage, L"Round start armor")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_round_start_armor", normalized);
+        AddLine(lines, L"sv_exp_round_no_respawn", document.roundMode.noRespawn ? L"1" : L"0");
+        AddLine(lines, L"sv_exp_round_friendlyfire", document.roundMode.friendlyFire ? L"1" : L"0");
+        AddLine(lines, L"sv_exp_round_weapon_profile", QuoteCfgString(document.roundMode.weaponProfile));
+        AddLine(lines, L"sv_exp_round_loadout_mode", QuoteCfgString(document.roundMode.loadoutMode));
+    }
+
+    if (includeTeamRound) {
+        AddBlankLine(lines);
+        AddLine(lines, L"sv_exp_team_round_mode", document.teamRound.enabled ? L"1" : L"0");
+        AddLine(lines, L"sv_exp_team_round_teamplay", document.teamRound.teamplay ? L"1" : L"0");
+        AddLine(lines, L"sv_exp_team_round_spawn_mode", QuoteCfgString(document.teamRound.spawnMode));
+        AddLine(lines, L"sv_exp_team_round_team1_name", QuoteCfgString(document.teamRound.team1Name));
+        AddLine(lines, L"sv_exp_team_round_team2_name", QuoteCfgString(document.teamRound.team2Name));
+        AddLine(lines, L"sv_exp_team_round_team1_loadout", QuoteCfgString(document.teamRound.team1Loadout));
+        AddLine(lines, L"sv_exp_team_round_team2_loadout", QuoteCfgString(document.teamRound.team2Loadout));
+        if (!NormalizeFloatValue(document.teamRound.team1Health, normalized, errorMessage, L"Team 1 health")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_team_round_team1_health", normalized);
+        if (!NormalizeFloatValue(document.teamRound.team2Health, normalized, errorMessage, L"Team 2 health")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_team_round_team2_health", normalized);
+        if (!NormalizeFloatValue(document.teamRound.team1Armor, normalized, errorMessage, L"Team 1 armor")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_team_round_team1_armor", normalized);
+        if (!NormalizeFloatValue(document.teamRound.team2Armor, normalized, errorMessage, L"Team 2 armor")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_team_round_team2_armor", normalized);
+    }
+
+    if (includeBuy) {
+        AddBlankLine(lines);
+        AddLine(lines, L"sv_exp_buy_mode", document.buy.enabled ? L"1" : L"0");
+        AddLine(lines, L"sv_exp_buy_freeze_only", document.buy.freezeOnly ? L"1" : L"0");
+        AddLine(lines, L"sv_exp_buy_team_shared_catalog", document.buy.teamSharedCatalog ? L"1" : L"0");
+        if (!NormalizeIntegerValue(document.buy.startMoney, normalized, errorMessage, L"Buy start money")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_buy_start_money", normalized);
+        if (!NormalizeIntegerValue(document.buy.roundWinReward, normalized, errorMessage, L"Buy round win reward")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_buy_round_win_reward", normalized);
+        if (!NormalizeIntegerValue(document.buy.roundLossReward, normalized, errorMessage, L"Buy round loss reward")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_buy_round_loss_reward", normalized);
+        if (!NormalizeIntegerValue(document.buy.maxMoney, normalized, errorMessage, L"Buy max money")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_buy_max_money", normalized);
+        AddLine(lines, L"sv_exp_buy_allow_glock", document.buy.allowGlock ? L"1" : L"0");
+        AddLine(lines, L"sv_exp_buy_allow_mp5", document.buy.allowMp5 ? L"1" : L"0");
+        AddLine(lines, L"sv_exp_buy_allow_357", document.buy.allow357 ? L"1" : L"0");
+        AddLine(lines, L"sv_exp_buy_allow_shotgun", document.buy.allowShotgun ? L"1" : L"0");
+        AddLine(lines, L"sv_exp_buy_allow_armor", document.buy.allowArmor ? L"1" : L"0");
+        AddLine(lines, L"sv_exp_buy_allow_helmet", document.buy.allowHelmet ? L"1" : L"0");
+        AddLine(lines, L"sv_exp_buy_allow_handgrenade", document.buy.allowHandgrenade ? L"1" : L"0");
+        if (!NormalizeIntegerValue(document.buy.costGlock, normalized, errorMessage, L"Buy cost glock")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_buy_cost_glock", normalized);
+        if (!NormalizeIntegerValue(document.buy.costMp5, normalized, errorMessage, L"Buy cost mp5")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_buy_cost_mp5", normalized);
+        if (!NormalizeIntegerValue(document.buy.cost357, normalized, errorMessage, L"Buy cost 357")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_buy_cost_357", normalized);
+        if (!NormalizeIntegerValue(document.buy.costShotgun, normalized, errorMessage, L"Buy cost shotgun")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_buy_cost_shotgun", normalized);
+        if (!NormalizeIntegerValue(document.buy.costArmor, normalized, errorMessage, L"Buy cost armor")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_buy_cost_armor", normalized);
+        if (!NormalizeIntegerValue(document.buy.costHelmet, normalized, errorMessage, L"Buy cost helmet")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_buy_cost_helmet", normalized);
+        if (!NormalizeIntegerValue(document.buy.costHandgrenade, normalized, errorMessage, L"Buy cost handgrenade")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_buy_cost_handgrenade", normalized);
+    }
+
+    if (includeArmor) {
+        AddBlankLine(lines);
+        AddLine(lines, L"sv_exp_armor_mode", document.armorEquipment.armorMode ? L"1" : L"0");
+        if (!NormalizeFloatValue(document.armorEquipment.armorStartValue, normalized, errorMessage, L"Armor start value")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_armor_start_value", normalized);
+        if (!NormalizeFloatValue(document.armorEquipment.armorMaxValue, normalized, errorMessage, L"Armor max value")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_armor_max_value", normalized);
+        if (!NormalizeFloatValue(document.armorEquipment.armorHealthFraction, normalized, errorMessage, L"Armor health fraction")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_armor_health_fraction", normalized);
+        if (!NormalizeFloatValue(document.armorEquipment.armorDrainScale, normalized, errorMessage, L"Armor drain scale")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_armor_drain_scale", normalized);
+        AddLine(lines, L"sv_exp_helmet_mode", document.armorEquipment.helmetMode ? L"1" : L"0");
+        AddLine(lines, L"sv_exp_helmet_start_enabled", document.armorEquipment.helmetStartEnabled ? L"1" : L"0");
+        AddLine(lines, L"sv_exp_helmet_headshot_protection", document.armorEquipment.helmetHeadshotProtection ? L"1" : L"0");
     }
 
     return true;

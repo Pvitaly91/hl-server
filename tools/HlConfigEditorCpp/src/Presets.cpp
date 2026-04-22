@@ -102,6 +102,67 @@ void ApplyDummyDefaults(ProjectDocument& document) {
     document.targetDummy.model = L"models/barney.mdl";
 }
 
+void ApplyRoundDefaults(ProjectDocument& document) {
+    document.roundMode.enabled = false;
+    document.roundMode.freezeTime = L"3.0";
+    document.roundMode.restartDelay = L"3.0";
+    document.roundMode.startHealth = L"100.0";
+    document.roundMode.startArmor = L"0.0";
+    document.roundMode.noRespawn = true;
+    document.roundMode.friendlyFire = false;
+    document.roundMode.weaponProfile.clear();
+    document.roundMode.loadoutMode = L"none";
+}
+
+void ApplyTeamRoundDefaults(ProjectDocument& document) {
+    document.teamRound.enabled = false;
+    document.teamRound.teamplay = true;
+    document.teamRound.spawnMode = L"dm_spawns";
+    document.teamRound.team1Name = L"alpha";
+    document.teamRound.team2Name = L"bravo";
+    document.teamRound.team1Loadout.clear();
+    document.teamRound.team2Loadout.clear();
+    document.teamRound.team1Health = L"-1.0";
+    document.teamRound.team2Health = L"-1.0";
+    document.teamRound.team1Armor = L"-1.0";
+    document.teamRound.team2Armor = L"-1.0";
+}
+
+void ApplyBuyDefaults(ProjectDocument& document) {
+    document.buy.enabled = false;
+    document.buy.freezeOnly = true;
+    document.buy.teamSharedCatalog = true;
+    document.buy.startMoney = L"2000";
+    document.buy.roundWinReward = L"1000";
+    document.buy.roundLossReward = L"500";
+    document.buy.maxMoney = L"16000";
+    document.buy.allowGlock = true;
+    document.buy.allowMp5 = true;
+    document.buy.allow357 = true;
+    document.buy.allowShotgun = true;
+    document.buy.allowArmor = true;
+    document.buy.allowHelmet = true;
+    document.buy.allowHandgrenade = true;
+    document.buy.costGlock = L"200";
+    document.buy.costMp5 = L"1500";
+    document.buy.cost357 = L"1200";
+    document.buy.costShotgun = L"1700";
+    document.buy.costArmor = L"650";
+    document.buy.costHelmet = L"350";
+    document.buy.costHandgrenade = L"300";
+}
+
+void ApplyArmorEquipmentDefaults(ProjectDocument& document) {
+    document.armorEquipment.armorMode = false;
+    document.armorEquipment.armorStartValue = L"0.0";
+    document.armorEquipment.armorMaxValue = L"100.0";
+    document.armorEquipment.armorHealthFraction = L"0.5";
+    document.armorEquipment.armorDrainScale = L"1.0";
+    document.armorEquipment.helmetMode = false;
+    document.armorEquipment.helmetStartEnabled = false;
+    document.armorEquipment.helmetHeadshotProtection = true;
+}
+
 }  // namespace
 
 void ApplyGlockPreset(ProjectDocument& document, const std::wstring& presetName) {
@@ -328,6 +389,83 @@ void ApplyDummyPreset(ProjectDocument& document, const std::wstring& presetName)
         document.targetDummy.targetProfileName = L"vest_headprotected";
         document.targetDummy.dummyArmor = L"100";
         document.targetDummy.dummyHeadProtected = true;
+    }
+}
+
+void ApplyMatchPreset(ProjectDocument& document, const std::wstring& presetName) {
+    ApplyRoundDefaults(document);
+    ApplyTeamRoundDefaults(document);
+    ApplyBuyDefaults(document);
+    ApplyArmorEquipmentDefaults(document);
+
+    if (presetName == L"duel_glock") {
+        ApplyGlockPreset(document, L"cs_tight");
+        document.roundMode.enabled = true;
+        document.roundMode.weaponProfile = L"duel_glock";
+        document.roundMode.loadoutMode = L"glock";
+        return;
+    }
+
+    if (presetName == L"duel_357") {
+        Apply357Preset(document, L"precision_test");
+        document.roundMode.enabled = true;
+        document.roundMode.weaponProfile = L"duel_357";
+        document.roundMode.loadoutMode = L"357";
+        return;
+    }
+
+    if (presetName == L"team_mp5") {
+        ApplyMp5Preset(document, L"cs_burst");
+        document.roundMode.enabled = true;
+        document.roundMode.weaponProfile = L"team_mp5";
+        document.teamRound.enabled = true;
+        document.teamRound.team1Loadout = L"mp5";
+        document.teamRound.team2Loadout = L"mp5";
+        document.teamRound.team1Health = L"100.0";
+        document.teamRound.team2Health = L"100.0";
+        document.teamRound.team1Armor = L"0.0";
+        document.teamRound.team2Armor = L"0.0";
+        return;
+    }
+
+    if (presetName == L"team_shotgun") {
+        ApplyShotgunPreset(document, L"close_quickkill");
+        document.roundMode.enabled = true;
+        document.roundMode.weaponProfile = L"team_shotgun";
+        document.teamRound.enabled = true;
+        document.teamRound.team1Loadout = L"shotgun";
+        document.teamRound.team2Loadout = L"shotgun";
+        document.teamRound.team1Health = L"120.0";
+        document.teamRound.team2Health = L"120.0";
+        document.teamRound.team1Armor = L"25.0";
+        document.teamRound.team2Armor = L"25.0";
+        return;
+    }
+
+    if (presetName == L"armor_test") {
+        Apply357Preset(document, L"headshot_test");
+        document.roundMode.enabled = true;
+        document.roundMode.weaponProfile = L"armor_test";
+        document.roundMode.loadoutMode = L"357";
+        document.armorEquipment.armorMode = true;
+        document.armorEquipment.armorStartValue = L"100.0";
+        document.armorEquipment.helmetMode = true;
+        document.armorEquipment.helmetStartEnabled = true;
+        document.armorEquipment.helmetHeadshotProtection = true;
+        return;
+    }
+
+    if (presetName == L"buy_test") {
+        ApplyMp5Preset(document, L"default");
+        document.general.weaponUnderTest = L"mp5";
+        document.roundMode.enabled = true;
+        document.roundMode.weaponProfile = L"buy_test";
+        document.buy.enabled = true;
+        document.buy.startMoney = L"2500";
+        document.buy.freezeOnly = true;
+        document.armorEquipment.armorMode = true;
+        document.armorEquipment.helmetMode = true;
+        return;
     }
 }
 
