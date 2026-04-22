@@ -299,6 +299,11 @@ bool SaveProjectDocumentToFile(const ProjectDocument& document, const std::wstri
     SetString(exportSettings, L"folder", document.exportSettings.exportFolder);
     SetString(exportSettings, L"fileName", EnsureCfgFileName(document.exportSettings.cfgFileName));
 
+    JsonValue::Object& matchPack = AddObjectMember(rootObject, L"matchPack");
+    SetString(matchPack, L"name", document.matchPack.name);
+    SetString(matchPack, L"description", document.matchPack.description);
+    SetString(matchPack, L"tags", document.matchPack.tags);
+
     JsonValue::Object& general = AddObjectMember(rootObject, L"general");
     SetString(general, L"sv_exp_weapon_under_test", document.general.weaponUnderTest);
     SetString(general, L"sv_exp_session_tag", document.general.sessionTag);
@@ -483,6 +488,12 @@ bool LoadProjectDocumentFromFile(const std::wstring& path, ProjectDocument& docu
     if (const JsonValue::Object* exportSettings = FindObject(rootObject, L"export")) {
         loaded.exportSettings.exportFolder = ReadStringValue(*exportSettings, L"folder", loaded.exportSettings.exportFolder);
         loaded.exportSettings.cfgFileName = EnsureCfgFileName(ReadStringValue(*exportSettings, L"fileName", loaded.exportSettings.cfgFileName));
+    }
+
+    if (const JsonValue::Object* matchPack = FindObject(rootObject, L"matchPack")) {
+        loaded.matchPack.name = ReadStringValue(*matchPack, L"name", loaded.matchPack.name);
+        loaded.matchPack.description = ReadStringValue(*matchPack, L"description", loaded.matchPack.description);
+        loaded.matchPack.tags = ReadStringValue(*matchPack, L"tags", loaded.matchPack.tags);
     }
 
     if (const JsonValue::Object* general = FindObject(rootObject, L"general")) {

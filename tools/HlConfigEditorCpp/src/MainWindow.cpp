@@ -147,6 +147,9 @@ enum ControlId : int {
     IDC_DUMMY_PRESET_VEST_HEADPROTECTED,
 
     IDC_MATCH_SUMMARY = 1350,
+    IDC_MATCH_PACK_NAME,
+    IDC_MATCH_PACK_DESCRIPTION,
+    IDC_MATCH_PACK_TAGS,
 
     IDC_MATCH_PRESET_DUEL_GLOCK = 1450,
     IDC_MATCH_PRESET_DUEL_357,
@@ -471,7 +474,10 @@ std::wstring BuildSuggestedCfgFileName(const hlcfg::ProjectDocument& document) {
     const hlcfg::ProjectDocument defaults = hlcfg::CreateDefaultProject();
     const std::wstring weaponUnderTest = hlcfg::Trimmed(document.general.weaponUnderTest);
 
-    std::wstring candidate = hlcfg::Trimmed(document.metadata.projectName);
+    std::wstring candidate = hlcfg::Trimmed(document.matchPack.name);
+    if (candidate.empty()) {
+        candidate = hlcfg::Trimmed(document.metadata.projectName);
+    }
     if (candidate.empty() || candidate == defaults.metadata.projectName) {
         if (weaponUnderTest == L"glock") {
             const std::wstring profileName = hlcfg::Trimmed(document.glock.profileName);
@@ -885,8 +891,16 @@ private:
         CreateLabel(page, L"Save .hlcfg.json files for editing. Quick Export writes a live-mod .cfg that HLDS can load with exec my_config.cfg.", 40, 255, 450, 40);
         CreateLabel(page, L"This build now covers weapon tuning, dummy settings, round rules, team rules, buy rules, and armor or helmet equipment.", 40, 295, 450, 30);
 
-        CreateGroupBox(page, L"What This Config Will Affect", 540, 300, 500, 165);
-        CreateMultiLineEdit(page, IDC_MATCH_SUMMARY, 560, 330, 450, 105, true);
+        CreateGroupBox(page, L"Match Pack Metadata", 20, 360, 500, 140);
+        CreateLabel(page, L"Pack name", 40, 395, 100, 20);
+        CreateEdit(page, IDC_MATCH_PACK_NAME, 150, 390, 330, 24);
+        CreateLabel(page, L"Description", 40, 430, 100, 20);
+        CreateEdit(page, IDC_MATCH_PACK_DESCRIPTION, 150, 425, 330, 24);
+        CreateLabel(page, L"Tags", 40, 465, 100, 20);
+        CreateEdit(page, IDC_MATCH_PACK_TAGS, 150, 460, 330, 24);
+
+        CreateGroupBox(page, L"What This Config Will Affect", 540, 300, 500, 200);
+        CreateMultiLineEdit(page, IDC_MATCH_SUMMARY, 560, 330, 450, 140, true);
     }
 
     void CreateGlockPage() {
@@ -1251,6 +1265,7 @@ private:
         CreateLabel(page, L"CFG file name", 40, 230, 120, 20);
         CreateEdit(page, IDC_EXPORT_FILE_NAME, 160, 225, 250, 24);
         CreateLabel(page, L"Quick Export writes <live mod root>\\<name>.cfg so HLDS can run exec <name>.cfg.", 430, 228, 560, 24);
+        CreateLabel(page, L"If Match Pack Metadata is filled in and the cfg goes into the live mod, export also writes match_packs\\<pack>.json.", 40, 255, 970, 20);
 
         CreateGroupBox(page, L"Actions", 20, 290, 1040, 95);
         CreateButton(page, L"Quick Export to Live Mod", IDC_QUICK_EXPORT_LIVE_MOD, 40, 320, 210, 24);
@@ -1309,6 +1324,7 @@ private:
 
     void MaybeRefreshSuggestedCfgFileName(int controlId) {
         if (controlId != IDC_PROJECT_NAME &&
+            controlId != IDC_MATCH_PACK_NAME &&
             controlId != IDC_SESSION_TAG &&
             controlId != IDC_WEAPON_UNDER_TEST &&
             controlId != IDC_GLOCK_PROFILE_NAME &&
@@ -1327,6 +1343,7 @@ private:
 
         hlcfg::ProjectDocument previewDocument = document_;
         previewDocument.metadata.projectName = GetTextValue(IDC_PROJECT_NAME);
+        previewDocument.matchPack.name = GetTextValue(IDC_MATCH_PACK_NAME);
         previewDocument.general.sessionTag = GetTextValue(IDC_SESSION_TAG);
         previewDocument.general.weaponUnderTest = GetWeaponSelection();
         previewDocument.glock.profileName = GetTextValue(IDC_GLOCK_PROFILE_NAME);
@@ -1446,12 +1463,18 @@ private:
 
         std::wstring successMessage = (quickExport ? L"Quick-exported cfg to:\n" : L"Exported cfg to:\n") + result.exportPath +
                                       L"\n\nLoad it in HLDS with:\n" + result.execCommand;
+        if (!result.matchPackPath.empty()) {
+            successMessage += L"\n\nWrote match pack metadata to:\n" + result.matchPackPath;
+        }
         if (!result.launcherCommand.empty()) {
             successMessage += L"\n\nLaunch it directly with:\n" + result.launcherCommand;
         }
 
         std::wstring statusText = std::wstring(actionLabel) + L" succeeded.\n\nWritten cfg:\n" + result.exportPath +
                                   L"\n\nExec command:\n" + result.execCommand;
+        if (!result.matchPackPath.empty()) {
+            statusText += L"\n\nMatch pack metadata:\n" + result.matchPackPath;
+        }
         if (!result.launcherCommand.empty()) {
             statusText += L"\n\nLauncher command:\n" + result.launcherCommand;
         }
@@ -1622,6 +1645,9 @@ private:
 
     std::wstring BuildMatchSummaryText() const {
         hlcfg::ProjectDocument preview = document_;
+        preview.matchPack.name = GetTextValue(IDC_MATCH_PACK_NAME);
+        preview.matchPack.description = GetTextValue(IDC_MATCH_PACK_DESCRIPTION);
+        preview.matchPack.tags = GetTextValue(IDC_MATCH_PACK_TAGS);
         preview.general.weaponUnderTest = GetWeaponSelection();
         preview.roundMode.enabled = GetCheckValue(IDC_ROUND_MODE);
         preview.roundMode.loadoutMode = GetComboSelectionValue(IDC_ROUND_LOADOUT_MODE);
@@ -1649,8 +1675,14 @@ private:
         const std::wstring weaponProfile = hlcfg::Trimmed(preview.roundMode.weaponProfile).empty()
                                                ? L"(none)"
                                                : hlcfg::Trimmed(preview.roundMode.weaponProfile);
+        const std::wstring packName = hlcfg::Trimmed(preview.matchPack.name).empty()
+                                          ? L"(none)"
+                                          : hlcfg::Trimmed(preview.matchPack.name);
 
         std::wstring summary;
+        summary += L"Match pack: ";
+        summary += packName;
+        summary += L"\r\n";
         summary += L"Round mode: ";
         summary += preview.roundMode.enabled ? L"enabled" : L"off";
         summary += L"\r\nTeam round mode: ";
@@ -1686,6 +1718,9 @@ private:
         SetTextValue(IDC_PROJECT_NAME, document_.metadata.projectName);
         SetTextValue(IDC_PROJECT_AUTHOR, document_.metadata.author);
         SetTextValue(IDC_PROJECT_NOTES, document_.metadata.notes);
+        SetTextValue(IDC_MATCH_PACK_NAME, document_.matchPack.name);
+        SetTextValue(IDC_MATCH_PACK_DESCRIPTION, document_.matchPack.description);
+        SetTextValue(IDC_MATCH_PACK_TAGS, document_.matchPack.tags);
         SetWeaponSelection(document_.general.weaponUnderTest);
         SetTextValue(IDC_SESSION_TAG, document_.general.sessionTag);
         Button_SetCheck(FindControl(IDC_DEBUG_WEAPON_LOG), document_.general.debugWeaponLog ? BST_CHECKED : BST_UNCHECKED);
@@ -1848,6 +1883,9 @@ private:
         document_.metadata.projectName = GetTextValue(IDC_PROJECT_NAME);
         document_.metadata.author = GetTextValue(IDC_PROJECT_AUTHOR);
         document_.metadata.notes = GetTextValue(IDC_PROJECT_NOTES);
+        document_.matchPack.name = GetTextValue(IDC_MATCH_PACK_NAME);
+        document_.matchPack.description = GetTextValue(IDC_MATCH_PACK_DESCRIPTION);
+        document_.matchPack.tags = GetTextValue(IDC_MATCH_PACK_TAGS);
         document_.general.weaponUnderTest = GetWeaponSelection();
         document_.general.sessionTag = GetTextValue(IDC_SESSION_TAG);
         document_.general.debugWeaponLog = GetCheckValue(IDC_DEBUG_WEAPON_LOG);
@@ -2432,6 +2470,9 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
     duel357.exportSettings.exportFolder = exportRoot.wstring();
     duel357.exportSettings.cfgFileName = L"editor_duel_357.cfg";
     hlcfg::ApplyMatchPreset(duel357, L"duel_357");
+    duel357.matchPack.name = L"duel_357";
+    duel357.matchPack.description = L"Editor self-test duel 357 pack";
+    duel357.matchPack.tags = L"duel,357";
 
     const std::filesystem::path duel357ProjectPath = root / L"editor_duel_357.hlcfg.json";
     if (!hlcfg::SaveProjectDocumentToFile(duel357, duel357ProjectPath.wstring(), errorMessage)) {
@@ -2451,6 +2492,10 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
     if (!ValidateContains(duel357Export.cfgText, L"sv_exp_round_mode 1") ||
         !ValidateContains(duel357Export.cfgText, L"sv_exp_round_loadout_mode \"357\"") ||
         !ValidateContains(duel357Export.cfgText, L"sv_exp_round_weapon_profile \"duel_357\"") ||
+        duel357Export.matchPackPath.empty() ||
+        !ValidateContains(duel357Export.matchPackText, L"\"name\": \"duel_357\"") ||
+        !ValidateContains(duel357Export.matchPackText, L"\"cfg\": \"editor_duel_357.cfg\"") ||
+        !std::filesystem::exists(std::filesystem::path(duel357Export.matchPackPath)) ||
         duel357Export.execCommand != L"exec editor_duel_357.cfg" ||
         duel357Export.launcherCommand != L"scripts\\play-hlserver-testbed-direct.bat -CfgProfile \"editor_duel_357.cfg\"") {
         return 1;
@@ -2462,6 +2507,9 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
     teamMp5.exportSettings.exportFolder = exportRoot.wstring();
     teamMp5.exportSettings.cfgFileName = L"editor_team_mp5.cfg";
     hlcfg::ApplyMatchPreset(teamMp5, L"team_mp5");
+    teamMp5.matchPack.name = L"team_mp5";
+    teamMp5.matchPack.description = L"Editor self-test team MP5 pack";
+    teamMp5.matchPack.tags = L"team,mp5";
 
     const std::filesystem::path teamMp5ProjectPath = root / L"editor_team_mp5.hlcfg.json";
     if (!hlcfg::SaveProjectDocumentToFile(teamMp5, teamMp5ProjectPath.wstring(), errorMessage)) {
@@ -2493,6 +2541,9 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
     buyArmor.exportSettings.exportFolder = exportRoot.wstring();
     buyArmor.exportSettings.cfgFileName = L"editor_buy_armor.cfg";
     hlcfg::ApplyMatchPreset(buyArmor, L"buy_test");
+    buyArmor.matchPack.name = L"buy_test";
+    buyArmor.matchPack.description = L"Editor self-test buy and armor pack";
+    buyArmor.matchPack.tags = L"buy,armor";
 
     const std::filesystem::path buyArmorProjectPath = root / L"editor_buy_armor.hlcfg.json";
     if (!hlcfg::SaveProjectDocumentToFile(buyArmor, buyArmorProjectPath.wstring(), errorMessage)) {
@@ -2534,12 +2585,15 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
     summary << L"duel357_project=" << duel357ProjectPath.wstring() << L"\n";
     summary << L"duel357_cfg=" << duel357Export.exportPath << L"\n";
     summary << L"duel357_exec=" << duel357Export.execCommand << L"\n";
+    summary << L"duel357_pack=" << duel357Export.matchPackPath << L"\n";
     summary << L"team_mp5_project=" << teamMp5ProjectPath.wstring() << L"\n";
     summary << L"team_mp5_cfg=" << teamMp5Export.exportPath << L"\n";
     summary << L"team_mp5_exec=" << teamMp5Export.execCommand << L"\n";
+    summary << L"team_mp5_pack=" << teamMp5Export.matchPackPath << L"\n";
     summary << L"buy_armor_project=" << buyArmorProjectPath.wstring() << L"\n";
     summary << L"buy_armor_cfg=" << buyArmorExport.exportPath << L"\n";
     summary << L"buy_armor_exec=" << buyArmorExport.execCommand << L"\n";
+    summary << L"buy_armor_pack=" << buyArmorExport.matchPackPath << L"\n";
 
     if (!WriteSummaryFile(root / L"selftest-summary.txt", summary.str())) {
         return 1;

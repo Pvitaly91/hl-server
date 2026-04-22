@@ -198,6 +198,48 @@ Practical examples:
 
 One exported full-match config was verified live in a real client-attached session on `2026-04-22`: `exp_cfg_apply editor_buy_armor.cfg` flipped round, buy, armor, and helmet cvars on the running server, including `sv_exp_round_mode "1"`, `sv_exp_buy_mode "1"`, `sv_exp_armor_mode "1"`, and `sv_exp_helmet_mode "1"`.
 
+## Match Config Packs
+
+Match packs are a thin usability layer over the existing cfg workflow. They do not replace plain cfg files. Each pack is simple JSON metadata plus a referenced cfg, stored under:
+
+- `<HalfLifeRoot>\hlserver_testbed\match_packs\`
+
+The built-in checked-in starter packs currently include:
+
+- `duel_glock`
+- `duel_357`
+- `team_mp5_buy`
+- `team_shotgun`
+- `armor_test`
+- `aim_lab`
+
+Each pack describes at least:
+
+- pack name
+- description
+- cfg path
+- recommended weapon under test
+- recommended target profile when useful
+- recommended mode/tags/notes
+
+Live commands:
+
+- `exp_matchcfg_list`
+- `exp_matchcfg_apply <name>`
+- `exp_matchcfg_status`
+
+Recommended daily flow:
+
+1. Start a live session.
+2. Run `exp_matchcfg_list`.
+3. Apply a starter pack such as `exp_matchcfg_apply duel_glock` or `exp_matchcfg_apply team_mp5_buy`.
+4. Inspect the resolved state with `exp_matchcfg_status`, `exp_cfg_status`, and the normal round/team/buy status commands.
+5. If you want to leave pack mode and go back to a plain cfg, use `exp_cfg_apply my_match.cfg` or legacy `exec my_match.cfg`.
+
+The native editor now understands match-pack metadata too. If the `General` page includes a pack name and the cfg is exported into the live mod, the editor also writes a sidecar JSON file into `match_packs\` so that exported configs can be reused through `exp_matchcfg_apply`.
+
+One real client-attached session on `2026-04-22` verified the full pack loop on `crossfire`: `exp_matchcfg_list` enumerated six starter packs, `exp_matchcfg_apply duel_glock` switched the server into a round-based Glock duel, `exp_matchcfg_apply team_mp5_buy` switched the same live server into a team/buy pack, and a later `exp_cfg_apply editor_buy_armor.cfg` proved the older direct cfg path still remained usable afterward.
+
 Integration provenance for this recommended path is recorded in [docs/stable-live-lab-state.md](/D:/DEV/CPP/HL-Server/docs/stable-live-lab-state.md).
 
 Live lab console commands:
@@ -205,6 +247,9 @@ Live lab console commands:
 - `exp_cfg_apply <cfg_name_or_path>` applies a cfg from the live mod root or `cfg_profiles\` fallback.
 - `exp_cfg_reload` re-executes the currently tracked cfg without restarting the session.
 - `exp_cfg_status` prints whether cfg-driven mode is active, which cfg is tracked, and when it was last applied.
+- `exp_matchcfg_list` prints the available match packs under `<HalfLifeRoot>\hlserver_testbed\match_packs\`.
+- `exp_matchcfg_apply <name>` resolves the pack metadata, applies the referenced cfg, and records the active pack metadata for later status/debugging.
+- `exp_matchcfg_status` prints the current active pack, pack metadata, and the match-pack directory scan state.
 - `exp_lab_apply <cfg_name_or_path>` applies the cfg and then respawns the current target with a single summary.
 - `exp_target_spawn` enables and spawns the standing dummy.
 - `exp_target_clear` removes the standing dummy and disables automatic respawn.

@@ -1,0 +1,10 @@
+{
+  "name": "team_shotgun",
+  "description": "Short-range team-round pack with deterministic shotgun loadouts and light starting armor.",
+  "cfg": "match_packs/team_shotgun.cfg",
+  "weapon_under_test": "shotgun",
+  "target_profile": "",
+  "mode": "team_round",
+  "tags": "team,shotgun,round",
+  "notes": "Useful for close-range lethality checks without buy-phase complexity."
+}

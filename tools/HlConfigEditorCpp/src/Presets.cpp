@@ -397,12 +397,18 @@ void ApplyMatchPreset(ProjectDocument& document, const std::wstring& presetName)
     ApplyTeamRoundDefaults(document);
     ApplyBuyDefaults(document);
     ApplyArmorEquipmentDefaults(document);
+    document.matchPack.name.clear();
+    document.matchPack.description.clear();
+    document.matchPack.tags.clear();
 
     if (presetName == L"duel_glock") {
         ApplyGlockPreset(document, L"cs_tight");
         document.roundMode.enabled = true;
         document.roundMode.weaponProfile = L"duel_glock";
         document.roundMode.loadoutMode = L"glock";
+        document.matchPack.name = L"duel_glock";
+        document.matchPack.description = L"1v1 Glock duel pack";
+        document.matchPack.tags = L"duel,glock";
         return;
     }
 
@@ -411,6 +417,9 @@ void ApplyMatchPreset(ProjectDocument& document, const std::wstring& presetName)
         document.roundMode.enabled = true;
         document.roundMode.weaponProfile = L"duel_357";
         document.roundMode.loadoutMode = L"357";
+        document.matchPack.name = L"duel_357";
+        document.matchPack.description = L"1v1 357 duel pack";
+        document.matchPack.tags = L"duel,357";
         return;
     }
 
@@ -425,6 +434,9 @@ void ApplyMatchPreset(ProjectDocument& document, const std::wstring& presetName)
         document.teamRound.team2Health = L"100.0";
         document.teamRound.team1Armor = L"0.0";
         document.teamRound.team2Armor = L"0.0";
+        document.matchPack.name = L"team_mp5";
+        document.matchPack.description = L"Simple team MP5 round pack";
+        document.matchPack.tags = L"team,mp5";
         return;
     }
 
@@ -439,6 +451,9 @@ void ApplyMatchPreset(ProjectDocument& document, const std::wstring& presetName)
         document.teamRound.team2Health = L"120.0";
         document.teamRound.team1Armor = L"25.0";
         document.teamRound.team2Armor = L"25.0";
+        document.matchPack.name = L"team_shotgun";
+        document.matchPack.description = L"Simple team shotgun round pack";
+        document.matchPack.tags = L"team,shotgun";
         return;
     }
 
@@ -452,6 +467,9 @@ void ApplyMatchPreset(ProjectDocument& document, const std::wstring& presetName)
         document.armorEquipment.helmetMode = true;
         document.armorEquipment.helmetStartEnabled = true;
         document.armorEquipment.helmetHeadshotProtection = true;
+        document.matchPack.name = L"armor_test";
+        document.matchPack.description = L"Armor and helmet validation pack";
+        document.matchPack.tags = L"armor,helmet,357";
         return;
     }
 
@@ -465,6 +483,9 @@ void ApplyMatchPreset(ProjectDocument& document, const std::wstring& presetName)
         document.buy.freezeOnly = true;
         document.armorEquipment.armorMode = true;
         document.armorEquipment.helmetMode = true;
+        document.matchPack.name = L"buy_test";
+        document.matchPack.description = L"Freeze-time buy prototype pack";
+        document.matchPack.tags = L"buy,armor,mp5";
         return;
     }
 }

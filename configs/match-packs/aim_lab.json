@@ -1,0 +1,10 @@
+{
+  "name": "aim_lab",
+  "description": "Live-lab target-dummy pack for quick aim and damage checks without round rules.",
+  "cfg": "match_packs/aim_lab.cfg",
+  "weapon_under_test": "glock",
+  "target_profile": "vest_headprotected",
+  "mode": "aim_lab",
+  "tags": "target,dummy,lab",
+  "notes": "Keeps round, team, and buy systems off while enabling the persisted live-lab dummy."
+}

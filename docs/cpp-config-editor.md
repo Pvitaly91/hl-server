@@ -57,6 +57,14 @@ The editor project now covers more than weapon tuning:
 
 The `General` page also shows a small "What This Config Will Affect" summary so you can see at a glance whether the current project enables round mode, team mode, buy mode, armor, helmet, and which main loadout it implies.
 
+The same `General` page now also carries optional match-pack metadata:
+
+- pack name
+- description
+- tags
+
+When the pack name is filled and the cfg is exported into the live mod root, the editor writes a sidecar JSON file into `<HalfLifeRoot>\hlserver_testbed\match_packs\` so the runtime can apply that config through `exp_matchcfg_apply <pack-name>`.
+
 In the simple path, the editor writes directly into:
 
 ```text
@@ -95,6 +103,14 @@ The `Export` tab now emphasizes the simple live-mod workflow first:
 - Exported cfgs now include the current round, team-round, buy, armor, and helmet sections when those settings are present in the project, so one exported file can represent a full live match setup.
 
 The default cfg filename is derived from the current project/config name so the common path does not start from a generic placeholder. Example defaults include `editor_glock_simple.cfg`, `editor_mp5_simple.cfg`, `editor_357_test.cfg`, and `editor_shotgun_test.cfg`.
+
+If the project includes match-pack metadata and the export target is the live mod root, the editor also writes:
+
+```text
+<HalfLifeRoot>\hlserver_testbed\match_packs\<pack-name>.json
+```
+
+That sidecar JSON references the exported cfg instead of inventing a second gameplay config format. The match-pack layer therefore stays compatible with `exec`, `exp_cfg_apply`, and the current cfg-driven live launch path.
 
 ## Advanced and backward-compatible workflow
 
@@ -256,6 +272,24 @@ Built-in match templates now provide quick starting points:
 - `armor_test`
 - `buy_test`
 
+## Match-pack aware export
+
+The runtime now supports named match packs under `<HalfLifeRoot>\hlserver_testbed\match_packs\`. The editor does not try to become a launcher, but it can produce pack-ready exports cleanly:
+
+1. Fill `Pack name` on the `General` page.
+2. Optionally fill `Description` and `Tags`.
+3. Configure weapon, target, round, team, buy, and armor settings as usual.
+4. `Quick Export to Live Mod`.
+5. The editor writes the cfg and, when the export target is the live mod root, a sidecar JSON pack file.
+6. In the running server, apply it with `exp_matchcfg_apply <pack-name>`.
+
+That means one editor project can now drive both:
+
+- the plain cfg path: `exp_cfg_apply my_match.cfg` or `exec my_match.cfg`
+- the named-pack path: `exp_matchcfg_apply my_pack`
+
+The runtime also ships starter packs such as `duel_glock`, `duel_357`, `team_mp5_buy`, `team_shotgun`, `armor_test`, and `aim_lab`. See [docs/match-config-packs.md](/D:/DEV/CPP/HL-Server/docs/match-config-packs.md) for the runtime-side command flow and file layout.
+
 Practical usage examples:
 
 1. Duel config:
@@ -319,6 +353,7 @@ The self-test:
 
 - saves example `.hlcfg.json` projects under `<repo-root>\artifacts\HlConfigEditorCppSelfTest\`
 - exports example cfgs such as `editor_glock_simple.cfg`, `editor_mp5_simple.cfg`, `editor_357_test.cfg`, `editor_shotgun_test.cfg`, `editor_duel_357.cfg`, `editor_team_mp5.cfg`, and `editor_buy_armor.cfg`
+- writes sidecar match-pack JSON files such as `duel_357.json`, `team_mp5.json`, and `buy_test.json` when the project includes pack metadata and the live mod root is available
 - writes the summary file to `<repo-root>\artifacts\HlConfigEditorCppSelfTest\selftest-summary.txt`
 - records the expected simple exec commands, for example `exec editor_glock_simple.cfg`, `exec editor_357_test.cfg`, `exec editor_team_mp5.cfg`, and `exec editor_buy_armor.cfg`
 

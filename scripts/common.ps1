@@ -1342,6 +1342,13 @@ function Backup-TestbedLiveModCfgProfiles {
         $preservedContent = $true
     }
 
+    $sourcePath = Join-Path $modRootPath "match_packs"
+    if (Test-Path -LiteralPath $sourcePath) {
+        Ensure-Directory -Path $backupRoot
+        Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $backupRoot "match_packs") -Recurse -Force
+        $preservedContent = $true
+    }
+
     foreach ($pattern in @("*.cfg", "*.hlcfg.json", "HlConfigEditorCpp.exe", "HlConfigEditorCpp.pdb")) {
         $matchingFiles = Get-ChildItem -LiteralPath $modRootPath -Filter $pattern -File -Force -ErrorAction SilentlyContinue
         foreach ($matchingFile in $matchingFiles) {
@@ -1393,9 +1400,34 @@ function Restore-TestbedLiveModCfgProfiles {
         Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Recurse -Force
     }
 
+    $sourcePath = Join-Path $resolvedBackupRoot "match_packs"
+    if (Test-Path -LiteralPath $sourcePath) {
+        $destinationPath = Join-Path $destinationRoot "match_packs"
+        Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Recurse -Force
+    }
+
     $rootFiles = Get-ChildItem -LiteralPath $resolvedBackupRoot -File -Force -ErrorAction SilentlyContinue
     foreach ($rootFile in $rootFiles) {
         Copy-Item -LiteralPath $rootFile.FullName -Destination (Join-Path $destinationRoot $rootFile.Name) -Force
+    }
+}
+
+function Sync-TestbedStarterMatchPacks {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ModRoot
+    )
+
+    $sourceRoot = Join-RepoPath "configs\\match-packs"
+    if (-not (Test-Path -LiteralPath $sourceRoot -PathType Container)) {
+        return
+    }
+
+    $destinationRoot = Join-Path (Get-FullPath -Path $ModRoot) "match_packs"
+    Ensure-Directory -Path $destinationRoot
+
+    Get-ChildItem -LiteralPath $sourceRoot -Force | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $destinationRoot -Recurse -Force
     }
 }
 
@@ -2474,6 +2506,7 @@ function Install-TestbedLiveMod {
         Reset-ManagedLiveModDirectory -Path $modRoot -ClientRoot $clientRoot -GameDirName $gameDirName | Out-Null
         Ensure-Directory -Path (Join-Path $modRoot "dlls")
         Ensure-Directory -Path (Join-Path $modRoot "logs")
+        Sync-TestbedStarterMatchPacks -ModRoot $modRoot
         Restore-TestbedLiveModCfgProfiles -ModRoot $modRoot -BackupRoot $cfgProfilesBackupRoot
 
         Copy-Item -LiteralPath $BuiltDllPath -Destination (Join-Path $modRoot "dlls\hl.dll") -Force

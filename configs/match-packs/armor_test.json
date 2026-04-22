@@ -1,0 +1,10 @@
+{
+  "name": "armor_test",
+  "description": "Round-based 357 armor and helmet validation pack with buying left on for equipment toggles.",
+  "cfg": "match_packs/armor_test.cfg",
+  "weapon_under_test": "357",
+  "target_profile": "",
+  "mode": "duel_round",
+  "tags": "armor,helmet,357,buy",
+  "notes": "Designed for head protection and armor-drain checks rather than final balance."
+}

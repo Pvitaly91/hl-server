@@ -10,6 +10,7 @@ struct EnvironmentPaths {
     std::wstring repoRoot;
     std::wstring liveModRoot;
     std::wstring stagedLiveModRoot;
+    std::wstring matchPacksRoot;
     std::wstring logsRoot;
     std::wstring defaultExportFolder;
 };
@@ -20,6 +21,8 @@ struct ExportResult {
     std::wstring cfgProfile;
     std::wstring launcherCommand;
     std::wstring exportPath;
+    std::wstring matchPackPath;
+    std::wstring matchPackText;
 };
 
 EnvironmentPaths ResolveEnvironmentPaths(const std::wstring& moduleFilePath);

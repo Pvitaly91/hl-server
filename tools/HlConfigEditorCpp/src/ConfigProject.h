@@ -15,6 +15,12 @@ struct ExportSettings {
     std::wstring cfgFileName;
 };
 
+struct MatchPackConfig {
+    std::wstring name;
+    std::wstring description;
+    std::wstring tags;
+};
+
 struct GeneralConfig {
     std::wstring weaponUnderTest;
     std::wstring sessionTag;
@@ -178,11 +184,12 @@ struct ArmorEquipmentConfig {
 };
 
 struct ProjectDocument {
-    static constexpr int kSchemaVersion = 2;
+    static constexpr int kSchemaVersion = 3;
 
     int schemaVersion = kSchemaVersion;
     ProjectMetadata metadata;
     ExportSettings exportSettings;
+    MatchPackConfig matchPack;
     GeneralConfig general;
     GlockConfig glock;
     Mp5Config mp5;

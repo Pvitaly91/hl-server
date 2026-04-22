@@ -1,0 +1,10 @@
+{
+  "name": "duel_357",
+  "description": "1v1 precision-focused 357 duel pack for first-shot and headshot testing.",
+  "cfg": "match_packs/duel_357.cfg",
+  "weapon_under_test": "357",
+  "target_profile": "",
+  "mode": "duel_round",
+  "tags": "duel,357,precision",
+  "notes": "Keeps the loop simple: round mode on, team mode and buy mode off."
+}

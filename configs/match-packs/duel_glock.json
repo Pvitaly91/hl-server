@@ -1,0 +1,10 @@
+{
+  "name": "duel_glock",
+  "description": "1v1 no-respawn Glock duel with a tighter first-shot profile.",
+  "cfg": "match_packs/duel_glock.cfg",
+  "weapon_under_test": "glock",
+  "target_profile": "",
+  "mode": "duel_round",
+  "tags": "duel,glock,round",
+  "notes": "Uses direct round loadout mode with buy and team rules disabled."
+}

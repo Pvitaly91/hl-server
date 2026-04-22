@@ -14,6 +14,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <math.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -66,6 +67,7 @@ const char *kLabDummyTargetSpotsDirectoryName = "target_spots";
 const char *kTeamSpawnSpotStorageDisk = "disk";
 const char *kTeamSpawnSpotStorageSession = "session";
 const char *kTeamSpawnSpotsDirectoryName = "team_spawns";
+const char *kMatchConfigPacksDirectoryName = "match_packs";
 const float kRoundEndHoldSeconds = 0.25f;
 const float kDefaultRoundFreezeTime = 3.0f;
 const float kDefaultRoundRestartDelay = 3.0f;
@@ -89,6 +91,12 @@ const float kDefaultBuyCostShotgun = 1700.0f;
 const char *kTeamSpawnSourceSavedSpot = "saved_spot";
 const char *kTeamSpawnSourceDmSpawn = "dm_spawn";
 const char *kTeamSpawnCandidateDefault = "default";
+const size_t kMaxMatchConfigPackNameLength = 64;
+const size_t kMaxMatchConfigPackDescriptionLength = 256;
+const size_t kMaxMatchConfigPackModeLength = 64;
+const size_t kMaxMatchConfigPackTagsLength = 128;
+const size_t kMaxMatchConfigPackNotesLength = 256;
+const size_t kMaxMatchConfigPackFileSize = 64 * 1024;
 
 struct LiveCfgState
 {
@@ -218,6 +226,38 @@ struct TeamSpawnPlacementCandidate
     float forwardOffset;
     float rightOffset;
     float upOffset;
+};
+
+struct MatchConfigPackRecord
+{
+    bool valid;
+    char name[kMaxMatchConfigPackNameLength];
+    char description[kMaxMatchConfigPackDescriptionLength];
+    char cfgRequest[kMaxLiveCfgExecPathLength];
+    char recommendedWeapon[32];
+    char recommendedTargetProfile[64];
+    char recommendedMode[kMaxMatchConfigPackModeLength];
+    char tags[kMaxMatchConfigPackTagsLength];
+    char notes[kMaxMatchConfigPackNotesLength];
+    char filePath[kMaxLiveCfgPathLength];
+};
+
+struct MatchConfigPackState
+{
+    bool active;
+    char name[kMaxMatchConfigPackNameLength];
+    char description[kMaxMatchConfigPackDescriptionLength];
+    char cfgRequest[kMaxLiveCfgRequestLength];
+    char cfgExecPath[kMaxLiveCfgExecPathLength];
+    char cfgResolvedPath[kMaxLiveCfgPathLength];
+    char recommendedWeapon[32];
+    char recommendedTargetProfile[64];
+    char recommendedMode[kMaxMatchConfigPackModeLength];
+    char tags[kMaxMatchConfigPackTagsLength];
+    char notes[kMaxMatchConfigPackNotesLength];
+    char packFilePath[kMaxLiveCfgPathLength];
+    char appliedAt[64];
+    char lastOverrideReason[128];
 };
 
 struct TeamSpawnRuntimeStatus
@@ -530,6 +570,9 @@ char g_teamSpawnSpotsLoadFailure[kMaxLabDummySpotFileFailureLength] = "";
 TeamSpawnRuntimeStatus g_teamSpawnLastApplied[3] = {};
 TeamSpawnFailureInfo g_teamSpawnLastFailure[3] = {};
 char g_teamSpawnLastFailureAt[3][64] = {};
+MatchConfigPackState g_matchConfigPackState = {};
+char g_matchConfigPacksPath[kMaxLiveCfgPathLength] = "";
+char g_matchConfigPacksLastFailure[kMaxLabDummySpotFileFailureLength] = "";
 LabDummyTransformMemory g_glockLabDummyLastGoodTransform = {};
 LabDummyFailureInfo g_glockLabDummyLastSpawnFailure = {};
 char g_glockLabDummyLastFailureAt[64] = "";
@@ -566,6 +609,19 @@ const TeamSpawnSavedSpotRecord *GetDefaultTeamSpawnSavedSpot(int teamId);
 void BuildTeamSpawnNamesSummary(int teamId, char *buffer, size_t bufferSize);
 TeamSpawnSavedSpotRecord *UpsertTeamSpawnSavedSpot(int teamId, const char *spotName, const Vector &origin, const Vector &angles, char *failureReason, size_t failureReasonSize);
 bool RemoveTeamSpawnSavedSpot(int teamId, const char *spotName, TeamSpawnSavedSpotRecord *removedSpot, char *failureReason, size_t failureReasonSize);
+void PrintMatchConfigPackStatus();
+void FormatFutureGameplayTimestamp(char *buffer, size_t bufferSize);
+const char *GetValueOrFallback(const char *value, const char *fallback);
+void ClearMatchConfigPackState();
+void ClearActiveMatchConfigPackState(const char *reason);
+void RememberActiveMatchConfigPack(const MatchConfigPackRecord &pack, const ResolvedLiveCfgSelection &selection);
+bool TryResolveMatchConfigPackName(const char *requestedName, char *buffer, size_t bufferSize, char *failureReason, size_t failureReasonSize);
+bool TryBuildMatchConfigPacksDirectoryPath(char *buffer, size_t bufferSize, char *failureReason, size_t failureReasonSize);
+bool TryBuildMatchConfigPackPath(const char *packName, char *buffer, size_t bufferSize, char *failureReason, size_t failureReasonSize);
+bool TryParseMatchConfigPackFileText(const std::string &jsonText, const char *fallbackName, MatchConfigPackRecord *pack, std::string *failureReason);
+bool LoadMatchConfigPackFile(const char *filePath, const char *fallbackName, MatchConfigPackRecord *pack, char *failureReason, size_t failureReasonSize);
+bool LoadMatchConfigPackByName(const char *packName, MatchConfigPackRecord *pack, char *failureReason, size_t failureReasonSize);
+bool EnumerateMatchConfigPacks(std::vector<MatchConfigPackRecord> *packs, char *failureReason, size_t failureReasonSize);
 bool IsBuyItemTokenSupported(const char *weaponToken);
 const char *GetResolvedBuyItemToken(const char *weaponToken);
 bool TryResolveDefaultBuyPlayer(CBasePlayer **ppPlayer, char *failureReason, size_t failureReasonSize);
@@ -874,6 +930,53 @@ void ClearAllTeamSpawnSavedSpots()
 
     g_teamSpawnSpotsPath[0] = '\0';
     g_teamSpawnSpotsLoadFailure[0] = '\0';
+}
+
+void ClearMatchConfigPackState()
+{
+    memset(&g_matchConfigPackState, 0, sizeof(g_matchConfigPackState));
+    g_matchConfigPacksPath[0] = '\0';
+    g_matchConfigPacksLastFailure[0] = '\0';
+}
+
+void ClearActiveMatchConfigPackState(const char *reason)
+{
+    const bool hadActivePack = g_matchConfigPackState.active;
+    g_matchConfigPackState.active = false;
+    g_matchConfigPackState.name[0] = '\0';
+    g_matchConfigPackState.description[0] = '\0';
+    g_matchConfigPackState.cfgRequest[0] = '\0';
+    g_matchConfigPackState.cfgExecPath[0] = '\0';
+    g_matchConfigPackState.cfgResolvedPath[0] = '\0';
+    g_matchConfigPackState.recommendedWeapon[0] = '\0';
+    g_matchConfigPackState.recommendedTargetProfile[0] = '\0';
+    g_matchConfigPackState.recommendedMode[0] = '\0';
+    g_matchConfigPackState.tags[0] = '\0';
+    g_matchConfigPackState.notes[0] = '\0';
+    g_matchConfigPackState.packFilePath[0] = '\0';
+    g_matchConfigPackState.appliedAt[0] = '\0';
+    if (hadActivePack || (reason != NULL && reason[0] != '\0'))
+    {
+        strncpy_s(g_matchConfigPackState.lastOverrideReason, sizeof(g_matchConfigPackState.lastOverrideReason), GetValueOrFallback(reason, ""), _TRUNCATE);
+    }
+}
+
+void RememberActiveMatchConfigPack(const MatchConfigPackRecord &pack, const ResolvedLiveCfgSelection &selection)
+{
+    g_matchConfigPackState.active = true;
+    strncpy_s(g_matchConfigPackState.name, sizeof(g_matchConfigPackState.name), pack.name, _TRUNCATE);
+    strncpy_s(g_matchConfigPackState.description, sizeof(g_matchConfigPackState.description), pack.description, _TRUNCATE);
+    strncpy_s(g_matchConfigPackState.cfgRequest, sizeof(g_matchConfigPackState.cfgRequest), selection.requestedPath, _TRUNCATE);
+    strncpy_s(g_matchConfigPackState.cfgExecPath, sizeof(g_matchConfigPackState.cfgExecPath), selection.execPath, _TRUNCATE);
+    strncpy_s(g_matchConfigPackState.cfgResolvedPath, sizeof(g_matchConfigPackState.cfgResolvedPath), selection.resolvedPath, _TRUNCATE);
+    strncpy_s(g_matchConfigPackState.recommendedWeapon, sizeof(g_matchConfigPackState.recommendedWeapon), pack.recommendedWeapon, _TRUNCATE);
+    strncpy_s(g_matchConfigPackState.recommendedTargetProfile, sizeof(g_matchConfigPackState.recommendedTargetProfile), pack.recommendedTargetProfile, _TRUNCATE);
+    strncpy_s(g_matchConfigPackState.recommendedMode, sizeof(g_matchConfigPackState.recommendedMode), pack.recommendedMode, _TRUNCATE);
+    strncpy_s(g_matchConfigPackState.tags, sizeof(g_matchConfigPackState.tags), pack.tags, _TRUNCATE);
+    strncpy_s(g_matchConfigPackState.notes, sizeof(g_matchConfigPackState.notes), pack.notes, _TRUNCATE);
+    strncpy_s(g_matchConfigPackState.packFilePath, sizeof(g_matchConfigPackState.packFilePath), pack.filePath, _TRUNCATE);
+    FormatFutureGameplayTimestamp(g_matchConfigPackState.appliedAt, sizeof(g_matchConfigPackState.appliedAt));
+    g_matchConfigPackState.lastOverrideReason[0] = '\0';
 }
 
 void AppendLabDummyFailureAttempt(char *buffer, size_t bufferSize, const LabDummyFailureInfo &failure)
@@ -7577,6 +7680,527 @@ void LoadTeamSpawnSpotsForCurrentMap()
     }
 }
 
+void BuildMatchConfigPackFallbackName(const char *filePath, char *buffer, size_t bufferSize)
+{
+    if (buffer == NULL || bufferSize == 0)
+    {
+        return;
+    }
+
+    buffer[0] = '\0';
+    if (filePath == NULL || filePath[0] == '\0')
+    {
+        return;
+    }
+
+    const char *fileName = strrchr(filePath, '\\');
+    fileName = fileName != NULL ? fileName + 1 : filePath;
+    const char *forwardSlash = strrchr(fileName, '/');
+    if (forwardSlash != NULL)
+    {
+        fileName = forwardSlash + 1;
+    }
+
+    size_t length = strlen(fileName);
+    const char *extension = strrchr(fileName, '.');
+    if (extension != NULL && extension > fileName)
+    {
+        length = (size_t)(extension - fileName);
+    }
+
+    if (length >= bufferSize)
+    {
+        length = bufferSize - 1;
+    }
+
+    strncpy_s(buffer, bufferSize, fileName, length);
+    buffer[length] = '\0';
+}
+
+bool TryResolveMatchConfigPackName(const char *requestedName, char *buffer, size_t bufferSize, char *failureReason, size_t failureReasonSize)
+{
+    if (buffer == NULL || bufferSize == 0)
+    {
+        return false;
+    }
+
+    buffer[0] = '\0';
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    char trimmedName[kMaxMatchConfigPackNameLength];
+    TrimCfgRequestString(requestedName, trimmedName, sizeof(trimmedName));
+    if (trimmedName[0] == '\0')
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "match pack name cannot be empty");
+        }
+        return false;
+    }
+
+    if (strlen(trimmedName) >= bufferSize)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "match pack name \"%s\" is too long (max %u characters)",
+                trimmedName,
+                (unsigned int)(bufferSize - 1));
+        }
+        return false;
+    }
+
+    for (const char *cursor = trimmedName; *cursor != '\0'; ++cursor)
+    {
+        const unsigned char ch = (unsigned char)(*cursor);
+        if (ch < 32 || *cursor == '"' || *cursor == '\\' || *cursor == '/' || *cursor == ':' || *cursor == '*' || *cursor == '?' || *cursor == '<' || *cursor == '>' || *cursor == '|')
+        {
+            if (failureReason != NULL && failureReasonSize > 0)
+            {
+                _snprintf_s(
+                    failureReason,
+                    failureReasonSize,
+                    _TRUNCATE,
+                    "match pack name \"%s\" contains unsupported characters",
+                    trimmedName);
+            }
+            return false;
+        }
+    }
+
+    strncpy_s(buffer, bufferSize, trimmedName, _TRUNCATE);
+    return true;
+}
+
+bool TryBuildMatchConfigPacksDirectoryPath(char *buffer, size_t bufferSize, char *failureReason, size_t failureReasonSize)
+{
+    if (buffer == NULL || bufferSize == 0)
+    {
+        return false;
+    }
+
+    buffer[0] = '\0';
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    char modRoot[kMaxLiveCfgPathLength];
+    if (!TryGetLiveModRootPath(modRoot, sizeof(modRoot)))
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "could not resolve the active hlserver_testbed mod root from hl.dll");
+        }
+        return false;
+    }
+
+    _snprintf_s(buffer, bufferSize, _TRUNCATE, "%s\\%s", modRoot, kMatchConfigPacksDirectoryName);
+    return buffer[0] != '\0';
+}
+
+bool TryBuildMatchConfigPackPath(const char *packName, char *buffer, size_t bufferSize, char *failureReason, size_t failureReasonSize)
+{
+    if (buffer == NULL || bufferSize == 0)
+    {
+        return false;
+    }
+
+    buffer[0] = '\0';
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    char resolvedName[kMaxMatchConfigPackNameLength];
+    if (!TryResolveMatchConfigPackName(packName, resolvedName, sizeof(resolvedName), failureReason, failureReasonSize))
+    {
+        return false;
+    }
+
+    char directoryPath[kMaxLiveCfgPathLength];
+    if (!TryBuildMatchConfigPacksDirectoryPath(directoryPath, sizeof(directoryPath), failureReason, failureReasonSize))
+    {
+        return false;
+    }
+
+    strncpy_s(g_matchConfigPacksPath, sizeof(g_matchConfigPacksPath), directoryPath, _TRUNCATE);
+    _snprintf_s(buffer, bufferSize, _TRUNCATE, "%s\\%s.json", directoryPath, resolvedName);
+    return buffer[0] != '\0';
+}
+
+bool TryParseMatchConfigPackFileText(const std::string &jsonText, const char *fallbackName, MatchConfigPackRecord *pack, std::string *failureReason)
+{
+    if (pack == NULL)
+    {
+        return SetLabDummyJsonParseFailure(failureReason, 0, "match pack destination is missing");
+    }
+
+    memset(pack, 0, sizeof(*pack));
+    if (fallbackName != NULL && fallbackName[0] != '\0')
+    {
+        strncpy_s(pack->name, sizeof(pack->name), fallbackName, _TRUNCATE);
+    }
+
+    LabDummyJsonCursor cursor = {jsonText.c_str(), jsonText.length(), 0};
+    if (!TryConsumeLabDummyJsonChar(&cursor, '{'))
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor.position, "expected a JSON object at the root");
+    }
+
+    SkipLabDummyJsonWhitespace(&cursor);
+    if (TryConsumeLabDummyJsonChar(&cursor, '}'))
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor.position, "match pack object is missing required fields");
+    }
+
+    while (cursor.position < cursor.length)
+    {
+        std::string key;
+        if (!TryParseLabDummyJsonString(&cursor, &key, failureReason))
+        {
+            return false;
+        }
+
+        if (!TryConsumeLabDummyJsonChar(&cursor, ':'))
+        {
+            return SetLabDummyJsonParseFailure(failureReason, cursor.position, "expected ':' after root key");
+        }
+
+        if (key == "name")
+        {
+            std::string name;
+            if (!TryParseLabDummyJsonString(&cursor, &name, failureReason))
+            {
+                return false;
+            }
+            strncpy_s(pack->name, sizeof(pack->name), name.c_str(), _TRUNCATE);
+        }
+        else if (key == "description")
+        {
+            std::string description;
+            if (!TryParseLabDummyJsonString(&cursor, &description, failureReason))
+            {
+                return false;
+            }
+            strncpy_s(pack->description, sizeof(pack->description), description.c_str(), _TRUNCATE);
+        }
+        else if (key == "cfg")
+        {
+            std::string cfgRequest;
+            if (!TryParseLabDummyJsonString(&cursor, &cfgRequest, failureReason))
+            {
+                return false;
+            }
+            strncpy_s(pack->cfgRequest, sizeof(pack->cfgRequest), cfgRequest.c_str(), _TRUNCATE);
+        }
+        else if (key == "weapon_under_test" || key == "recommended_weapon")
+        {
+            std::string recommendedWeapon;
+            if (!TryParseLabDummyJsonString(&cursor, &recommendedWeapon, failureReason))
+            {
+                return false;
+            }
+            strncpy_s(pack->recommendedWeapon, sizeof(pack->recommendedWeapon), recommendedWeapon.c_str(), _TRUNCATE);
+        }
+        else if (key == "target_profile" || key == "recommended_target_profile")
+        {
+            std::string targetProfile;
+            if (!TryParseLabDummyJsonString(&cursor, &targetProfile, failureReason))
+            {
+                return false;
+            }
+            strncpy_s(pack->recommendedTargetProfile, sizeof(pack->recommendedTargetProfile), targetProfile.c_str(), _TRUNCATE);
+        }
+        else if (key == "mode" || key == "recommended_mode")
+        {
+            std::string recommendedMode;
+            if (!TryParseLabDummyJsonString(&cursor, &recommendedMode, failureReason))
+            {
+                return false;
+            }
+            strncpy_s(pack->recommendedMode, sizeof(pack->recommendedMode), recommendedMode.c_str(), _TRUNCATE);
+        }
+        else if (key == "tags")
+        {
+            std::string tags;
+            if (!TryParseLabDummyJsonString(&cursor, &tags, failureReason))
+            {
+                return false;
+            }
+            strncpy_s(pack->tags, sizeof(pack->tags), tags.c_str(), _TRUNCATE);
+        }
+        else if (key == "notes")
+        {
+            std::string notes;
+            if (!TryParseLabDummyJsonString(&cursor, &notes, failureReason))
+            {
+                return false;
+            }
+            strncpy_s(pack->notes, sizeof(pack->notes), notes.c_str(), _TRUNCATE);
+        }
+        else
+        {
+            if (!TrySkipLabDummyJsonValue(&cursor, failureReason))
+            {
+                return false;
+            }
+        }
+
+        if (TryConsumeLabDummyJsonChar(&cursor, '}'))
+        {
+            break;
+        }
+
+        if (!TryConsumeLabDummyJsonChar(&cursor, ','))
+        {
+            return SetLabDummyJsonParseFailure(failureReason, cursor.position, "expected ',' or '}' in root object");
+        }
+    }
+
+    SkipLabDummyJsonWhitespace(&cursor);
+    if (cursor.position != cursor.length)
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor.position, "unexpected trailing content after JSON object");
+    }
+
+    if (pack->name[0] == '\0')
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor.position, "match pack is missing a name");
+    }
+
+    if (pack->cfgRequest[0] == '\0')
+    {
+        return SetLabDummyJsonParseFailure(failureReason, cursor.position, "match pack is missing a cfg field");
+    }
+
+    pack->valid = true;
+    return true;
+}
+
+bool LoadMatchConfigPackFile(const char *filePath, const char *fallbackName, MatchConfigPackRecord *pack, char *failureReason, size_t failureReasonSize)
+{
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    if (pack == NULL)
+    {
+        return false;
+    }
+
+    memset(pack, 0, sizeof(*pack));
+    if (filePath == NULL || filePath[0] == '\0')
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "match pack path is empty");
+        }
+        return false;
+    }
+
+    std::string fileContents;
+    if (!TryReadLabDummySpotsFile(filePath, &fileContents, failureReason, failureReasonSize))
+    {
+        return false;
+    }
+
+    char derivedName[kMaxMatchConfigPackNameLength];
+    BuildMatchConfigPackFallbackName(filePath, derivedName, sizeof(derivedName));
+    std::string parseFailure;
+    if (!TryParseMatchConfigPackFileText(fileContents, fallbackName != NULL && fallbackName[0] != '\0' ? fallbackName : derivedName, pack, &parseFailure))
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "match pack parse failed for %s: %s",
+                filePath,
+                parseFailure.c_str());
+        }
+        return false;
+    }
+
+    strncpy_s(pack->filePath, sizeof(pack->filePath), filePath, _TRUNCATE);
+    return true;
+}
+
+bool LoadMatchConfigPackByName(const char *packName, MatchConfigPackRecord *pack, char *failureReason, size_t failureReasonSize)
+{
+    char resolvedName[kMaxMatchConfigPackNameLength];
+    if (!TryResolveMatchConfigPackName(packName, resolvedName, sizeof(resolvedName), failureReason, failureReasonSize))
+    {
+        return false;
+    }
+
+    char filePath[kMaxLiveCfgPathLength];
+    if (!TryBuildMatchConfigPackPath(resolvedName, filePath, sizeof(filePath), failureReason, failureReasonSize))
+    {
+        return false;
+    }
+
+    if (!FileExists(filePath))
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "match pack \"%s\" was not found at %s",
+                resolvedName,
+                filePath);
+        }
+        return false;
+    }
+
+    return LoadMatchConfigPackFile(filePath, resolvedName, pack, failureReason, failureReasonSize);
+}
+
+bool EnumerateMatchConfigPacks(std::vector<MatchConfigPackRecord> *packs, char *failureReason, size_t failureReasonSize)
+{
+    if (packs == NULL)
+    {
+        return false;
+    }
+
+    packs->clear();
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    char directoryPath[kMaxLiveCfgPathLength];
+    if (!TryBuildMatchConfigPacksDirectoryPath(directoryPath, sizeof(directoryPath), failureReason, failureReasonSize))
+    {
+        return false;
+    }
+
+    strncpy_s(g_matchConfigPacksPath, sizeof(g_matchConfigPacksPath), directoryPath, _TRUNCATE);
+    if (!FileExists(directoryPath))
+    {
+        return true;
+    }
+
+    char searchPattern[kMaxLiveCfgPathLength];
+    _snprintf_s(searchPattern, sizeof(searchPattern), _TRUNCATE, "%s\\*.json", directoryPath);
+
+    WIN32_FIND_DATAA findData;
+    HANDLE findHandle = FindFirstFileA(searchPattern, &findData);
+    if (findHandle == INVALID_HANDLE_VALUE)
+    {
+        const DWORD error = GetLastError();
+        if (error == ERROR_FILE_NOT_FOUND)
+        {
+            return true;
+        }
+
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "could not enumerate match packs in %s (win32=%lu)",
+                directoryPath,
+                (unsigned long)error);
+        }
+        return false;
+    }
+
+    do
+    {
+        if ((findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
+        {
+            continue;
+        }
+
+        char filePath[kMaxLiveCfgPathLength];
+        _snprintf_s(filePath, sizeof(filePath), _TRUNCATE, "%s\\%s", directoryPath, findData.cFileName);
+
+        MatchConfigPackRecord pack = {};
+        char packFailure[kMaxLabDummySpotFileFailureLength];
+        if (!LoadMatchConfigPackFile(filePath, NULL, &pack, packFailure, sizeof(packFailure)))
+        {
+            FindClose(findHandle);
+            if (failureReason != NULL && failureReasonSize > 0)
+            {
+                strncpy_s(failureReason, failureReasonSize, packFailure, _TRUNCATE);
+            }
+            return false;
+        }
+
+        packs->push_back(pack);
+    } while (FindNextFileA(findHandle, &findData));
+
+    FindClose(findHandle);
+    return true;
+}
+
+void PrintMatchConfigPackStatus()
+{
+    std::vector<MatchConfigPackRecord> packs;
+    char failureReason[kMaxLabDummySpotFileFailureLength];
+    const bool enumerated = EnumerateMatchConfigPacks(&packs, failureReason, sizeof(failureReason));
+    if (!enumerated)
+    {
+        strncpy_s(g_matchConfigPacksLastFailure, sizeof(g_matchConfigPacksLastFailure), failureReason, _TRUNCATE);
+    }
+    else
+    {
+        g_matchConfigPacksLastFailure[0] = '\0';
+    }
+
+    PrintLabDummyConsoleLine(
+        "match packs: dir=%s available=%u active=%s",
+        g_matchConfigPacksPath[0] != '\0' ? g_matchConfigPacksPath : "n/a",
+        enumerated ? (unsigned int)packs.size() : 0U,
+        g_matchConfigPackState.active ? g_matchConfigPackState.name : "none");
+
+    if (g_matchConfigPackState.active)
+    {
+        PrintLabDummyConsoleLine(
+            "active match pack: name=%s cfg=%s applied_at=%s file=%s",
+            g_matchConfigPackState.name,
+            g_matchConfigPackState.cfgExecPath[0] != '\0' ? g_matchConfigPackState.cfgExecPath : g_matchConfigPackState.cfgRequest,
+            g_matchConfigPackState.appliedAt[0] != '\0' ? g_matchConfigPackState.appliedAt : "n/a",
+            g_matchConfigPackState.packFilePath[0] != '\0' ? g_matchConfigPackState.packFilePath : "n/a");
+        PrintLabDummyConsoleLine(
+            "active match pack metadata: description=%s weapon=%s target_profile=%s mode=%s tags=%s",
+            GetValueOrFallback(g_matchConfigPackState.description, "n/a"),
+            GetValueOrFallback(g_matchConfigPackState.recommendedWeapon, "n/a"),
+            GetValueOrFallback(g_matchConfigPackState.recommendedTargetProfile, "n/a"),
+            GetValueOrFallback(g_matchConfigPackState.recommendedMode, "n/a"),
+            GetValueOrFallback(g_matchConfigPackState.tags, "n/a"));
+        if (g_matchConfigPackState.notes[0] != '\0')
+        {
+            PrintLabDummyConsoleLine("active match pack notes: %s", g_matchConfigPackState.notes);
+        }
+    }
+    else
+    {
+        PrintLabDummyConsoleLine("active match pack: none");
+        if (g_matchConfigPackState.lastOverrideReason[0] != '\0')
+        {
+            PrintLabDummyConsoleLine("last match pack override: %s", g_matchConfigPackState.lastOverrideReason);
+        }
+    }
+
+    if (!enumerated)
+    {
+        PrintLabDummyConsoleLine("match pack scan failed: %s", failureReason);
+    }
+}
+
 bool TryResolveLiveCfgSelection(const char *requestedPath, ResolvedLiveCfgSelection *pSelection, char *failureReason, size_t failureReasonSize)
 {
     if (failureReason != NULL && failureReasonSize > 0)
@@ -7791,12 +8415,13 @@ void RecordLiveCfgSuccess(const char *action, const ResolvedLiveCfgSelection &se
 void PrintCurrentCfgMetadata()
 {
     PrintLabDummyConsoleLine(
-        "current cfg metadata: weapon=%s session_tag=%s glock_profile=%s mp5_profile=%s target_profile=%s",
+        "current cfg metadata: weapon=%s session_tag=%s glock_profile=%s mp5_profile=%s target_profile=%s match_pack=%s",
         GetValueOrFallback(ExpWeaponUnderTest(), "none"),
         GetValueOrFallback(ExpSessionTag(), "none"),
         GetValueOrFallback(ExpGlockProfileName(), "default"),
         GetValueOrFallback(ExpMP5ProfileName(), "default"),
-        GetValueOrFallback(ExpGlockLabTargetProfileName(), "default"));
+        GetValueOrFallback(ExpGlockLabTargetProfileName(), "default"),
+        g_matchConfigPackState.active ? g_matchConfigPackState.name : "none");
 }
 
 void PrintLiveCfgStatus()
@@ -7858,6 +8483,8 @@ void PrintLiveCfgStatus()
 
     PrintCurrentCfgMetadata();
     PrintLabDummyConsoleLine("cfg commands: exp_cfg_apply <cfg_name_or_path> | exp_cfg_reload | exp_cfg_status | exp_lab_apply <cfg_name_or_path>");
+    PrintLabDummyConsoleLine("match cfg commands: exp_matchcfg_list | exp_matchcfg_apply <name> | exp_matchcfg_status");
+    PrintMatchConfigPackStatus();
 }
 
 const char *GetLabDummyProfileNames()
@@ -9504,7 +10131,12 @@ void ExpCfgApplyCommand()
         return;
     }
 
-    ApplyResolvedLiveCfgSelection("apply", selection);
+    if (!ApplyResolvedLiveCfgSelection("apply", selection))
+    {
+        return;
+    }
+
+    ClearActiveMatchConfigPackState("a direct exp_cfg_apply override was applied after the previous match pack");
 }
 
 void ExpCfgReloadCommand()
@@ -9537,6 +10169,90 @@ void ExpCfgStatusCommand()
     PrintLiveCfgStatus();
 }
 
+void ExpMatchcfgListCommand()
+{
+    std::vector<MatchConfigPackRecord> packs;
+    char failureReason[kMaxLabDummySpotFileFailureLength];
+    if (!EnumerateMatchConfigPacks(&packs, failureReason, sizeof(failureReason)))
+    {
+        PrintLabDummyConsoleLine("match pack list failed: %s", failureReason);
+        return;
+    }
+
+    if (packs.empty())
+    {
+        PrintLabDummyConsoleLine(
+            "match pack list: no pack metadata was found under %s",
+            g_matchConfigPacksPath[0] != '\0' ? g_matchConfigPacksPath : "match_packs");
+        return;
+    }
+
+    PrintLabDummyConsoleLine(
+        "match pack list: found %u pack(s) under %s",
+        (unsigned int)packs.size(),
+        g_matchConfigPacksPath[0] != '\0' ? g_matchConfigPacksPath : "match_packs");
+    for (size_t packIndex = 0; packIndex < packs.size(); ++packIndex)
+    {
+        const MatchConfigPackRecord &pack = packs[packIndex];
+        PrintLabDummyConsoleLine(
+            "pack[%u]: name=%s%s cfg=%s mode=%s weapon=%s target_profile=%s description=%s",
+            (unsigned int)packIndex,
+            pack.name,
+            g_matchConfigPackState.active && StringEqualsIgnoreCase(g_matchConfigPackState.name, pack.name) ? " [active]" : "",
+            GetValueOrFallback(pack.cfgRequest, "n/a"),
+            GetValueOrFallback(pack.recommendedMode, "n/a"),
+            GetValueOrFallback(pack.recommendedWeapon, "n/a"),
+            GetValueOrFallback(pack.recommendedTargetProfile, "n/a"),
+            GetValueOrFallback(pack.description, "n/a"));
+    }
+}
+
+void ExpMatchcfgApplyCommand()
+{
+    char requestedName[kMaxMatchConfigPackNameLength];
+    BuildCommandArgumentString(1, requestedName, sizeof(requestedName));
+    if (requestedName[0] == '\0')
+    {
+        PrintLabDummyConsoleLine("usage: exp_matchcfg_apply <name>");
+        return;
+    }
+
+    MatchConfigPackRecord pack = {};
+    char failureReason[kMaxLabDummySpotFileFailureLength];
+    if (!LoadMatchConfigPackByName(requestedName, &pack, failureReason, sizeof(failureReason)))
+    {
+        PrintLabDummyConsoleLine("match pack apply failed: %s", failureReason);
+        return;
+    }
+
+    ResolvedLiveCfgSelection selection = {};
+    if (!TryResolveLiveCfgSelection(pack.cfgRequest, &selection, failureReason, sizeof(failureReason)))
+    {
+        RecordLiveCfgFailure("matchcfg_apply", failureReason);
+        LogLiveCfgCommand("matchcfg_apply", pack.cfgRequest, "", "", false, failureReason);
+        PrintLabDummyConsoleLine("match pack apply failed: pack=%s cfg=%s reason=%s", pack.name, pack.cfgRequest, failureReason);
+        return;
+    }
+
+    if (!ApplyResolvedLiveCfgSelection("matchcfg_apply", selection))
+    {
+        return;
+    }
+
+    RememberActiveMatchConfigPack(pack, selection);
+    PrintLabDummyConsoleLine(
+        "applied match pack \"%s\": cfg=%s description=%s",
+        pack.name,
+        selection.execPath,
+        pack.description[0] != '\0' ? pack.description : "n/a");
+    PrintMatchConfigPackStatus();
+}
+
+void ExpMatchcfgStatusCommand()
+{
+    PrintMatchConfigPackStatus();
+}
+
 void ExpLabApplyCommand()
 {
     char requestedPath[kMaxLiveCfgRequestLength];
@@ -9561,6 +10277,8 @@ void ExpLabApplyCommand()
     {
         return;
     }
+
+    ClearActiveMatchConfigPackState("a direct exp_lab_apply override was applied after the previous match pack");
 
     char targetSummary[192];
     const bool targetRespawned = TryRespawnLabDummyInternal("lab_apply", targetSummary, sizeof(targetSummary), true);
@@ -9953,6 +10671,9 @@ void RegisterFutureGameplayCommands()
     g_engfuncs.pfnAddServerCommand((char *)"exp_cfg_apply", ExpCfgApplyCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_cfg_reload", ExpCfgReloadCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_cfg_status", ExpCfgStatusCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_matchcfg_list", ExpMatchcfgListCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_matchcfg_apply", ExpMatchcfgApplyCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_matchcfg_status", ExpMatchcfgStatusCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_lab_apply", ExpLabApplyCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_target_spawn", ExpTargetSpawnCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_target_clear", ExpTargetClearCommand);

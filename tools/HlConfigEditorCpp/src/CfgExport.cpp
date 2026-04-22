@@ -217,6 +217,89 @@ std::wstring QuoteCfgString(const std::wstring& value) {
     return quoted;
 }
 
+std::wstring EscapeJsonString(const std::wstring& value) {
+    std::wstring escaped;
+    escaped.reserve(value.size() + 8);
+    for (const wchar_t ch : value) {
+        switch (ch) {
+            case L'\\':
+                escaped += L"\\\\";
+                break;
+            case L'"':
+                escaped += L"\\\"";
+                break;
+            case L'\r':
+                escaped += L"\\r";
+                break;
+            case L'\n':
+                escaped += L"\\n";
+                break;
+            case L'\t':
+                escaped += L"\\t";
+                break;
+            default:
+                escaped.push_back(ch);
+                break;
+        }
+    }
+
+    return escaped;
+}
+
+bool IsValidMatchPackName(const std::wstring& value, std::wstring& errorMessage) {
+    const std::wstring trimmed = Trim(value);
+    if (trimmed.empty()) {
+        return true;
+    }
+
+    if (trimmed.size() > 64) {
+        errorMessage = L"Match pack name must be 64 characters or fewer.";
+        return false;
+    }
+
+    for (const wchar_t ch : trimmed) {
+        if (ch < 32 || ch == L'"' || ch == L'\\' || ch == L'/' || ch == L':' || ch == L'*' || ch == L'?' || ch == L'<' || ch == L'>' || ch == L'|') {
+            errorMessage = L"Match pack name contains unsupported filename characters.";
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::wstring BuildMatchPackMode(const ProjectDocument& document) {
+    if (document.teamRound.enabled) {
+        return L"team_round";
+    }
+
+    if (document.roundMode.enabled) {
+        return L"duel_round";
+    }
+
+    if (document.targetDummy.enabled) {
+        return L"aim_lab";
+    }
+
+    return L"custom";
+}
+
+std::wstring BuildMatchPackText(const ProjectDocument& document, const ExportResult& result) {
+    const std::wstring weaponUnderTest = Trim(document.general.weaponUnderTest);
+    const std::wstring targetProfile = document.targetDummy.enabled ? Trim(document.targetDummy.targetProfileName) : std::wstring();
+
+    std::wstring json;
+    json += L"{\r\n";
+    json += L"  \"name\": \"" + EscapeJsonString(Trim(document.matchPack.name)) + L"\",\r\n";
+    json += L"  \"description\": \"" + EscapeJsonString(Trim(document.matchPack.description)) + L"\",\r\n";
+    json += L"  \"cfg\": \"" + EscapeJsonString(result.cfgProfile.empty() ? std::filesystem::path(result.exportPath).filename().generic_wstring() : result.cfgProfile) + L"\",\r\n";
+    json += L"  \"weapon_under_test\": \"" + EscapeJsonString(weaponUnderTest) + L"\",\r\n";
+    json += L"  \"target_profile\": \"" + EscapeJsonString(targetProfile) + L"\",\r\n";
+    json += L"  \"mode\": \"" + EscapeJsonString(BuildMatchPackMode(document)) + L"\",\r\n";
+    json += L"  \"tags\": \"" + EscapeJsonString(Trim(document.matchPack.tags)) + L"\"\r\n";
+    json += L"}\r\n";
+    return json;
+}
+
 bool NormalizeFloatValue(const std::wstring& input, std::wstring& normalized, std::wstring& errorMessage, const std::wstring& fieldName) {
     const std::wstring trimmed = Trim(input);
     if (trimmed.empty()) {
@@ -958,8 +1041,10 @@ EnvironmentPaths ResolveEnvironmentPaths(const std::wstring& moduleFilePath) {
     if (!halfLifeRoot.empty()) {
         paths.liveModRoot = (std::filesystem::path(halfLifeRoot) / L"hlserver_testbed").wstring();
         paths.defaultExportFolder = paths.liveModRoot;
+        paths.matchPacksRoot = (std::filesystem::path(paths.liveModRoot) / L"match_packs").wstring();
     } else if (!paths.stagedLiveModRoot.empty()) {
         paths.defaultExportFolder = paths.stagedLiveModRoot;
+        paths.matchPacksRoot = (std::filesystem::path(paths.stagedLiveModRoot) / L"match_packs").wstring();
     }
 
     return paths;
@@ -996,6 +1081,31 @@ bool BuildExportResult(const ProjectDocument& document, const EnvironmentPaths& 
     result.cfgProfile = cfgProfile.generic_wstring();
     result.execCommand = BuildExecCommand(cfgProfile, exportPath);
     result.launcherCommand = BuildLauncherCommand(cfgProfile);
+    result.matchPackPath.clear();
+    result.matchPackText.clear();
+
+    const std::wstring matchPackName = Trim(document.matchPack.name);
+    if (!matchPackName.empty()) {
+        if (!IsValidMatchPackName(matchPackName, errorMessage)) {
+            return false;
+        }
+
+        std::filesystem::path relativePath;
+        std::filesystem::path packRoot;
+        if (!environment.liveModRoot.empty() &&
+            TryMakeRelativePath(exportPath, std::filesystem::path(environment.liveModRoot), relativePath)) {
+            packRoot = std::filesystem::path(environment.liveModRoot) / L"match_packs";
+        } else if (!environment.stagedLiveModRoot.empty() &&
+                   TryMakeRelativePath(exportPath, std::filesystem::path(environment.stagedLiveModRoot), relativePath)) {
+            packRoot = std::filesystem::path(environment.stagedLiveModRoot) / L"match_packs";
+        }
+
+        if (!packRoot.empty() && !result.cfgProfile.empty()) {
+            result.matchPackPath = (packRoot / (matchPackName + L".json")).wstring();
+            result.matchPackText = BuildMatchPackText(document, result);
+        }
+    }
+
     return true;
 }
 
@@ -1004,7 +1114,17 @@ bool ExportCfgToFile(const ProjectDocument& document, const EnvironmentPaths& en
         return false;
     }
 
-    return WriteUtf8TextFile(result.exportPath, result.cfgText, errorMessage);
+    if (!WriteUtf8TextFile(result.exportPath, result.cfgText, errorMessage)) {
+        return false;
+    }
+
+    if (!result.matchPackPath.empty() && !result.matchPackText.empty()) {
+        if (!WriteUtf8TextFile(result.matchPackPath, result.matchPackText, errorMessage)) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 }  // namespace hlcfg

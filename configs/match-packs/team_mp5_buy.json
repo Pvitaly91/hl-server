@@ -1,0 +1,10 @@
+{
+  "name": "team_mp5_buy",
+  "description": "Simple alpha vs bravo MP5 round with freeze-phase buying and armor purchases enabled.",
+  "cfg": "match_packs/team_mp5_buy.cfg",
+  "weapon_under_test": "mp5",
+  "target_profile": "",
+  "mode": "team_round",
+  "tags": "team,mp5,buy,armor",
+  "notes": "Uses dm spawns by default so the pack is usable even before manual team spawn markers exist."
+}
