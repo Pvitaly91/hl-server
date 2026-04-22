@@ -190,6 +190,7 @@ Live lab console commands:
 - `exp_team_join <player> <team>`, `exp_team_autoassign`, and `exp_team_status` provide lightweight server-side team assignment and debugging for small live round tests.
 - `exp_team_fake_add <team> [name]` and `exp_team_fake_clear` are optional local verification helpers when only one real client is available and you still need to exercise last-team-alive round flow.
 - `exp_team_spawn_mark <team> [name]`, `exp_team_spawn_unmark <team> <name>`, `exp_team_spawn_list`, `exp_team_spawn_use <team> <name>`, and `exp_team_spawn_status` manage persistent per-team round spawns under `<HalfLifeRoot>\hlserver_testbed\team_spawns\<map>.json`.
+- `exp_buy_list`, `exp_buy_status`, `exp_buy <weapon> [player]`, `exp_buy_clear [player]`, `exp_buy_grant [player]`, and `exp_buy_setmoney <player> <amount>` provide the first server-side round buy prototype for freeze-time weapon purchases without a client buy menu.
 
 The live dummy now forces `mp_allowmonsters 1` before spawning, because the underlying server-side `monster_generic` entity is otherwise removed immediately on deathmatch maps.
 
@@ -206,7 +207,7 @@ The repo now has a first server-side round loop for live duel testing plus a sim
 - automatic next-round restart after a short delay
 - optional two-team assignment with last-team-alive win logic
 
-It is not a full Counter-Strike ruleset yet. There is no economy, buy menu, or polished join-in-progress flow in this pass.
+It is not a full Counter-Strike ruleset yet. There is now a small server-side buy prototype for round mode, but there is still no client buy menu, no full economy tree, and no polished join-in-progress flow in this pass.
 
 Main round cvars:
 
@@ -234,6 +235,21 @@ Additional team-round cvars:
 - `sv_exp_team_round_team2_health`
 - `sv_exp_team_round_team1_armor`
 - `sv_exp_team_round_team2_armor`
+- `sv_exp_buy_mode 0|1`
+- `sv_exp_buy_freeze_only 0|1`
+- `sv_exp_buy_team_shared_catalog 0|1`
+- `sv_exp_buy_start_money`
+- `sv_exp_buy_round_win_reward`
+- `sv_exp_buy_round_loss_reward`
+- `sv_exp_buy_max_money`
+- `sv_exp_buy_allow_glock`
+- `sv_exp_buy_allow_mp5`
+- `sv_exp_buy_allow_357`
+- `sv_exp_buy_allow_shotgun`
+- `sv_exp_buy_cost_glock`
+- `sv_exp_buy_cost_mp5`
+- `sv_exp_buy_cost_357`
+- `sv_exp_buy_cost_shotgun`
 
 Recommended duel loop:
 
@@ -279,6 +295,24 @@ Recommended persisted team-spawn setup for a map:
    `exp_team_spawn_use bravo default`
 5. Restart the round with `exp_round_restart`.
 6. Use `exp_team_spawn_status` to confirm that round start used the saved team spawns and that the file under `<HalfLifeRoot>\hlserver_testbed\team_spawns\<map>.json` is loaded.
+
+Recommended simple buy-prototype loop:
+
+1. Apply the cfg you want to test, for example `exp_cfg_apply editor_357_test.cfg`.
+2. Enable round mode and buy mode, for example:
+   `sv_exp_round_mode 1`
+   `sv_exp_team_round_mode 1`
+   `sv_exp_buy_mode 1`
+   `sv_exp_buy_freeze_only 1`
+   `sv_exp_buy_start_money 2500`
+   `sv_exp_team_round_team1_loadout none`
+   `sv_exp_team_round_team2_loadout none`
+3. Use `exp_buy_list` to inspect the allowed shared catalog and costs.
+4. Start the round with `exp_round_start`.
+5. During freeze, buy with `exp_buy 357 Poni` or another allowed weapon.
+6. Use `exp_buy_status` to confirm current money and the selected or granted weapon.
+7. When the round goes live, freeze-only buy mode closes automatically and later `exp_buy` attempts fail with an explicit reason.
+8. After round end and restart, the buy selection resets for the next freeze while the player's money carries forward with the configured win/loss reward.
 
 For the full state model, command reference, and current limitations, see [docs/round-mode.md](/D:/DEV/CPP/HL-Server/docs/round-mode.md).
 

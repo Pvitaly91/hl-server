@@ -20,12 +20,12 @@ This repo now includes a server-side no-respawn round loop for live testing on t
 
 ## What it does not do yet
 
-- economy
+- full economy tree
 - buy menu
 - Counter-Strike parity
 - polished join-in-progress handling
 
-This is a clean first round loop, not a full game-mode conversion.
+This is a clean first round loop with a small console-driven buy prototype, not a full game-mode conversion.
 
 ## Cvars
 
@@ -65,6 +65,27 @@ This is a clean first round loop, not a full game-mode conversion.
 - `sv_exp_team_round_team2_health`
 - `sv_exp_team_round_team1_armor`
 - `sv_exp_team_round_team2_armor`
+- `sv_exp_buy_mode`
+  - `0` = off
+  - `1` = on
+- `sv_exp_buy_freeze_only`
+  - `0` = buy any time while round mode is active
+  - `1` = buy only during `freeze_time`
+- `sv_exp_buy_team_shared_catalog`
+  - `0` = reserved for future per-team catalog splits
+  - `1` = current shared weapon shop for all players
+- `sv_exp_buy_start_money`
+- `sv_exp_buy_round_win_reward`
+- `sv_exp_buy_round_loss_reward`
+- `sv_exp_buy_max_money`
+- `sv_exp_buy_allow_glock`
+- `sv_exp_buy_allow_mp5`
+- `sv_exp_buy_allow_357`
+- `sv_exp_buy_allow_shotgun`
+- `sv_exp_buy_cost_glock`
+- `sv_exp_buy_cost_mp5`
+- `sv_exp_buy_cost_357`
+- `sv_exp_buy_cost_shotgun`
 
 ## Round states
 
@@ -106,6 +127,18 @@ This is a clean first round loop, not a full game-mode conversion.
   - selects the active named spawn for the requested team
 - `exp_team_spawn_status`
   - prints the current team-spawn file path, saved names, active selection, last applied spawn source, and last failure per team
+- `exp_buy_list`
+  - prints the allowed weapons, their costs, whether the shared catalog is enabled, and whether buying is currently open
+- `exp_buy_status`
+  - prints buy configuration plus each tracked player's money, selected weapon, and bought-this-freeze state
+- `exp_buy <weapon> [player]`
+  - attempts a server-side buy for the requested player. If the player argument is omitted, the command uses the only connected real player when that is unambiguous
+- `exp_buy_clear [player]`
+  - refunds and clears the current selected purchase for the requested player, then reapplies the base round/team loadout
+- `exp_buy_grant [player]`
+  - reapplies the currently selected purchase for the requested player for local verification
+- `exp_buy_setmoney <player> <amount>`
+  - small server-side verification helper for adjusting one player's money during testing
 
 ## Recommended workflow
 
@@ -162,6 +195,33 @@ During a team session:
 5. Use `exp_round_restart` for a forced reset or `exp_round_stop` to return to plain deathmatch.
 6. If you only have one real client available, `exp_team_fake_add <team>` can be used as a local verification helper for the team-elimination loop.
 
+Example freeze-phase buy loop:
+
+```text
+exp_cfg_apply editor_357_test.cfg
+sv_exp_round_mode 1
+sv_exp_team_round_mode 1
+sv_exp_buy_mode 1
+sv_exp_buy_freeze_only 1
+sv_exp_buy_start_money 2500
+sv_exp_team_round_team1_loadout none
+sv_exp_team_round_team2_loadout none
+exp_team_join Poni alpha
+exp_team_status
+exp_round_start
+exp_buy_list
+exp_buy 357 Poni
+```
+
+During a buy-enabled round session:
+
+1. Use `exp_buy_list` to inspect allowed weapons and costs.
+2. Use `exp_buy_status` to inspect current money, selected weapon, and whether buy phase is open.
+3. Buy during freeze with `exp_buy <weapon> [player]`.
+4. When buying succeeds, the selected weapon is granted immediately during freeze and becomes that player's deterministic round loadout override for the current round.
+5. When the round becomes live, freeze-only buy mode rejects further purchases with an explicit reason instead of silently ignoring them.
+6. On the next round freeze, the selected weapon resets and round rewards are applied to the player's money.
+
 Example persisted team-spawn setup:
 
 ```text
@@ -206,5 +266,6 @@ If a saved spawn is blocked or invalid, the server logs the failure reason and t
 - Round loadout reset is server-side and deterministic. It reuses the same experimental weapon surfaces already driven by cfg files.
 - Team loadout and start health/armor inherit from the global round cvars unless the team-specific overrides are set.
 - Team mode can now use persisted per-team saved spawns. If none are available, or if a saved spawn is blocked, the server falls back to the normal map spawn logic and records that fallback in status and telemetry.
+- The buy prototype is intentionally small: console-driven, server-side, deterministic, and limited to the four experimental weapons. There is still no client buy UI, inventory polish, armor shop, utility shop, or full Counter-Strike economy model.
 - `exp_team_fake_add` and `exp_team_fake_clear` exist only as small server-side validation helpers for local team-round testing when a second human is not available.
 - Existing target dummy, cfg apply, and persistent saved-spot workflows remain available when round mode is off.

@@ -986,6 +986,51 @@ void LogRoundEvent(const char *event, const char *state, int roundNumber, int co
     WriteTelemetryLine(telemetryLine.c_str());
 }
 
+void LogBuyEvent(const char *event, CBasePlayer *pPlayer, const char *teamName, const char *roundState, bool phaseOpen, const char *weapon, int cost, int moneyBefore, int moneyAfter, bool success, const char *reason)
+{
+    if (!ExpDebugWeaponLogEnabled())
+    {
+        return;
+    }
+
+    EnsureWeaponDebugLogOpen();
+
+    char timestamp[64];
+    char line[2048];
+    FormatTimestamp(timestamp, sizeof(timestamp));
+
+    _snprintf_s(
+        line,
+        sizeof(line),
+        _TRUNCATE,
+        "[weaponlog] type=buy ts=%s map=%s event=%s player=\"%s\" entindex=%d userid=%d team=\"%s\" round_state=\"%s\" phase_open=%d freeze_only=%d team_mode=%d buy_mode=%d shared_catalog=%d weapon=\"%s\" cost=%d money_before=%d money_after=%d success=%d",
+        timestamp,
+        SanitizeLogValue(GetSafeMapName()).c_str(),
+        SanitizeLogValue(event != NULL ? event : "buy_event").c_str(),
+        GetSafePlayerName(pPlayer).c_str(),
+        GetPlayerEntityIndex(pPlayer),
+        GetPlayerUserId(pPlayer),
+        SanitizeLogValue(teamName != NULL ? teamName : "unassigned").c_str(),
+        SanitizeLogValue(roundState != NULL ? roundState : "unknown").c_str(),
+        phaseOpen ? 1 : 0,
+        ExpBuyFreezeOnlyEnabled() ? 1 : 0,
+        ExpTeamRoundModeEnabled() ? 1 : 0,
+        ExpBuyModeEnabled() ? 1 : 0,
+        ExpBuyTeamSharedCatalogEnabled() ? 1 : 0,
+        SanitizeLogValue(weapon != NULL ? weapon : "").c_str(),
+        cost,
+        moneyBefore,
+        moneyAfter,
+        success ? 1 : 0);
+
+    std::string telemetryLine = line;
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "reason", reason);
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "weapon_under_test", ExpWeaponUnderTest());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "session_tag", ExpSessionTag());
+    AppendOptionalQuotedTelemetryField(&telemetryLine, "cfg_active_profile", ExpActiveCfgProfile());
+    WriteTelemetryLine(telemetryLine.c_str());
+}
+
 void LogLiveLabConsoleMessage(const char *line)
 {
     if (!ExpDebugWeaponLogEnabled() || line == NULL || line[0] == '\0')
