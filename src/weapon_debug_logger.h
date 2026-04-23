@@ -150,6 +150,21 @@ struct ShotgunAcceptedShotTelemetry
     int pelletCount;
 };
 
+struct VerificationHitTelemetrySnapshot
+{
+    bool valid;
+    float victimHealthBefore;
+    float victimHealthAfter;
+    bool victimArmorKnown;
+    float victimArmorBefore;
+    float victimArmorAfter;
+    float damageRaw;
+    float damageToHealth;
+    float damageAbsorbed;
+    float armorDrain;
+    bool killedByShot;
+};
+
 void EnsureWeaponDebugLogReady();
 void LogLiveCfgCommand(const char *action, const char *requestedPath, const char *execPath, const char *resolvedPath, bool success, const char *details);
 void LogRoundEvent(const char *event, const char *state, int roundNumber, int connectedPlayers, int alivePlayers, CBasePlayer *pWinner, const char *reason);
@@ -183,6 +198,10 @@ bool ApplyActiveGlockPrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAtta
 bool ApplyActiveMp5PrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAttacker, int hitgroup, float *pDamage);
 bool ApplyActive357PrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAttacker, int hitgroup, float *pDamage);
 bool ApplyActiveShotgunPrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAttacker, int hitgroup, float *pDamage);
+bool GetActiveGlockPrimaryHitSnapshot(VerificationHitTelemetrySnapshot *pSnapshot);
+bool GetActiveMp5PrimaryHitSnapshot(VerificationHitTelemetrySnapshot *pSnapshot);
+bool GetActive357PrimaryHitSnapshot(VerificationHitTelemetrySnapshot *pSnapshot);
+bool GetActiveShotgunPrimaryHitSnapshot(CBaseEntity *pVictim, VerificationHitTelemetrySnapshot *pSnapshot);
 void FinalizeActiveGlockPrimaryHitTelemetry();
 void FinalizeActiveMp5PrimaryHitTelemetry();
 void FinalizeActive357PrimaryHitTelemetry();

@@ -151,6 +151,9 @@ if($dummyLethal.Count -eq 0){$dummyLethal=@($dummyKills|?{$_.HeadshotLethalAppli
 $armoredDummyHits=@($dummyHits|?{A $_})
 $protectedDummyHeadshotHits=@($dummyHits|?{$_.Headshot -eq $true -and $_.HeadProtected -eq $true})
 $protectedDummyHeadshotKills=@($dummyKills|?{$_.Headshot -eq $true -and $_.HeadProtected -eq $true})
+$directDummyArmorEvidenceHits=@($dummyHits|?{$_.ArmorBefore -ne $null -and $_.ArmorAfter -ne $null -and $_.DamageRaw -ne $null -and $_.DamageToHealth -ne $null})
+$dummyArmorAbsorbedTotal=T($dummyHits|%{$_.DamageAbsorbed})
+$dummyArmorDrainTotal=T($dummyHits|%{$_.ArmorDrain})
 $firstShotAccepted=@($accepted|?{$_.FirstShot -eq $true})
 $movePenaltyAccepted=@($accepted|?{$_.MovementPenalty -gt 0})
 $burstGrowthAccepted=@($accepted|?{$_.AdditionalSpread -gt 0 -or $_.ShotIndex -gt 1 -or $_.RecoveryApplied -gt 0})
@@ -173,7 +176,14 @@ if($effectiveWeapon -ne 'mp5'){
 }
 $targetSpawnLifecycle=@($dummySpawns+$dummyRespawns)
 $savedSpotUsage=@($targetSpawnLifecycle|?{$_.Source -eq 'saved_spot'})
-$targetSpawnBySource=@($targetSpawnLifecycle|Group-Object Source|Sort-Object Name|ForEach-Object{[ordered]@{Name=$(if([string]::IsNullOrWhiteSpace($_.Name)){'unknown'}else{$_.Name});Count=$_.Count}})
+$targetSpawnBySource=@{}
+foreach($targetEvent in @($targetSpawnLifecycle)){
+ if($null -eq $targetEvent){continue}
+ $sourceName=if([string]::IsNullOrWhiteSpace($targetEvent.Source)){'unknown'}else{$targetEvent.Source}
+ if(-not $targetSpawnBySource.Contains($sourceName)){$targetSpawnBySource[$sourceName]=0}
+ $targetSpawnBySource[$sourceName]+=1
+}
+$targetSpawnBySource=@($targetSpawnBySource.GetEnumerator()|Sort-Object Name|ForEach-Object{[ordered]@{Name=$_.Name;Count=$_.Value}})
 $playerHits=@($hits|?{$_.VictimKind -eq 'player' -or $_.VictimKind -eq 'fake_client'})
 $playerKills=@($kills|?{$_.VictimKind -eq 'player' -or $_.VictimKind -eq 'fake_client'})
 $fakePlayerHits=@($playerHits|?{$_.VictimKind -eq 'fake_client' -or $_.VictimIsFake -eq $true})
@@ -222,6 +232,12 @@ $fullyConsistentHits=@($hits|?{$_.HealthBefore -ne $null -and $_.HealthAfter -ne
 $healthDeltaConsistentKills=@($kills|?{$_.HealthBefore -ne $null -and $_.HealthAfter -ne $null -and $_.AppliedDamage -ne $null -and [Math]::Abs((($_.HealthBefore - $_.HealthAfter) - $_.AppliedDamage)) -le 0.11})
 $damageModelConsistentKills=@($kills|?{$_.AppliedDamage -ne $null -and $_.DamageToHealth -ne $null -and [Math]::Abs(($_.AppliedDamage - $_.DamageToHealth)) -le 0.11})
 $fullyConsistentKills=@($kills|?{$_.HealthBefore -ne $null -and $_.HealthAfter -ne $null -and $_.AppliedDamage -ne $null -and $_.DamageToHealth -ne $null -and [Math]::Abs((($_.HealthBefore - $_.HealthAfter) - $_.AppliedDamage)) -le 0.11 -and [Math]::Abs(($_.AppliedDamage - $_.DamageToHealth)) -le 0.11})
+$healthDeltaConsistentDummyHits=@($dummyHits|?{$_.HealthBefore -ne $null -and $_.HealthAfter -ne $null -and $_.AppliedDamage -ne $null -and [Math]::Abs((($_.HealthBefore - $_.HealthAfter) - $_.AppliedDamage)) -le 0.11})
+$damageModelConsistentDummyHits=@($dummyHits|?{$_.AppliedDamage -ne $null -and $_.DamageToHealth -ne $null -and [Math]::Abs(($_.AppliedDamage - $_.DamageToHealth)) -le 0.11})
+$fullyConsistentDummyHits=@($dummyHits|?{$_.HealthBefore -ne $null -and $_.HealthAfter -ne $null -and $_.AppliedDamage -ne $null -and $_.DamageToHealth -ne $null -and [Math]::Abs((($_.HealthBefore - $_.HealthAfter) - $_.AppliedDamage)) -le 0.11 -and [Math]::Abs(($_.AppliedDamage - $_.DamageToHealth)) -le 0.11})
+$healthDeltaConsistentDummyKills=@($dummyKills|?{$_.HealthBefore -ne $null -and $_.HealthAfter -ne $null -and $_.AppliedDamage -ne $null -and [Math]::Abs((($_.HealthBefore - $_.HealthAfter) - $_.AppliedDamage)) -le 0.11})
+$damageModelConsistentDummyKills=@($dummyKills|?{$_.AppliedDamage -ne $null -and $_.DamageToHealth -ne $null -and [Math]::Abs(($_.AppliedDamage - $_.DamageToHealth)) -le 0.11})
+$fullyConsistentDummyKills=@($dummyKills|?{$_.HealthBefore -ne $null -and $_.HealthAfter -ne $null -and $_.AppliedDamage -ne $null -and $_.DamageToHealth -ne $null -and [Math]::Abs((($_.HealthBefore - $_.HealthAfter) - $_.AppliedDamage)) -le 0.11 -and [Math]::Abs(($_.AppliedDamage - $_.DamageToHealth)) -le 0.11})
 $recentTargetFailureReasons=@($dummySpawnFailures|Select-Object -Last 3|ForEach-Object{if($_.FailureCode -and $_.Reason){'{0}: {1}' -f $_.FailureCode,$_.Reason}elseif($_.Reason){$_.Reason}elseif($_.FailureCode){$_.FailureCode}else{'unknown target spawn failure'}})
 $firstTarget=@($dummySpawns+$dummyHits+$dummyKills|?{$_.TargetProfileName}|select -first 1)
 $targetProfile=if($session.TargetProfileName){$session.TargetProfileName}elseif($firstTarget.Count){$firstTarget[0].TargetProfileName}else{$null}
@@ -238,7 +254,7 @@ $profile357=if($is357Session -and $session.Profile357Name){$session.Profile357Na
 $shotgunAccepted=@($accepted|?{$_.Weapon -eq 'shotgun' -and $_.ProfileName}|select -first 1)
 $shotgunProfile=if($isShotgunSession -and $session.ShotgunProfileName){$session.ShotgunProfileName}elseif($isShotgunSession -and $session.ProfileName){$session.ProfileName}elseif($shotgunAccepted.Count){$shotgunAccepted[0].ProfileName}else{$null}
 $weaponProfile=if($effectiveWeapon -eq 'mp5'){if($mp5Profile){$mp5Profile}else{$glockProfile}}elseif($effectiveWeapon -eq 'glock'){if($glockProfile){$glockProfile}else{$mp5Profile}}elseif($effectiveWeapon -eq '357'){if($profile357){$profile357}else{$session.ProfileName}}elseif($effectiveWeapon -eq 'shotgun'){if($shotgunProfile){$shotgunProfile}else{$session.ProfileName}}elseif($shotgunProfile){$shotgunProfile}elseif($profile357){$profile357}elseif($mp5Profile){$mp5Profile}elseif($glockProfile){$glockProfile}elseif($session.ProfileName){$session.ProfileName}else{$null}
-if(-not $session){[void]$warnings.Add('No session header line was parsed. The analyzer can still summarize event telemetry, but launch metadata is missing.')} ; if($accepted.Count){[void]$obs.Add("Parsed $($accepted.Count) accepted event(s).")}else{[void]$warnings.Add('No accepted weapon telemetry matched the current filter.')}; if($hits.Count){[void]$obs.Add("Parsed $($hits.Count) hit event(s).")}else{[void]$warnings.Add('No hit telemetry matched the current filter.')}; if($movePenaltyAccepted.Count){[void]$obs.Add("Movement-penalty evidence exists ($($movePenaltyAccepted.Count)).")}else{[void]$warnings.Add('No accepted event with move_penalty > 0 matched the current filter.')}; if(($effectiveWeapon -eq 'glock' -or $effectiveWeapon -eq 'mp5') -and -not $burstGrowthAccepted.Count){[void]$warnings.Add('No cadence-growth or recovery evidence was logged for this selection.')} ; if(($effectiveWeapon -eq 'glock' -or $effectiveWeapon -eq '357') -and -not $cadencePenaltyAccepted.Count){[void]$warnings.Add('No cadence penalty or cadence reset evidence was logged for this pistol selection.')} ; if($cadenceAccepted.Count){[void]$obs.Add("Cadence telemetry was present ($($cadenceAccepted.Count)).")} ; if($dummySpawns.Count -or $dummyRespawns.Count -or $dummyClears.Count -or $dummyRepositions.Count -or $dummySpawnFailures.Count -or $targetMarks.Count -or $targetUnmarks.Count -or $targetUseSaved.Count){[void]$obs.Add("Target lifecycle telemetry was present ($($dummySpawns.Count) spawn, $($dummyRespawns.Count) respawn, $($dummySpawnFailures.Count) spawn_failed, $($dummyClears.Count) clear, $($dummyRepositions.Count) reposition, $($targetMarks.Count) mark, $($targetUnmarks.Count) unmark, $($targetUseSaved.Count) use_saved).")} ; if($dummySpawnFailures.Count){[void]$obs.Add("Target spawn failures were logged ($($dummySpawnFailures.Count)).")} ; if($savedSpotUsage.Count){[void]$obs.Add("Saved-spot spawn usage was logged ($($savedSpotUsage.Count)).")} ; if($dummyHeadshotKills.Count){[void]$obs.Add("Target headshot kill evidence exists ($($dummyHeadshotKills.Count)).")}
+if(-not $session){[void]$warnings.Add('No session header line was parsed. The analyzer can still summarize event telemetry, but launch metadata is missing.')} ; if($accepted.Count){[void]$obs.Add("Parsed $($accepted.Count) accepted event(s).")}else{[void]$warnings.Add('No accepted weapon telemetry matched the current filter.')}; if($hits.Count){[void]$obs.Add("Parsed $($hits.Count) hit event(s).")}else{[void]$warnings.Add('No hit telemetry matched the current filter.')}; if($movePenaltyAccepted.Count){[void]$obs.Add("Movement-penalty evidence exists ($($movePenaltyAccepted.Count)).")}else{[void]$warnings.Add('No accepted event with move_penalty > 0 matched the current filter.')}; if(($effectiveWeapon -eq 'glock' -or $effectiveWeapon -eq 'mp5') -and -not $burstGrowthAccepted.Count){[void]$warnings.Add('No cadence-growth or recovery evidence was logged for this selection.')} ; if(($effectiveWeapon -eq 'glock' -or $effectiveWeapon -eq '357') -and -not $cadencePenaltyAccepted.Count){[void]$warnings.Add('No cadence penalty or cadence reset evidence was logged for this pistol selection.')} ; if($cadenceAccepted.Count){[void]$obs.Add("Cadence telemetry was present ($($cadenceAccepted.Count)).")} ; if($dummySpawns.Count -or $dummyRespawns.Count -or $dummyClears.Count -or $dummyRepositions.Count -or $dummySpawnFailures.Count -or $targetMarks.Count -or $targetUnmarks.Count -or $targetUseSaved.Count){[void]$obs.Add("Target lifecycle telemetry was present ($($dummySpawns.Count) spawn, $($dummyRespawns.Count) respawn, $($dummySpawnFailures.Count) spawn_failed, $($dummyClears.Count) clear, $($dummyRepositions.Count) reposition, $($targetMarks.Count) mark, $($targetUnmarks.Count) unmark, $($targetUseSaved.Count) use_saved).")} ; if($dummySpawnFailures.Count){[void]$obs.Add("Target spawn failures were logged ($($dummySpawnFailures.Count)).")} ; if($savedSpotUsage.Count){[void]$obs.Add("Saved-spot spawn usage was logged ($($savedSpotUsage.Count)).")} ; if($dummyHeadshotKills.Count){[void]$obs.Add("Target headshot kill evidence exists ($($dummyHeadshotKills.Count)).")} ; if($protectedDummyHeadshotHits.Count){[void]$obs.Add("Protected-head dummy evidence exists ($($protectedDummyHeadshotHits.Count)).")}
 if($playerHits.Count){[void]$obs.Add("Parsed $($playerHits.Count) direct player/fake-player hit event(s).")}
 if($realPlayerHits.Count){[void]$obs.Add("Real-player hit telemetry was present ($($realPlayerHits.Count)).")}
 if($fakePlayerHits.Count){[void]$obs.Add("Fake verification client hit telemetry was present ($($fakePlayerHits.Count)).")}
@@ -250,6 +266,11 @@ if($directPlayerArmorEvidenceHits.Count){
  [void]$obs.Add("Direct player armor telemetry exists ($($directPlayerArmorEvidenceHits.Count)) with absorbed total $(if($playerArmorAbsorbedTotal -ne $null){('{0:F4}' -f $playerArmorAbsorbedTotal)}else{'n/a'}).")
 }elseif($playerHits.Count){
  [void]$warnings.Add('Player/fake-player hit telemetry exists, but no hit carried full direct armor-before/after and damage breakdown fields.')
+}
+if($directDummyArmorEvidenceHits.Count){
+ [void]$obs.Add("Direct dummy armor telemetry exists ($($directDummyArmorEvidenceHits.Count)) with absorbed total $(if($dummyArmorAbsorbedTotal -ne $null){('{0:F4}' -f $dummyArmorAbsorbedTotal)}else{'n/a'}).")
+}elseif($dummyHits.Count){
+ [void]$warnings.Add('Dummy hit telemetry exists, but no dummy hit carried full direct armor-before/after and damage breakdown fields.')
 }
 if(($effectiveWeapon -eq 'mp5' -or $Weapon -eq 'mp5') -and $mp5ShortBurstSpreadStats -and $mp5LongBurstSpreadStats){
  if($mp5LongBurstSpreadStats.Average -gt $mp5ShortBurstSpreadStats.Average){
@@ -270,6 +291,20 @@ if($kills.Count -gt 0){
   [void]$obs.Add("Kill telemetry consistency check passed ($($fullyConsistentKills.Count)/$($kills.Count)).")
  }else{
   [void]$warnings.Add("Some kill lines have mismatched health delta vs applied_damage or damage_to_health ($($fullyConsistentKills.Count)/$($kills.Count) fully consistent).")
+ }
+}
+if($dummyHits.Count -gt 0){
+ if($fullyConsistentDummyHits.Count -eq $dummyHits.Count){
+  [void]$obs.Add("Dummy hit telemetry consistency check passed ($($fullyConsistentDummyHits.Count)/$($dummyHits.Count)).")
+ }else{
+  [void]$warnings.Add("Some dummy hit lines have mismatched health delta vs applied_damage or damage_to_health ($($fullyConsistentDummyHits.Count)/$($dummyHits.Count) fully consistent).")
+ }
+}
+if($dummyKills.Count -gt 0){
+ if($fullyConsistentDummyKills.Count -eq $dummyKills.Count){
+  [void]$obs.Add("Dummy kill telemetry consistency check passed ($($fullyConsistentDummyKills.Count)/$($dummyKills.Count)).")
+ }else{
+  [void]$warnings.Add("Some dummy kill lines have mismatched health delta vs applied_damage or damage_to_health ($($fullyConsistentDummyKills.Count)/$($dummyKills.Count) fully consistent).")
  }
 }
 $signals=[ordered]@{acceptedShots=($accepted.Count -gt 0);tapFireHoldRejections=($rejected.Count -gt 0);firstShotAccepted=($firstShotAccepted.Count -gt 0);movementPenaltyPositive=($movePenaltyAccepted.Count -gt 0);recoveryReturnedFirstShot=$recoveryReturnedFirstShot;crouchMovePenaltyReductionCandidate=$crouchMoveEvidence;hitsPresent=($hits.Count -gt 0);killsPresent=($kills.Count -gt 0);headshotHitsPresent=($headshotHits.Count -gt 0);headshotKillsPresent=($headshotKills.Count -gt 0);lethalHeadshotEvidencePresent=($lethal.Count -gt 0);dummySpawnsPresent=($dummySpawns.Count -gt 0);dummyRespawnsPresent=($dummyRespawns.Count -gt 0);dummyHitsPresent=($dummyHits.Count -gt 0);dummyKillsPresent=($dummyKills.Count -gt 0);dummyHeadshotHitsPresent=($dummyHeadshotHits.Count -gt 0);dummyHeadshotKillsPresent=($dummyHeadshotKills.Count -gt 0);armoredDummyHitsPresent=($armoredDummyHits.Count -gt 0);protectedDummyHeadshotHitsPresent=($protectedDummyHeadshotHits.Count -gt 0);protectedDummyHeadshotKillsPresent=($protectedDummyHeadshotKills.Count -gt 0);dummyLethalHeadshotEvidencePresent=($dummyLethal.Count -gt 0);weaponAcceptedPresent=($accepted.Count -gt 0);weaponHitsPresent=($hits.Count -gt 0);weaponKillsPresent=($kills.Count -gt 0);weaponHeadshotKillsPresent=($headshotKills.Count -gt 0);burstGrowthEvidencePresent=($burstGrowthAccepted.Count -gt 0);cadenceModeEvidencePresent=($cadenceAccepted.Count -gt 0);cadencePenaltyEvidencePresent=($cadencePenaltyAccepted.Count -gt 0);cadenceResetEvidencePresent=($cadenceResetAccepted.Count -gt 0);movementPenaltyEvidencePresent=($movePenaltyAccepted.Count -gt 0);patternEvidencePresent=($patternAccepted.Count -gt 0);patternResetEvidencePresent=($patternResetAccepted.Count -gt 0)}
@@ -594,9 +629,12 @@ $report=[ordered]@{
   dummyHeadshotHits=$dummyHeadshotHits.Count
   dummyHeadshotKills=$dummyHeadshotKills.Count
   armoredDummyHits=$armoredDummyHits.Count
+  directDummyArmorEvidenceHits=$directDummyArmorEvidenceHits.Count
   protectedDummyHeadshotHits=$protectedDummyHeadshotHits.Count
   protectedDummyHeadshotKills=$protectedDummyHeadshotKills.Count
   dummyLethalHeadshotEvidence=$dummyLethal.Count
+  consistentDummyHits=$fullyConsistentDummyHits.Count
+  consistentDummyKills=$fullyConsistentDummyKills.Count
   firstShotAccepted=$firstShotAccepted.Count
   acceptedMovePenaltyPositive=$movePenaltyAccepted.Count
   burstGrowthEvidence=$burstGrowthAccepted.Count
@@ -635,12 +673,20 @@ $report=[ordered]@{
    killHealthDeltaConsistent=$healthDeltaConsistentKills.Count
    killDamageModelConsistent=$damageModelConsistentKills.Count
    killFullyConsistent=$fullyConsistentKills.Count
+   dummyHitHealthDeltaConsistent=$healthDeltaConsistentDummyHits.Count
+   dummyHitDamageModelConsistent=$damageModelConsistentDummyHits.Count
+   dummyHitFullyConsistent=$fullyConsistentDummyHits.Count
+   dummyKillHealthDeltaConsistent=$healthDeltaConsistentDummyKills.Count
+   dummyKillDamageModelConsistent=$damageModelConsistentDummyKills.Count
+   dummyKillFullyConsistent=$fullyConsistentDummyKills.Count
   }
   pelletsPlanned=$pelletPlanStats
   pelletsHit=$pelletHitStats
   headshotPellets=$headshotPelletStats
   playerArmorAbsorbedTotal=$playerArmorAbsorbedTotal
   playerArmorDrainTotal=$playerArmorDrainTotal
+  dummyArmorAbsorbedTotal=$dummyArmorAbsorbedTotal
+  dummyArmorDrainTotal=$dummyArmorDrainTotal
   targetSpawnBySource=@($targetSpawnBySource)
   hitgroupCounts=(($hits|group HitGroup|?{$_.Name}|sort Name|%{[ordered]@{Name=$_.Name;Count=$_.Count}}))
   dummyHitgroupCounts=(($dummyHits|group HitGroup|?{$_.Name}|sort Name|%{[ordered]@{Name=$_.Name;Count=$_.Count}}))
@@ -689,9 +735,12 @@ Write-Host "  target kills             : $($dummyKills.Count)"
 Write-Host "  target hs hits           : $($dummyHeadshotHits.Count)"
 Write-Host "  target hs kills          : $($dummyHeadshotKills.Count)"
 Write-Host "  armored target hits      : $($armoredDummyHits.Count)"
+Write-Host "  direct dummy armor evid. : $($directDummyArmorEvidenceHits.Count)"
 Write-Host "  protected hs hits        : $($protectedDummyHeadshotHits.Count)"
 Write-Host "  protected hs kills       : $($protectedDummyHeadshotKills.Count)"
 Write-Host "  target lethal hs evid.   : $($dummyLethal.Count)"
+Write-Host "  dummy armor absorbed     : $(if($dummyArmorAbsorbedTotal -ne $null){('{0:F4}' -f $dummyArmorAbsorbedTotal)}else{'n/a'})"
+Write-Host "  dummy armor drain total  : $(if($dummyArmorDrainTotal -ne $null){('{0:F4}' -f $dummyArmorDrainTotal)}else{'n/a'})"
 Write-Host "  player hits              : $($playerHits.Count)"
 Write-Host "  real-player hits         : $($realPlayerHits.Count)"
 Write-Host "  fake-player hits         : $($fakePlayerHits.Count)"
@@ -718,6 +767,8 @@ Write-Host "  absorbed min/avg/max     : $(if($damageAbsorbedStats){('{0:F4} / {
 Write-Host "  armor drain min/avg/max  : $(if($armorDrainStats){('{0:F4} / {1:F4} / {2:F4}' -f $armorDrainStats.Min,$armorDrainStats.Average,$armorDrainStats.Max)}else{'n/a / n/a / n/a'})"
 Write-Host "  consistent hit lines     : $($fullyConsistentHits.Count) / $($hits.Count)"
 Write-Host "  consistent kill lines    : $($fullyConsistentKills.Count) / $($kills.Count)"
+Write-Host "  consistent dummy hits    : $($fullyConsistentDummyHits.Count) / $($dummyHits.Count)"
+Write-Host "  consistent dummy kills   : $($fullyConsistentDummyKills.Count) / $($dummyKills.Count)"
 Write-Host "  hitgroups                : $(FHitgroups $report.stats.hitgroupCounts)"
 if($playerHits.Count -gt 0){Write-Host "  player hitgroups         : $(FHitgroups $report.stats.playerHitgroupCounts)"}
 if($fakePlayerHits.Count -gt 0){Write-Host "  fake-player hitgroups    : $(FHitgroups $report.stats.fakePlayerHitgroupCounts)"}

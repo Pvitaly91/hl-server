@@ -64,6 +64,9 @@ Focused live verification commands:
 - `exp_armor_set <player> <armor>`
 - `exp_helmet_set <player> <0|1>`
 - `exp_player_hit_test <attacker> <victim> <weapon> <hitgroup>`
+- `exp_target_profile <name>`
+- `exp_target_tp_front`
+- `exp_dummy_hit_test <weapon> <hitgroup> [attacker]`
 
 Recommended live verification loop:
 
@@ -72,6 +75,21 @@ Recommended live verification loop:
 3. Use `exp_armor_set` and `exp_helmet_set` to build a helmeted or unhelmeted target state.
 4. Trigger direct body or head hits with `exp_player_hit_test`.
 5. Inspect the resulting `type=hit` and `type=kill` lines in the current weapon log, or run the analyzer to summarize direct player/fake-player evidence.
+
+The standing dummy is now also a trustworthy direct-damage verification target for the same workflow. Use:
+
+1. `exp_target_profile unarmored`
+2. `exp_target_tp_front`
+3. `exp_dummy_hit_test glock chest`
+4. `exp_target_profile vest`
+5. `exp_target_tp_front`
+6. `exp_dummy_hit_test mp5 chest`
+7. `exp_target_profile vest_headprotected`
+8. `exp_target_tp_front`
+9. `exp_dummy_hit_test glock head`
+10. `exp_dummy_hit_test 357 head`
+
+After the April 24, 2026 dummy-fidelity fix, both the direct `type=hit` / `type=kill` lines and the matching `type=lab_console` verification summary use the same authoritative before/after snapshot instead of late monster state. The analyzer now reports `consistent dummy hits` and `consistent dummy kills` so the old "one odd dummy line" caveat should not be needed for fresh logs anymore.
 
 For the fuller model notes and the exact live verification example, see [docs/headshot-armor-model.md](docs/headshot-armor-model.md).
 

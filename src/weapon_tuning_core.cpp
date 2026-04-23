@@ -810,6 +810,7 @@ bool ApplySharedWeaponTraceDamage(
     result->traceDamage = profile.baseDamage >= 0.0f
         ? (profile.baseDamage * result->hitgroupScale)
         : fallbackDamage;
+    result->victimHealthBefore = pVictim->pev->health;
 
     result->dummyVictim = IsExpGlockLabDummyEntity(pVictim);
 
@@ -826,6 +827,7 @@ bool ApplySharedWeaponTraceDamage(
     result->damageToHealth = result->traceDamage;
     result->victimArmorKnown = pVictim->IsPlayer() || result->dummyVictim;
     result->victimArmorBefore = result->victimArmorKnown ? pVictim->pev->armorvalue : 0.0f;
+    result->victimArmorAfter = result->victimArmorKnown ? result->victimArmorBefore : 0.0f;
 
     if (result->dummyVictim)
     {
@@ -850,6 +852,8 @@ bool ApplySharedWeaponTraceDamage(
             {
                 pVictim->pev->armorvalue = 0.0f;
             }
+
+            result->victimArmorAfter = pVictim->pev->armorvalue;
         }
     }
     else if (pVictim->IsPlayer() && ExpArmorModeEnabled())
@@ -877,8 +881,13 @@ bool ApplySharedWeaponTraceDamage(
             {
                 pVictim->pev->armorvalue = 0.0f;
             }
+
+            result->victimArmorAfter = pVictim->pev->armorvalue;
         }
     }
+
+    result->victimHealthAfter = result->victimHealthBefore - result->damageToHealth;
+    result->killedByTraceDamage = result->victimHealthBefore > 0.0f && result->victimHealthAfter <= 0.0f;
 
     return true;
 }

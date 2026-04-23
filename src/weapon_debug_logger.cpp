@@ -40,8 +40,11 @@ struct GlockPrimaryShotContext
     float traceDamage;
     bool headshotLethalApplied;
     float victimHealthBefore;
+    float victimHealthAfter;
     bool victimArmorKnown;
     float victimArmorBefore;
+    float victimArmorAfter;
+    bool killedByShot;
     bool victimIsDummy;
     char targetProfileName[64];
     bool dummyArmorApplied;
@@ -73,8 +76,11 @@ struct Mp5PrimaryShotContext
     float traceDamage;
     bool headshotLethalApplied;
     float victimHealthBefore;
+    float victimHealthAfter;
     bool victimArmorKnown;
     float victimArmorBefore;
+    float victimArmorAfter;
+    bool killedByShot;
     bool victimIsDummy;
     char targetProfileName[64];
     bool dummyArmorApplied;
@@ -106,8 +112,11 @@ struct Weapon357PrimaryShotContext
     float traceDamage;
     bool headshotLethalApplied;
     float victimHealthBefore;
+    float victimHealthAfter;
     bool victimArmorKnown;
     float victimArmorBefore;
+    float victimArmorAfter;
+    bool killedByShot;
     bool victimIsDummy;
     char targetProfileName[64];
     bool dummyArmorApplied;
@@ -191,8 +200,11 @@ void ClearPendingGlockPrimaryHit()
     g_glockPrimaryShotContext.traceDamage = 0.0f;
     g_glockPrimaryShotContext.headshotLethalApplied = false;
     g_glockPrimaryShotContext.victimHealthBefore = 0.0f;
+    g_glockPrimaryShotContext.victimHealthAfter = 0.0f;
     g_glockPrimaryShotContext.victimArmorKnown = false;
     g_glockPrimaryShotContext.victimArmorBefore = 0.0f;
+    g_glockPrimaryShotContext.victimArmorAfter = 0.0f;
+    g_glockPrimaryShotContext.killedByShot = false;
     g_glockPrimaryShotContext.victimIsDummy = false;
     g_glockPrimaryShotContext.targetProfileName[0] = '\0';
     g_glockPrimaryShotContext.dummyArmorApplied = false;
@@ -223,8 +235,11 @@ void ClearPendingMp5PrimaryHit()
     g_mp5PrimaryShotContext.traceDamage = 0.0f;
     g_mp5PrimaryShotContext.headshotLethalApplied = false;
     g_mp5PrimaryShotContext.victimHealthBefore = 0.0f;
+    g_mp5PrimaryShotContext.victimHealthAfter = 0.0f;
     g_mp5PrimaryShotContext.victimArmorKnown = false;
     g_mp5PrimaryShotContext.victimArmorBefore = 0.0f;
+    g_mp5PrimaryShotContext.victimArmorAfter = 0.0f;
+    g_mp5PrimaryShotContext.killedByShot = false;
     g_mp5PrimaryShotContext.victimIsDummy = false;
     g_mp5PrimaryShotContext.targetProfileName[0] = '\0';
     g_mp5PrimaryShotContext.dummyArmorApplied = false;
@@ -255,8 +270,11 @@ void ClearPending357PrimaryHit()
     g_357PrimaryShotContext.traceDamage = 0.0f;
     g_357PrimaryShotContext.headshotLethalApplied = false;
     g_357PrimaryShotContext.victimHealthBefore = 0.0f;
+    g_357PrimaryShotContext.victimHealthAfter = 0.0f;
     g_357PrimaryShotContext.victimArmorKnown = false;
     g_357PrimaryShotContext.victimArmorBefore = 0.0f;
+    g_357PrimaryShotContext.victimArmorAfter = 0.0f;
+    g_357PrimaryShotContext.killedByShot = false;
     g_357PrimaryShotContext.victimIsDummy = false;
     g_357PrimaryShotContext.targetProfileName[0] = '\0';
     g_357PrimaryShotContext.dummyArmorApplied = false;
@@ -311,6 +329,71 @@ ShotgunPrimaryVictimAggregate *FindShotgunVictimAggregate(CBaseEntity *pVictim)
     }
 
     return NULL;
+}
+
+void PopulateVerificationHitSnapshot(
+    VerificationHitTelemetrySnapshot *pSnapshot,
+    float victimHealthBefore,
+    float victimHealthAfter,
+    bool victimArmorKnown,
+    float victimArmorBefore,
+    float victimArmorAfter,
+    float damageRaw,
+    float damageToHealth,
+    float damageAbsorbed,
+    float armorDrain,
+    bool killedByShot)
+{
+    if (pSnapshot == NULL)
+    {
+        return;
+    }
+
+    memset(pSnapshot, 0, sizeof(*pSnapshot));
+    pSnapshot->valid = true;
+    pSnapshot->victimHealthBefore = victimHealthBefore;
+    pSnapshot->victimHealthAfter = victimHealthAfter;
+    pSnapshot->victimArmorKnown = victimArmorKnown;
+    pSnapshot->victimArmorBefore = victimArmorBefore;
+    pSnapshot->victimArmorAfter = victimArmorAfter;
+    pSnapshot->damageRaw = damageRaw;
+    pSnapshot->damageToHealth = damageToHealth;
+    pSnapshot->damageAbsorbed = damageAbsorbed;
+    pSnapshot->armorDrain = armorDrain;
+    pSnapshot->killedByShot = killedByShot;
+}
+
+bool PopulateShotgunVerificationHitSnapshot(CBaseEntity *pVictim, VerificationHitTelemetrySnapshot *pSnapshot)
+{
+    if (pVictim == NULL)
+    {
+        return false;
+    }
+
+    for (int index = 0; index < kMaxShotgunVictimsPerShot; ++index)
+    {
+        ShotgunPrimaryVictimAggregate *aggregate = &g_shotgunPrimaryShotContext.victims[index];
+        if (!aggregate->active || aggregate->victim != pVictim || aggregate->pelletHits <= 0)
+        {
+            continue;
+        }
+
+        PopulateVerificationHitSnapshot(
+            pSnapshot,
+            aggregate->victimHealthBefore,
+            aggregate->victimHealthAfter,
+            aggregate->victimArmorKnown,
+            aggregate->victimArmorBefore,
+            aggregate->victimArmorAfter,
+            aggregate->totalTraceDamage,
+            aggregate->totalDamageToHealth,
+            aggregate->totalDamageAbsorbed,
+            aggregate->totalArmorDrain,
+            aggregate->killedByShot);
+        return true;
+    }
+
+    return false;
 }
 
 void FormatTimestamp(char *buffer, size_t bufferSize)
@@ -1883,9 +1966,12 @@ bool ApplyActiveGlockPrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAtta
     g_glockPrimaryShotContext.hitgroupScale = traceResult.hitgroupScale;
     g_glockPrimaryShotContext.traceDamage = traceResult.traceDamage;
     g_glockPrimaryShotContext.headshotLethalApplied = traceResult.headshotLethalApplied;
-    g_glockPrimaryShotContext.victimHealthBefore = pVictim->pev->health;
+    g_glockPrimaryShotContext.victimHealthBefore = traceResult.victimHealthBefore;
+    g_glockPrimaryShotContext.victimHealthAfter = traceResult.victimHealthAfter;
     g_glockPrimaryShotContext.victimArmorKnown = traceResult.victimArmorKnown;
     g_glockPrimaryShotContext.victimArmorBefore = traceResult.victimArmorBefore;
+    g_glockPrimaryShotContext.victimArmorAfter = traceResult.victimArmorAfter;
+    g_glockPrimaryShotContext.killedByShot = traceResult.killedByTraceDamage;
     g_glockPrimaryShotContext.victimIsDummy = traceResult.dummyVictim;
     g_glockPrimaryShotContext.dummyArmorApplied = traceResult.dummyArmorApplied;
     g_glockPrimaryShotContext.dummyHeadProtected = traceResult.dummyHeadProtected;
@@ -1894,6 +1980,28 @@ bool ApplyActiveGlockPrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAtta
     g_glockPrimaryShotContext.damageAbsorbed = traceResult.damageAbsorbed;
     g_glockPrimaryShotContext.armorDrain = traceResult.armorDrain;
 
+    return true;
+}
+
+bool GetActiveGlockPrimaryHitSnapshot(VerificationHitTelemetrySnapshot *pSnapshot)
+{
+    if (!g_glockPrimaryShotContext.active || !g_glockPrimaryShotContext.pendingHit || pSnapshot == NULL)
+    {
+        return false;
+    }
+
+    PopulateVerificationHitSnapshot(
+        pSnapshot,
+        g_glockPrimaryShotContext.victimHealthBefore,
+        g_glockPrimaryShotContext.victimHealthAfter,
+        g_glockPrimaryShotContext.victimArmorKnown,
+        g_glockPrimaryShotContext.victimArmorBefore,
+        g_glockPrimaryShotContext.victimArmorAfter,
+        g_glockPrimaryShotContext.damageRaw,
+        g_glockPrimaryShotContext.damageToHealth,
+        g_glockPrimaryShotContext.damageAbsorbed,
+        g_glockPrimaryShotContext.armorDrain,
+        g_glockPrimaryShotContext.killedByShot);
     return true;
 }
 
@@ -1906,11 +2014,11 @@ void FinalizeActiveGlockPrimaryHitTelemetry()
     }
 
     CBaseEntity *pVictim = g_glockPrimaryShotContext.victim;
-    const float flHealthAfter = pVictim->pev->health;
-    const float flAppliedDamage = g_glockPrimaryShotContext.victimHealthBefore - flHealthAfter;
+    const float flHealthAfter = g_glockPrimaryShotContext.victimHealthAfter;
+    const float flAppliedDamage = g_glockPrimaryShotContext.damageToHealth;
     const bool fArmorKnown = g_glockPrimaryShotContext.victimArmorKnown;
-    const float flArmorAfter = fArmorKnown ? pVictim->pev->armorvalue : 0.0f;
-    const float flArmorDamage = fArmorKnown ? (g_glockPrimaryShotContext.victimArmorBefore - flArmorAfter) : 0.0f;
+    const float flArmorAfter = fArmorKnown ? g_glockPrimaryShotContext.victimArmorAfter : 0.0f;
+    const float flArmorDamage = fArmorKnown ? g_glockPrimaryShotContext.armorDrain : 0.0f;
     const bool fDummyTelemetry = g_glockPrimaryShotContext.victimIsDummy;
     const HitVictimTelemetryState victimState = BuildHitVictimTelemetryState(
         pVictim,
@@ -1924,9 +2032,11 @@ void FinalizeActiveGlockPrimaryHitTelemetry()
         g_glockPrimaryShotContext.dummyArmorApplied ||
         g_glockPrimaryShotContext.damageAbsorbed > 0.0f ||
         g_glockPrimaryShotContext.armorDrain > 0.0f;
+    const bool armorHitProtected = victimState.armorHitProtected ||
+        g_glockPrimaryShotContext.damageAbsorbed > 0.0f ||
+        g_glockPrimaryShotContext.armorDrain > 0.0f;
 
-    const bool killedByShot = (g_glockPrimaryShotContext.victimHealthBefore > 0.0f) &&
-        (flHealthAfter <= 0.0f || !pVictim->IsAlive());
+    const bool killedByShot = g_glockPrimaryShotContext.killedByShot;
 
     if (ExpDebugWeaponLogEnabled())
     {
@@ -1975,7 +2085,7 @@ void FinalizeActiveGlockPrimaryHitTelemetry()
             victimState.fakeVictim ? 1 : 0,
             victimState.helmetEquipped ? 1 : 0,
             victimState.headProtectionActive ? 1 : 0,
-            victimState.armorHitProtected ? 1 : 0,
+            armorHitProtected ? 1 : 0,
             victimState.armorModelName,
             GetHitgroupName(g_glockPrimaryShotContext.hitgroup),
             g_glockPrimaryShotContext.hitgroup,
@@ -2028,7 +2138,7 @@ void FinalizeActiveGlockPrimaryHitTelemetry()
                 victimState.fakeVictim ? 1 : 0,
                 victimState.helmetEquipped ? 1 : 0,
                 victimState.headProtectionActive ? 1 : 0,
-                victimState.armorHitProtected ? 1 : 0,
+                armorHitProtected ? 1 : 0,
                 victimState.armorModelName,
                 GetHitgroupName(g_glockPrimaryShotContext.hitgroup),
                 g_glockPrimaryShotContext.hitgroup,
@@ -2126,9 +2236,12 @@ bool ApplyActiveMp5PrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAttack
     g_mp5PrimaryShotContext.hitgroupScale = traceResult.hitgroupScale;
     g_mp5PrimaryShotContext.traceDamage = traceResult.traceDamage;
     g_mp5PrimaryShotContext.headshotLethalApplied = traceResult.headshotLethalApplied;
-    g_mp5PrimaryShotContext.victimHealthBefore = pVictim->pev->health;
+    g_mp5PrimaryShotContext.victimHealthBefore = traceResult.victimHealthBefore;
+    g_mp5PrimaryShotContext.victimHealthAfter = traceResult.victimHealthAfter;
     g_mp5PrimaryShotContext.victimArmorKnown = traceResult.victimArmorKnown;
     g_mp5PrimaryShotContext.victimArmorBefore = traceResult.victimArmorBefore;
+    g_mp5PrimaryShotContext.victimArmorAfter = traceResult.victimArmorAfter;
+    g_mp5PrimaryShotContext.killedByShot = traceResult.killedByTraceDamage;
     g_mp5PrimaryShotContext.victimIsDummy = traceResult.dummyVictim;
     g_mp5PrimaryShotContext.dummyArmorApplied = traceResult.dummyArmorApplied;
     g_mp5PrimaryShotContext.dummyHeadProtected = traceResult.dummyHeadProtected;
@@ -2137,6 +2250,28 @@ bool ApplyActiveMp5PrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAttack
     g_mp5PrimaryShotContext.damageAbsorbed = traceResult.damageAbsorbed;
     g_mp5PrimaryShotContext.armorDrain = traceResult.armorDrain;
 
+    return true;
+}
+
+bool GetActiveMp5PrimaryHitSnapshot(VerificationHitTelemetrySnapshot *pSnapshot)
+{
+    if (!g_mp5PrimaryShotContext.active || !g_mp5PrimaryShotContext.pendingHit || pSnapshot == NULL)
+    {
+        return false;
+    }
+
+    PopulateVerificationHitSnapshot(
+        pSnapshot,
+        g_mp5PrimaryShotContext.victimHealthBefore,
+        g_mp5PrimaryShotContext.victimHealthAfter,
+        g_mp5PrimaryShotContext.victimArmorKnown,
+        g_mp5PrimaryShotContext.victimArmorBefore,
+        g_mp5PrimaryShotContext.victimArmorAfter,
+        g_mp5PrimaryShotContext.damageRaw,
+        g_mp5PrimaryShotContext.damageToHealth,
+        g_mp5PrimaryShotContext.damageAbsorbed,
+        g_mp5PrimaryShotContext.armorDrain,
+        g_mp5PrimaryShotContext.killedByShot);
     return true;
 }
 
@@ -2149,11 +2284,11 @@ void FinalizeActiveMp5PrimaryHitTelemetry()
     }
 
     CBaseEntity *pVictim = g_mp5PrimaryShotContext.victim;
-    const float healthAfter = pVictim->pev->health;
-    const float appliedDamage = g_mp5PrimaryShotContext.victimHealthBefore - healthAfter;
+    const float healthAfter = g_mp5PrimaryShotContext.victimHealthAfter;
+    const float appliedDamage = g_mp5PrimaryShotContext.damageToHealth;
     const bool armorKnown = g_mp5PrimaryShotContext.victimArmorKnown;
-    const float armorAfter = armorKnown ? pVictim->pev->armorvalue : 0.0f;
-    const float armorDamage = armorKnown ? (g_mp5PrimaryShotContext.victimArmorBefore - armorAfter) : 0.0f;
+    const float armorAfter = armorKnown ? g_mp5PrimaryShotContext.victimArmorAfter : 0.0f;
+    const float armorDamage = armorKnown ? g_mp5PrimaryShotContext.armorDrain : 0.0f;
     const bool dummyTelemetry = g_mp5PrimaryShotContext.victimIsDummy;
     const HitVictimTelemetryState victimState = BuildHitVictimTelemetryState(
         pVictim,
@@ -2167,9 +2302,11 @@ void FinalizeActiveMp5PrimaryHitTelemetry()
         g_mp5PrimaryShotContext.dummyArmorApplied ||
         g_mp5PrimaryShotContext.damageAbsorbed > 0.0f ||
         g_mp5PrimaryShotContext.armorDrain > 0.0f;
+    const bool armorHitProtected = victimState.armorHitProtected ||
+        g_mp5PrimaryShotContext.damageAbsorbed > 0.0f ||
+        g_mp5PrimaryShotContext.armorDrain > 0.0f;
 
-    const bool killedByShot = (g_mp5PrimaryShotContext.victimHealthBefore > 0.0f) &&
-        (healthAfter <= 0.0f || !pVictim->IsAlive());
+    const bool killedByShot = g_mp5PrimaryShotContext.killedByShot;
 
     if (ExpDebugWeaponLogEnabled())
     {
@@ -2218,7 +2355,7 @@ void FinalizeActiveMp5PrimaryHitTelemetry()
             victimState.fakeVictim ? 1 : 0,
             victimState.helmetEquipped ? 1 : 0,
             victimState.headProtectionActive ? 1 : 0,
-            victimState.armorHitProtected ? 1 : 0,
+            armorHitProtected ? 1 : 0,
             victimState.armorModelName,
             GetHitgroupName(g_mp5PrimaryShotContext.hitgroup),
             g_mp5PrimaryShotContext.hitgroup,
@@ -2271,7 +2408,7 @@ void FinalizeActiveMp5PrimaryHitTelemetry()
                 victimState.fakeVictim ? 1 : 0,
                 victimState.helmetEquipped ? 1 : 0,
                 victimState.headProtectionActive ? 1 : 0,
-                victimState.armorHitProtected ? 1 : 0,
+                armorHitProtected ? 1 : 0,
                 victimState.armorModelName,
                 GetHitgroupName(g_mp5PrimaryShotContext.hitgroup),
                 g_mp5PrimaryShotContext.hitgroup,
@@ -2369,9 +2506,12 @@ bool ApplyActive357PrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAttack
     g_357PrimaryShotContext.hitgroupScale = traceResult.hitgroupScale;
     g_357PrimaryShotContext.traceDamage = traceResult.traceDamage;
     g_357PrimaryShotContext.headshotLethalApplied = traceResult.headshotLethalApplied;
-    g_357PrimaryShotContext.victimHealthBefore = pVictim->pev->health;
+    g_357PrimaryShotContext.victimHealthBefore = traceResult.victimHealthBefore;
+    g_357PrimaryShotContext.victimHealthAfter = traceResult.victimHealthAfter;
     g_357PrimaryShotContext.victimArmorKnown = traceResult.victimArmorKnown;
     g_357PrimaryShotContext.victimArmorBefore = traceResult.victimArmorBefore;
+    g_357PrimaryShotContext.victimArmorAfter = traceResult.victimArmorAfter;
+    g_357PrimaryShotContext.killedByShot = traceResult.killedByTraceDamage;
     g_357PrimaryShotContext.victimIsDummy = traceResult.dummyVictim;
     g_357PrimaryShotContext.dummyArmorApplied = traceResult.dummyArmorApplied;
     g_357PrimaryShotContext.dummyHeadProtected = traceResult.dummyHeadProtected;
@@ -2380,6 +2520,28 @@ bool ApplyActive357PrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAttack
     g_357PrimaryShotContext.damageAbsorbed = traceResult.damageAbsorbed;
     g_357PrimaryShotContext.armorDrain = traceResult.armorDrain;
 
+    return true;
+}
+
+bool GetActive357PrimaryHitSnapshot(VerificationHitTelemetrySnapshot *pSnapshot)
+{
+    if (!g_357PrimaryShotContext.active || !g_357PrimaryShotContext.pendingHit || pSnapshot == NULL)
+    {
+        return false;
+    }
+
+    PopulateVerificationHitSnapshot(
+        pSnapshot,
+        g_357PrimaryShotContext.victimHealthBefore,
+        g_357PrimaryShotContext.victimHealthAfter,
+        g_357PrimaryShotContext.victimArmorKnown,
+        g_357PrimaryShotContext.victimArmorBefore,
+        g_357PrimaryShotContext.victimArmorAfter,
+        g_357PrimaryShotContext.damageRaw,
+        g_357PrimaryShotContext.damageToHealth,
+        g_357PrimaryShotContext.damageAbsorbed,
+        g_357PrimaryShotContext.armorDrain,
+        g_357PrimaryShotContext.killedByShot);
     return true;
 }
 
@@ -2392,11 +2554,11 @@ void FinalizeActive357PrimaryHitTelemetry()
     }
 
     CBaseEntity *pVictim = g_357PrimaryShotContext.victim;
-    const float healthAfter = pVictim->pev->health;
-    const float appliedDamage = g_357PrimaryShotContext.victimHealthBefore - healthAfter;
+    const float healthAfter = g_357PrimaryShotContext.victimHealthAfter;
+    const float appliedDamage = g_357PrimaryShotContext.damageToHealth;
     const bool armorKnown = g_357PrimaryShotContext.victimArmorKnown;
-    const float armorAfter = armorKnown ? pVictim->pev->armorvalue : 0.0f;
-    const float armorDamage = armorKnown ? (g_357PrimaryShotContext.victimArmorBefore - armorAfter) : 0.0f;
+    const float armorAfter = armorKnown ? g_357PrimaryShotContext.victimArmorAfter : 0.0f;
+    const float armorDamage = armorKnown ? g_357PrimaryShotContext.armorDrain : 0.0f;
     const bool dummyTelemetry = g_357PrimaryShotContext.victimIsDummy;
     const HitVictimTelemetryState victimState = BuildHitVictimTelemetryState(
         pVictim,
@@ -2410,9 +2572,11 @@ void FinalizeActive357PrimaryHitTelemetry()
         g_357PrimaryShotContext.dummyArmorApplied ||
         g_357PrimaryShotContext.damageAbsorbed > 0.0f ||
         g_357PrimaryShotContext.armorDrain > 0.0f;
+    const bool armorHitProtected = victimState.armorHitProtected ||
+        g_357PrimaryShotContext.damageAbsorbed > 0.0f ||
+        g_357PrimaryShotContext.armorDrain > 0.0f;
 
-    const bool killedByShot = (g_357PrimaryShotContext.victimHealthBefore > 0.0f) &&
-        (healthAfter <= 0.0f || !pVictim->IsAlive());
+    const bool killedByShot = g_357PrimaryShotContext.killedByShot;
 
     if (ExpDebugWeaponLogEnabled())
     {
@@ -2461,7 +2625,7 @@ void FinalizeActive357PrimaryHitTelemetry()
             victimState.fakeVictim ? 1 : 0,
             victimState.helmetEquipped ? 1 : 0,
             victimState.headProtectionActive ? 1 : 0,
-            victimState.armorHitProtected ? 1 : 0,
+            armorHitProtected ? 1 : 0,
             victimState.armorModelName,
             GetHitgroupName(g_357PrimaryShotContext.hitgroup),
             g_357PrimaryShotContext.hitgroup,
@@ -2514,7 +2678,7 @@ void FinalizeActive357PrimaryHitTelemetry()
                 victimState.fakeVictim ? 1 : 0,
                 victimState.helmetEquipped ? 1 : 0,
                 victimState.headProtectionActive ? 1 : 0,
-                victimState.armorHitProtected ? 1 : 0,
+                armorHitProtected ? 1 : 0,
                 victimState.armorModelName,
                 GetHitgroupName(g_357PrimaryShotContext.hitgroup),
                 g_357PrimaryShotContext.hitgroup,
@@ -2651,6 +2815,16 @@ bool ApplyActiveShotgunPrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAt
     aggregate->killedByShot = aggregate->victimHealthAfter <= 0.0f;
 
     return true;
+}
+
+bool GetActiveShotgunPrimaryHitSnapshot(CBaseEntity *pVictim, VerificationHitTelemetrySnapshot *pSnapshot)
+{
+    if (!g_shotgunPrimaryShotContext.active || pSnapshot == NULL)
+    {
+        return false;
+    }
+
+    return PopulateShotgunVerificationHitSnapshot(pVictim, pSnapshot);
 }
 
 void FinalizeActiveShotgunPrimaryHitTelemetry()

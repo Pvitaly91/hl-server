@@ -192,6 +192,28 @@ exp_target_use_saved default
 exp_target_respawn
 ```
 
+Dummy verification fidelity is now intended to be trustworthy across Glock, MP5, 357, and shotgun:
+
+- direct dummy `type=hit` and `type=kill` lines now use authoritative before/after snapshots instead of later corpse state
+- the matching `type=lab_console` helper summary uses the same snapshot, so it should agree with the direct hit line
+- `exp_dummy_hit_test <weapon> <hitgroup> [attacker]` is the focused verification helper for this path
+- the analyzer now reports `direct dummy armor evid.`, `dummy armor absorbed`, `consistent dummy hits`, and `consistent dummy kills`
+
+Recommended dummy verification loop:
+
+```text
+exp_target_profile unarmored
+exp_target_tp_front
+exp_dummy_hit_test glock chest
+exp_target_profile vest
+exp_target_tp_front
+exp_dummy_hit_test mp5 chest
+exp_target_profile vest_headprotected
+exp_target_tp_front
+exp_dummy_hit_test glock head
+exp_dummy_hit_test 357 head
+```
+
 357 preset JSON files now live under `configs/357-presets/` with checked-in `default`, `precision_test`, and `headshot_test` examples for live-lab iteration.
 
 Shotgun preset JSON files now live under `configs/shotgun-presets/` with checked-in `default`, `close_quickkill`, and `precision_test` examples for live-lab iteration.

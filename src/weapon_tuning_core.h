@@ -97,8 +97,12 @@ struct SharedWeaponTraceDamageResult
     float armorDrain;
     bool headshotLethalApplied;
     bool dummyVictim;
+    float victimHealthBefore;
+    float victimHealthAfter;
     bool victimArmorKnown;
     float victimArmorBefore;
+    float victimArmorAfter;
+    bool killedByTraceDamage;
     bool dummyArmorApplied;
     bool dummyHeadProtected;
 };
