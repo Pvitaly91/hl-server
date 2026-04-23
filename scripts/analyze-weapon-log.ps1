@@ -95,6 +95,8 @@ function P([string]$l,[int]$n){
   MaxSpeed=N(F $h 'maxspeed')
   Grounded=B(F $h 'grounded')
   Ducking=B(F $h 'ducking')
+  HealthBefore=N(F $h 'health_before')
+  HealthAfter=N(F $h 'health_after')
   AppliedDamage=N(F $h 'applied_damage')
   ArmorBefore=N(F $h 'armor_before')
   ArmorAfter=N(F $h 'armor_after')
@@ -148,9 +150,18 @@ $patternIndexStats=S($patternAccepted|%{$_.PatternIndex})
 $patternOffsetXStats=S($patternAccepted|%{$_.PatternOffsetX})
 $patternOffsetYStats=S($patternAccepted|%{$_.PatternOffsetY})
 $appliedStats=S($hits|%{$_.AppliedDamage})
+$damageToHealthStats=S($hits|%{$_.DamageToHealth})
+$damageAbsorbedStats=S($hits|%{$_.DamageAbsorbed})
+$armorDrainStats=S($hits|%{$_.ArmorDrain})
 $pelletPlanStats=S($accepted|%{$_.PelletsPlanned})
 $pelletHitStats=S($hits|%{$_.PelletsHit})
 $headshotPelletStats=S($hits|%{$_.HeadshotPellets})
+$healthDeltaConsistentHits=@($hits|?{$_.HealthBefore -ne $null -and $_.HealthAfter -ne $null -and $_.AppliedDamage -ne $null -and [Math]::Abs((($_.HealthBefore - $_.HealthAfter) - $_.AppliedDamage)) -le 0.11})
+$damageModelConsistentHits=@($hits|?{$_.AppliedDamage -ne $null -and $_.DamageToHealth -ne $null -and [Math]::Abs(($_.AppliedDamage - $_.DamageToHealth)) -le 0.11})
+$fullyConsistentHits=@($hits|?{$_.HealthBefore -ne $null -and $_.HealthAfter -ne $null -and $_.AppliedDamage -ne $null -and $_.DamageToHealth -ne $null -and [Math]::Abs((($_.HealthBefore - $_.HealthAfter) - $_.AppliedDamage)) -le 0.11 -and [Math]::Abs(($_.AppliedDamage - $_.DamageToHealth)) -le 0.11})
+$healthDeltaConsistentKills=@($kills|?{$_.HealthBefore -ne $null -and $_.HealthAfter -ne $null -and $_.AppliedDamage -ne $null -and [Math]::Abs((($_.HealthBefore - $_.HealthAfter) - $_.AppliedDamage)) -le 0.11})
+$damageModelConsistentKills=@($kills|?{$_.AppliedDamage -ne $null -and $_.DamageToHealth -ne $null -and [Math]::Abs(($_.AppliedDamage - $_.DamageToHealth)) -le 0.11})
+$fullyConsistentKills=@($kills|?{$_.HealthBefore -ne $null -and $_.HealthAfter -ne $null -and $_.AppliedDamage -ne $null -and $_.DamageToHealth -ne $null -and [Math]::Abs((($_.HealthBefore - $_.HealthAfter) - $_.AppliedDamage)) -le 0.11 -and [Math]::Abs(($_.AppliedDamage - $_.DamageToHealth)) -le 0.11})
 $recentTargetFailureReasons=@($dummySpawnFailures|Select-Object -Last 3|ForEach-Object{if($_.FailureCode -and $_.Reason){'{0}: {1}' -f $_.FailureCode,$_.Reason}elseif($_.Reason){$_.Reason}elseif($_.FailureCode){$_.FailureCode}else{'unknown target spawn failure'}})
 $firstTarget=@($dummySpawns+$dummyHits+$dummyKills|?{$_.TargetProfileName}|select -first 1)
 $targetProfile=if($session.TargetProfileName){$session.TargetProfileName}elseif($firstTarget.Count){$firstTarget[0].TargetProfileName}else{$null}
@@ -179,6 +190,20 @@ if($directPlayerArmorEvidenceHits.Count){
  [void]$obs.Add("Direct player armor telemetry exists ($($directPlayerArmorEvidenceHits.Count)) with absorbed total $(if($playerArmorAbsorbedTotal -ne $null){('{0:F4}' -f $playerArmorAbsorbedTotal)}else{'n/a'}).")
 }elseif($playerHits.Count){
  [void]$warnings.Add('Player/fake-player hit telemetry exists, but no hit carried full direct armor-before/after and damage breakdown fields.')
+}
+if($hits.Count -gt 0){
+ if($fullyConsistentHits.Count -eq $hits.Count){
+  [void]$obs.Add("Hit telemetry consistency check passed ($($fullyConsistentHits.Count)/$($hits.Count)).")
+ }else{
+  [void]$warnings.Add("Some hit lines have mismatched health delta vs applied_damage or damage_to_health ($($fullyConsistentHits.Count)/$($hits.Count) fully consistent).")
+ }
+}
+if($kills.Count -gt 0){
+ if($fullyConsistentKills.Count -eq $kills.Count){
+  [void]$obs.Add("Kill telemetry consistency check passed ($($fullyConsistentKills.Count)/$($kills.Count)).")
+ }else{
+  [void]$warnings.Add("Some kill lines have mismatched health delta vs applied_damage or damage_to_health ($($fullyConsistentKills.Count)/$($kills.Count) fully consistent).")
+ }
 }
 $signals=[ordered]@{acceptedShots=($accepted.Count -gt 0);tapFireHoldRejections=($rejected.Count -gt 0);firstShotAccepted=($firstShotAccepted.Count -gt 0);movementPenaltyPositive=($movePenaltyAccepted.Count -gt 0);recoveryReturnedFirstShot=$recoveryReturnedFirstShot;crouchMovePenaltyReductionCandidate=$crouchMoveEvidence;hitsPresent=($hits.Count -gt 0);killsPresent=($kills.Count -gt 0);headshotHitsPresent=($headshotHits.Count -gt 0);headshotKillsPresent=($headshotKills.Count -gt 0);lethalHeadshotEvidencePresent=($lethal.Count -gt 0);dummySpawnsPresent=($dummySpawns.Count -gt 0);dummyRespawnsPresent=($dummyRespawns.Count -gt 0);dummyHitsPresent=($dummyHits.Count -gt 0);dummyKillsPresent=($dummyKills.Count -gt 0);dummyHeadshotHitsPresent=($dummyHeadshotHits.Count -gt 0);dummyHeadshotKillsPresent=($dummyHeadshotKills.Count -gt 0);armoredDummyHitsPresent=($armoredDummyHits.Count -gt 0);protectedDummyHeadshotHitsPresent=($protectedDummyHeadshotHits.Count -gt 0);protectedDummyHeadshotKillsPresent=($protectedDummyHeadshotKills.Count -gt 0);dummyLethalHeadshotEvidencePresent=($dummyLethal.Count -gt 0);weaponAcceptedPresent=($accepted.Count -gt 0);weaponHitsPresent=($hits.Count -gt 0);weaponKillsPresent=($kills.Count -gt 0);weaponHeadshotKillsPresent=($headshotKills.Count -gt 0);burstGrowthEvidencePresent=($burstGrowthAccepted.Count -gt 0);cadenceModeEvidencePresent=($cadenceAccepted.Count -gt 0);cadencePenaltyEvidencePresent=($cadencePenaltyAccepted.Count -gt 0);cadenceResetEvidencePresent=($cadenceResetAccepted.Count -gt 0);movementPenaltyEvidencePresent=($movePenaltyAccepted.Count -gt 0);patternEvidencePresent=($patternAccepted.Count -gt 0);patternResetEvidencePresent=($patternResetAccepted.Count -gt 0)}
 $signals.playerHitsPresent=($playerHits.Count -gt 0)
@@ -272,6 +297,12 @@ $summary=[ordered]@{
  movementPenaltyEvidenceCount=$movePenaltyAccepted.Count
  patternEvidenceCount=$patternAccepted.Count
  patternResetCount=$patternResetAccepted.Count
+ hitHealthDeltaConsistentCount=$healthDeltaConsistentHits.Count
+ hitDamageModelConsistentCount=$damageModelConsistentHits.Count
+ hitFullyConsistentCount=$fullyConsistentHits.Count
+ killHealthDeltaConsistentCount=$healthDeltaConsistentKills.Count
+ killDamageModelConsistentCount=$damageModelConsistentKills.Count
+ killFullyConsistentCount=$fullyConsistentKills.Count
  additionalSpread=[ordered]@{
   min=$(if($additionalStats){$additionalStats.Min}else{$null})
   average=$(if($additionalStats){$additionalStats.Average}else{$null})
@@ -331,6 +362,29 @@ $summary=[ordered]@{
   min=$(if($appliedStats){$appliedStats.Min}else{$null})
   average=$(if($appliedStats){$appliedStats.Average}else{$null})
   max=$(if($appliedStats){$appliedStats.Max}else{$null})
+ }
+ damageToHealth=[ordered]@{
+  min=$(if($damageToHealthStats){$damageToHealthStats.Min}else{$null})
+  average=$(if($damageToHealthStats){$damageToHealthStats.Average}else{$null})
+  max=$(if($damageToHealthStats){$damageToHealthStats.Max}else{$null})
+ }
+ damageAbsorbed=[ordered]@{
+  min=$(if($damageAbsorbedStats){$damageAbsorbedStats.Min}else{$null})
+  average=$(if($damageAbsorbedStats){$damageAbsorbedStats.Average}else{$null})
+  max=$(if($damageAbsorbedStats){$damageAbsorbedStats.Max}else{$null})
+ }
+ armorDrain=[ordered]@{
+  min=$(if($armorDrainStats){$armorDrainStats.Min}else{$null})
+  average=$(if($armorDrainStats){$armorDrainStats.Average}else{$null})
+  max=$(if($armorDrainStats){$armorDrainStats.Max}else{$null})
+ }
+ hitTelemetryConsistency=[ordered]@{
+  hitHealthDeltaConsistent=$healthDeltaConsistentHits.Count
+  hitDamageModelConsistent=$damageModelConsistentHits.Count
+  hitFullyConsistent=$fullyConsistentHits.Count
+  killHealthDeltaConsistent=$healthDeltaConsistentKills.Count
+  killDamageModelConsistent=$damageModelConsistentKills.Count
+  killFullyConsistent=$fullyConsistentKills.Count
  }
  pelletsPlanned=[ordered]@{
   min=$(if($pelletPlanStats){$pelletPlanStats.Min}else{$null})
@@ -473,6 +527,17 @@ $report=[ordered]@{
   patternContribution=$patternContributionStats
   cadenceContribution=$cadenceContributionStats
   appliedDamage=$appliedStats
+  damageToHealth=$damageToHealthStats
+  damageAbsorbed=$damageAbsorbedStats
+  armorDrain=$armorDrainStats
+  hitTelemetryConsistency=[ordered]@{
+   hitHealthDeltaConsistent=$healthDeltaConsistentHits.Count
+   hitDamageModelConsistent=$damageModelConsistentHits.Count
+   hitFullyConsistent=$fullyConsistentHits.Count
+   killHealthDeltaConsistent=$healthDeltaConsistentKills.Count
+   killDamageModelConsistent=$damageModelConsistentKills.Count
+   killFullyConsistent=$fullyConsistentKills.Count
+  }
   pelletsPlanned=$pelletPlanStats
   pelletsHit=$pelletHitStats
   headshotPellets=$headshotPelletStats
@@ -549,6 +614,11 @@ if($effectiveWeapon -eq 'glock' -or $effectiveWeapon -eq 'mp5' -or $effectiveWea
 if($effectiveWeapon -eq 'glock' -or $effectiveWeapon -eq 'mp5' -or $effectiveWeapon -eq 'shotgun' -or $Weapon -eq 'glock' -or $Weapon -eq 'mp5' -or $Weapon -eq 'shotgun'){Write-Host "  pattern resets           : $($patternResetAccepted.Count)"}
 if($effectiveWeapon -ne 'mp5'){Write-Host "  first-shot accepted      : $($firstShotAccepted.Count)"}
 Write-Host "  applied dmg min/avg/max  : $(if($appliedStats){('{0:F4} / {1:F4} / {2:F4}' -f $appliedStats.Min,$appliedStats.Average,$appliedStats.Max)}else{'n/a / n/a / n/a'})"
+Write-Host "  dmg->hp min/avg/max      : $(if($damageToHealthStats){('{0:F4} / {1:F4} / {2:F4}' -f $damageToHealthStats.Min,$damageToHealthStats.Average,$damageToHealthStats.Max)}else{'n/a / n/a / n/a'})"
+Write-Host "  absorbed min/avg/max     : $(if($damageAbsorbedStats){('{0:F4} / {1:F4} / {2:F4}' -f $damageAbsorbedStats.Min,$damageAbsorbedStats.Average,$damageAbsorbedStats.Max)}else{'n/a / n/a / n/a'})"
+Write-Host "  armor drain min/avg/max  : $(if($armorDrainStats){('{0:F4} / {1:F4} / {2:F4}' -f $armorDrainStats.Min,$armorDrainStats.Average,$armorDrainStats.Max)}else{'n/a / n/a / n/a'})"
+Write-Host "  consistent hit lines     : $($fullyConsistentHits.Count) / $($hits.Count)"
+Write-Host "  consistent kill lines    : $($fullyConsistentKills.Count) / $($kills.Count)"
 Write-Host "  hitgroups                : $(FHitgroups $report.stats.hitgroupCounts)"
 if($playerHits.Count -gt 0){Write-Host "  player hitgroups         : $(FHitgroups $report.stats.playerHitgroupCounts)"}
 if($fakePlayerHits.Count -gt 0){Write-Host "  fake-player hitgroups    : $(FHitgroups $report.stats.fakePlayerHitgroupCounts)"}

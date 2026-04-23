@@ -137,8 +137,11 @@ struct ShotgunPrimaryVictimAggregate
     float totalDamageAbsorbed;
     float totalArmorDrain;
     float victimHealthBefore;
+    float victimHealthAfter;
     bool victimArmorKnown;
     float victimArmorBefore;
+    float victimArmorAfter;
+    bool killedByShot;
     bool victimIsDummy;
     char targetProfileName[64];
     bool dummyArmorApplied;
@@ -2602,8 +2605,10 @@ bool ApplyActiveShotgunPrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAt
     if (aggregate->pelletHits <= 0)
     {
         aggregate->victimHealthBefore = pVictim->pev->health;
+        aggregate->victimHealthAfter = aggregate->victimHealthBefore;
         aggregate->victimArmorKnown = traceResult.victimArmorKnown;
         aggregate->victimArmorBefore = traceResult.victimArmorBefore;
+        aggregate->victimArmorAfter = traceResult.victimArmorBefore;
         aggregate->victimIsDummy = traceResult.dummyVictim;
         aggregate->dummyHeadProtected = traceResult.dummyHeadProtected;
         strncpy_s(aggregate->targetProfileName, sizeof(aggregate->targetProfileName), ExpGlockLabTargetProfileName(), _TRUNCATE);
@@ -2623,6 +2628,17 @@ bool ApplyActiveShotgunPrimaryTraceDamage(CBaseEntity *pVictim, entvars_t *pevAt
     aggregate->totalDamageAbsorbed += traceResult.damageAbsorbed;
     aggregate->totalArmorDrain += traceResult.armorDrain;
     aggregate->dummyArmorApplied = aggregate->dummyArmorApplied || traceResult.dummyArmorApplied;
+    aggregate->victimHealthAfter = aggregate->victimHealthBefore - aggregate->totalDamageToHealth;
+    if (aggregate->victimArmorKnown)
+    {
+        const float armorAfter = aggregate->victimArmorBefore - aggregate->totalArmorDrain;
+        aggregate->victimArmorAfter = armorAfter > 0.0f ? armorAfter : 0.0f;
+    }
+    else
+    {
+        aggregate->victimArmorAfter = 0.0f;
+    }
+    aggregate->killedByShot = aggregate->victimHealthAfter <= 0.0f;
 
     return true;
 }
@@ -2650,11 +2666,11 @@ void FinalizeActiveShotgunPrimaryHitTelemetry()
         }
 
         CBaseEntity *pVictim = aggregate->victim;
-        const float healthAfter = pVictim->pev->health;
-        const float appliedDamage = aggregate->victimHealthBefore - healthAfter;
+        const float healthAfter = aggregate->victimHealthAfter;
+        const float appliedDamage = aggregate->totalDamageToHealth;
         const bool armorKnown = aggregate->victimArmorKnown;
-        const float armorAfter = armorKnown ? pVictim->pev->armorvalue : 0.0f;
-        const float armorDamage = armorKnown ? (aggregate->victimArmorBefore - armorAfter) : 0.0f;
+        const float armorAfter = armorKnown ? aggregate->victimArmorAfter : 0.0f;
+        const float armorDamage = armorKnown ? aggregate->totalArmorDrain : 0.0f;
         const bool dummyTelemetry = aggregate->victimIsDummy;
         const char *hitgroupName = aggregate->mixedHitgroups ? "mixed" : GetHitgroupName(aggregate->firstHitgroup);
         const int hitgroupId = aggregate->mixedHitgroups ? HITGROUP_GENERIC : aggregate->firstHitgroup;
@@ -2672,8 +2688,10 @@ void FinalizeActiveShotgunPrimaryHitTelemetry()
             aggregate->totalArmorDrain > 0.0f;
         const bool headshot = aggregate->anyHeadshot;
         const bool headshotLethalApplied = aggregate->headshotLethalPellets > 0;
-        const bool killedByShot = (aggregate->victimHealthBefore > 0.0f) &&
-            (healthAfter <= 0.0f || !pVictim->IsAlive());
+        const bool killedByShot = aggregate->killedByShot;
+        const bool armorHitProtected = victimState.armorHitProtected ||
+            aggregate->totalDamageAbsorbed > 0.0f ||
+            aggregate->totalArmorDrain > 0.0f;
 
         char timestamp[64];
         char armorBefore[32];
@@ -2718,7 +2736,7 @@ void FinalizeActiveShotgunPrimaryHitTelemetry()
             victimState.fakeVictim ? 1 : 0,
             victimState.helmetEquipped ? 1 : 0,
             victimState.headProtectionActive ? 1 : 0,
-            victimState.armorHitProtected ? 1 : 0,
+            armorHitProtected ? 1 : 0,
             victimState.armorModelName,
             hitgroupName,
             hitgroupId,
@@ -2773,7 +2791,7 @@ void FinalizeActiveShotgunPrimaryHitTelemetry()
                 victimState.fakeVictim ? 1 : 0,
                 victimState.helmetEquipped ? 1 : 0,
                 victimState.headProtectionActive ? 1 : 0,
-                victimState.armorHitProtected ? 1 : 0,
+                armorHitProtected ? 1 : 0,
                 victimState.armorModelName,
                 hitgroupName,
                 hitgroupId,

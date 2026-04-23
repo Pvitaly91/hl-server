@@ -60,6 +60,26 @@ This repository is explicitly improving stock-client-compatible HLDM gameplay, n
 - Movement, air state, crouch stability, and readable headshot damage remain part of the shared model.
 - Because the client DLL is still stock Half-Life, the server can improve authoritative spread and damage behavior but cannot promise exact client-side recoil or prediction parity.
 
+## Shotgun Telemetry Model
+
+Shotgun keeps per-pellet traces internally, but the live weapon log uses one aggregated hit or kill line per shell per victim.
+
+That aggregate line is the authoritative tuning record:
+
+- `health_before` / `health_after` come from the shell aggregate, not a later post-death entity snapshot.
+- `armor_before` / `armor_after` come from the same aggregate.
+- `applied_damage` and `damage_to_health` should now agree for shotgun hit lines.
+- `damage_absorbed` and `armor_drain` show the armor contribution from that full shell.
+- `pellets_hit` and `headshot_pellets` show how many pellets contributed to the final result.
+- `hitgroup="mixed"` means the shell combined multiple pellet hitgroups on the same victim. `headshot=1` still means at least one pellet hit the head.
+
+This keeps the log readable without losing the information needed to validate dummy, fake-player, and real-player shotgun tuning.
+
+For repeatable live verification, two focused helpers are now available:
+
+- `exp_verify_shotgun_hit [player]` keeps the dummy in front of the resolved live player and fires one real shotgun `PrimaryAttack()` through the server weapon path.
+- `sv_exp_shotgun_verify_autofire 1` with `sv_exp_shotgun_verify_autofire_count N` arms a short automatic sequence after the live player joins, which is useful for proving nonlethal hit, kill, and pattern-reset telemetry in a fresh log.
+
 ## Current Recommended Presets
 
 - Glock: `glock_cadence_soft` for a softer cadence-sensitive pistol feel, `glock_cadence_tight` for a stricter rhythm-focused single-shot path, and `glock_pattern_tight` when you also want a stronger learnable follow-up pattern.
@@ -218,6 +238,12 @@ On `2026-04-23`, shotgun deterministic pellet-pattern mode was verified in a fre
 - accepted-shot telemetry in `weapon-debug-20260423-152423.log` showed `pattern_mode=1`, pattern indices progressing from `0` to `1` across consecutive shots, and later `pattern_reset=1` after a longer idle gap
 - the same session logged direct dummy hit and kill lines under shotgun pattern mode, plus a dummy respawn afterward
 - the analyzer summary for that log surfaced `accepted shots 5`, `hit events 3`, `kill events 1`, `pattern evidence 5`, `pattern resets 1`, and pellet-hit fields, so the new shotgun pattern layer is inspectable through the normal tuning workflow
+
+On `2026-04-23`, the shotgun telemetry aggregation bug was then corrected for fresh live logs:
+
+- the runtime now keeps `health_after`, `armor_after`, damage-to-health, armor absorption, and kill state from the authoritative shell aggregate instead of mixing pellet totals with a later dummy entity snapshot
+- that fixes the prior nonlethal-looking line where `applied_damage` and the logged health delta disagreed after the dummy corpse health had already been rewritten by monster death handling
+- the analyzer now reports hit and kill consistency counts so fresh shotgun logs can explicitly prove the corrected model instead of requiring manual eyeballing
 
 357 remains experimental. The live proof shows that the shared core, editor export path, cfg commands, telemetry, and analyzer now cover a third weapon. It does not claim final gameplay balance or exact Counter-Strike parity.
 

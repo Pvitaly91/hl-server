@@ -540,6 +540,8 @@ cvar_t sv_exp_shotgun_primary_headshot_lethal = {"sv_exp_shotgun_primary_headsho
 cvar_t sv_exp_shotgun_lab_loadout = {"sv_exp_shotgun_lab_loadout", "0", FCVAR_SERVER};
 cvar_t sv_exp_shotgun_lab_ammo = {"sv_exp_shotgun_lab_ammo", "48", FCVAR_SERVER};
 cvar_t sv_exp_shotgun_lab_autoswitch = {"sv_exp_shotgun_lab_autoswitch", "1", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_verify_autofire = {"sv_exp_shotgun_verify_autofire", "0", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_verify_autofire_count = {"sv_exp_shotgun_verify_autofire_count", "3", FCVAR_SERVER};
 cvar_t sv_exp_round_mode = {"sv_exp_round_mode", "0", FCVAR_SERVER};
 cvar_t sv_exp_round_freeze_time = {"sv_exp_round_freeze_time", "3.0", FCVAR_SERVER};
 cvar_t sv_exp_round_restart_delay = {"sv_exp_round_restart_delay", "3.0", FCVAR_SERVER};
@@ -650,6 +652,9 @@ ExpRoundTeamAssignment g_expRoundTeamAssignments[kMaxRoundTeamPlayerSlots] = {};
 ExpRoundFakeClientRecord g_expRoundFakeClientRecords[kMaxRoundTeamPlayerSlots] = {};
 ExpBuyPlayerState g_expBuyPlayerStates[kMaxRoundTeamPlayerSlots] = {};
 int g_expBuyLastRewardedRound = 0;
+int g_expShotgunVerifyAutofireShotsFired = 0;
+int g_expShotgunVerifyAutofirePlayerUserId = 0;
+float g_expShotgunVerifyAutofireNextShotTime = 0.0f;
 
 void PrintLabDummyStatus();
 void PrintRoundStatus();
@@ -723,6 +728,13 @@ void BeginRoundFreeze(bool emitRestartEvent, const char *reason);
 bool IsBuyItemTokenSupported(const char *weaponToken);
 const char *GetResolvedBuyItemToken(const char *weaponToken);
 bool TryResolveDefaultBuyPlayer(CBasePlayer **ppPlayer, char *failureReason, size_t failureReasonSize);
+void SetLabDummyEnabled(bool enabled);
+CBaseEntity *GetTrackedLabDummyEntity();
+bool TryBuildLabDummySpawnTransformFromAnchor(CBasePlayer *pPlayer, LabDummySpawnSelection *selection, LabDummyFailureInfo *failure);
+void MoveGlockLabDummyToSelection(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, const LabDummySpawnSelection &selection, const char *reason);
+CBaseEntity *SpawnGlockLabDummy(const LabDummySpawnSelection &selection, bool logAsRespawn);
+void LogLabDummySpawnFailure(const LabDummyFailureInfo &failure, CBasePlayer *pAnchorPlayer);
+void MaintainShotgunVerificationAutofire();
 
 float GetNonNegativeCvarValue(const cvar_t &cvar)
 {
@@ -5072,6 +5084,250 @@ void ExpPlayerHitTestCommand()
         victimArmorBefore,
         pVictim->pev != NULL ? pVictim->pev->armorvalue : 0.0f);
     PrintArmorStatusForPlayer(pVictim);
+}
+
+bool TryFireShotgunVerificationShot(CBasePlayer *pPlayer, char *failureReason, size_t failureReasonSize)
+{
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    if (pPlayer == NULL || pPlayer->pev == NULL)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "player entity is unavailable");
+        }
+        return false;
+    }
+
+    if (!pPlayer->IsAlive() || pPlayer->pev->deadflag != DEAD_NO)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "player must be alive");
+        }
+        return false;
+    }
+
+    if (pPlayer->HasPlayerItemFromID(WEAPON_SHOTGUN) == FALSE)
+    {
+        pPlayer->GiveNamedItem("weapon_shotgun");
+    }
+
+    const int ammoIndex = CBasePlayer::GetAmmoIndex("buckshot");
+    if (ammoIndex >= 0 && pPlayer->AmmoInventory(ammoIndex) <= 0)
+    {
+        pPlayer->GiveAmmo(1, "buckshot", BUCKSHOT_MAX_CARRY);
+    }
+
+    pPlayer->SelectItem("weapon_shotgun");
+
+    CBasePlayerItem *pActiveItem = pPlayer->m_pActiveItem;
+    CBasePlayerWeapon *pWeapon = pActiveItem != NULL ? (CBasePlayerWeapon *)pActiveItem->GetWeaponPtr() : NULL;
+    if (pWeapon == NULL || pWeapon->m_iId != WEAPON_SHOTGUN)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "weapon_shotgun is not active for the player");
+        }
+        return false;
+    }
+
+    const float currentTime = UTIL_WeaponTimeBase();
+    if (pWeapon->m_flNextPrimaryAttack > currentTime)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "shotgun is cooling down for %.2fs",
+                pWeapon->m_flNextPrimaryAttack - currentTime);
+        }
+        return false;
+    }
+
+    pWeapon->PrimaryAttack();
+    return true;
+}
+
+bool TryPrepareShotgunVerificationTarget(CBasePlayer *pPlayer, char *failureReason, size_t failureReasonSize)
+{
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    if (pPlayer == NULL || pPlayer->pev == NULL)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "player entity is unavailable");
+        }
+        return false;
+    }
+
+    LabDummySpawnSelection selection = {};
+    LabDummyFailureInfo failure = {};
+    if (!TryBuildLabDummySpawnTransformFromAnchor(pPlayer, &selection, &failure))
+    {
+        LogLabDummySpawnFailure(failure, pPlayer);
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, failure.reason);
+        }
+        return false;
+    }
+
+    CBaseEntity *pDummy = GetTrackedLabDummyEntity();
+    if (pDummy != NULL && pDummy->IsAlive())
+    {
+        MoveGlockLabDummyToSelection(pDummy, pPlayer, selection, "verify_shotgun_hit");
+    }
+    else
+    {
+        if (pDummy != NULL)
+        {
+            g_glockLabDummy = NULL;
+        }
+
+        if (SpawnGlockLabDummy(selection, pDummy != NULL) == NULL)
+        {
+            if (failureReason != NULL && failureReasonSize > 0)
+            {
+                strcpy_s(failureReason, failureReasonSize, "could not spawn target dummy");
+            }
+            return false;
+        }
+    }
+
+    CBaseEntity *pActiveDummy = GetTrackedLabDummyEntity();
+    if (pActiveDummy == NULL || !pActiveDummy->IsAlive())
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "target dummy is unavailable");
+        }
+        return false;
+    }
+
+    return true;
+}
+
+int GetShotgunVerificationAutofireCount()
+{
+    return max(0, (int)sv_exp_shotgun_verify_autofire_count.value);
+}
+
+void ResetShotgunVerificationAutofireState()
+{
+    g_expShotgunVerifyAutofireShotsFired = 0;
+    g_expShotgunVerifyAutofirePlayerUserId = 0;
+    g_expShotgunVerifyAutofireNextShotTime = 0.0f;
+}
+
+void MaintainShotgunVerificationAutofire()
+{
+    if (gpGlobals == NULL || sv_exp_shotgun_verify_autofire.value == 0.0f || GetShotgunVerificationAutofireCount() <= 0)
+    {
+        ResetShotgunVerificationAutofireState();
+        return;
+    }
+
+    CBasePlayer *pPlayer = NULL;
+    char failureReason[256];
+    if (!TryResolveDefaultBuyPlayer(&pPlayer, failureReason, sizeof(failureReason)))
+    {
+        return;
+    }
+
+    const int playerUserId = GetPlayerUserId(pPlayer);
+    if (playerUserId <= 0)
+    {
+        return;
+    }
+
+    if (g_expShotgunVerifyAutofirePlayerUserId != playerUserId)
+    {
+        ResetShotgunVerificationAutofireState();
+        g_expShotgunVerifyAutofirePlayerUserId = playerUserId;
+        g_expShotgunVerifyAutofireNextShotTime = gpGlobals->time + 0.75f;
+    }
+
+    if (g_expShotgunVerifyAutofireShotsFired >= GetShotgunVerificationAutofireCount() ||
+        gpGlobals->time < g_expShotgunVerifyAutofireNextShotTime)
+    {
+        return;
+    }
+
+    RefreshFutureHooksMapState();
+    SetLabDummyEnabled(true);
+
+    if (!TryPrepareShotgunVerificationTarget(pPlayer, failureReason, sizeof(failureReason)))
+    {
+        g_expShotgunVerifyAutofireNextShotTime = gpGlobals->time + 0.25f;
+        return;
+    }
+
+    if (!TryFireShotgunVerificationShot(pPlayer, failureReason, sizeof(failureReason)))
+    {
+        if (failureReason[0] != '\0' && strstr(failureReason, "cooling down") == NULL)
+        {
+            PrintLabDummyConsoleLine("shotgun verify autofire failed: %s", failureReason);
+        }
+        g_expShotgunVerifyAutofireNextShotTime = gpGlobals->time + 0.10f;
+        return;
+    }
+
+    ++g_expShotgunVerifyAutofireShotsFired;
+    g_expShotgunVerifyAutofireNextShotTime = gpGlobals->time + (g_expShotgunVerifyAutofireShotsFired == 2 ? 1.10f : 0.80f);
+    PrintLabDummyConsoleLine(
+        "shotgun verify autofire: shot %d/%d from %s.",
+        g_expShotgunVerifyAutofireShotsFired,
+        GetShotgunVerificationAutofireCount(),
+        GetSafePlayerName(pPlayer));
+}
+
+void ExpVerifyShotgunHitCommand()
+{
+    RefreshFutureHooksMapState();
+    SetLabDummyEnabled(true);
+
+    CBasePlayer *pPlayer = NULL;
+    char failureReason[256];
+    if (CMD_ARGC() > 1)
+    {
+        if (!TryResolveRoundPlayerToken(CMD_ARGV(1), &pPlayer, failureReason, sizeof(failureReason)))
+        {
+            PrintLabDummyConsoleLine("shotgun verify failed: %s", failureReason);
+            return;
+        }
+    }
+    else if (!TryResolveDefaultBuyPlayer(&pPlayer, failureReason, sizeof(failureReason)))
+    {
+        PrintLabDummyConsoleLine("shotgun verify failed: %s", failureReason);
+        return;
+    }
+
+    if (!TryPrepareShotgunVerificationTarget(pPlayer, failureReason, sizeof(failureReason)))
+    {
+        PrintLabDummyConsoleLine("shotgun verify failed: %s", failureReason[0] != '\0' ? failureReason : "unknown error");
+        return;
+    }
+
+    if (!TryFireShotgunVerificationShot(pPlayer, failureReason, sizeof(failureReason)))
+    {
+        PrintLabDummyConsoleLine("shotgun verify failed: %s", failureReason[0] != '\0' ? failureReason : "unknown error");
+        return;
+    }
+
+    PrintLabDummyConsoleLine(
+        "shotgun verify: fired one primary shot from %s at active target %s.",
+        GetSafePlayerName(pPlayer),
+        kGlockLabDummyDisplayName);
 }
 
 void ExpBuyCommand()
@@ -12037,6 +12293,7 @@ void RegisterFutureGameplayCommands()
     g_engfuncs.pfnAddServerCommand((char *)"exp_armor_set", ExpArmorSetCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_helmet_set", ExpHelmetSetCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_player_hit_test", ExpPlayerHitTestCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_verify_shotgun_hit", ExpVerifyShotgunHitCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_buy", ExpBuyCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_buy_clear", ExpBuyClearCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_buy_grant", ExpBuyGrantCommand);
@@ -12268,6 +12525,8 @@ void RegisterFutureGameplayCvars()
     CVAR_REGISTER(&sv_exp_shotgun_lab_loadout);
     CVAR_REGISTER(&sv_exp_shotgun_lab_ammo);
     CVAR_REGISTER(&sv_exp_shotgun_lab_autoswitch);
+    CVAR_REGISTER(&sv_exp_shotgun_verify_autofire);
+    CVAR_REGISTER(&sv_exp_shotgun_verify_autofire_count);
     CVAR_REGISTER(&sv_exp_round_mode);
     CVAR_REGISTER(&sv_exp_round_freeze_time);
     CVAR_REGISTER(&sv_exp_round_restart_delay);
@@ -12358,6 +12617,7 @@ void UpdateFutureGameplayHooksFrame()
     Maintain357LabLoadout();
     MaintainShotgunLabLoadout();
     MaintainGlockLabDummy();
+    MaintainShotgunVerificationAutofire();
 }
 
 bool FutureGameplayPlayerCanRespawn(CBasePlayer *pPlayer)

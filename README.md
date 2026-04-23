@@ -733,6 +733,14 @@ Recommended shotgun loop:
 8. Use `exp_target_profile unarmored` and `exp_target_tp_front` when you want deterministic close-range dummy kill checks under the new pellet pattern.
 9. Review the weapon log with `.\scripts\analyze-weapon-log.ps1 -Latest -Weapon shotgun`.
 
+Shotgun telemetry model:
+
+- Shotgun logs one aggregated hit or kill event per shell per victim, not one noisy line per pellet.
+- `health_before`, `health_after`, `armor_before`, `armor_after`, `applied_damage`, `damage_to_health`, `damage_absorbed`, and `armor_drain` are derived from the server-side pellet aggregate for that shell and are the authoritative values to trust while tuning.
+- `pellets_hit` and `headshot_pellets` show how many pellets contributed to that aggregated result.
+- `hitgroup="mixed"` means the shell combined multiple pellet hitgroups on the same victim; `headshot=1` still means at least one pellet hit the head.
+- For repeatable live checks, `exp_verify_shotgun_hit [player]` fires one real server-side shotgun `PrimaryAttack()` from the resolved live player, and `sv_exp_shotgun_verify_autofire 1` plus `sv_exp_shotgun_verify_autofire_count N` can arm a short automatic verification sequence after the live player joins.
+
 The editor, launcher, and cfg command path stay unchanged. Shotgun is another shared-core weapon that can be exported to cfg, applied live, and exercised against the same target dummy workflow.
 
 ## Live BAT launchers
