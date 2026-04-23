@@ -69,6 +69,8 @@ struct Mp5Config {
     std::wstring primaryBurstGrowth;
     std::wstring primaryBurstMaxAdditionalSpread;
     std::wstring primarySpreadRecovery;
+    std::wstring primaryBurstResetTime;
+    std::wstring primaryHoldPenaltyScale;
     bool primaryFirstShotAccuracy = false;
     std::wstring primaryFirstShotSpeedThreshold;
     std::wstring primaryMaxSpread;
@@ -216,7 +218,7 @@ struct ArmorEquipmentConfig {
 };
 
 struct ProjectDocument {
-    static constexpr int kSchemaVersion = 7;
+    static constexpr int kSchemaVersion = 8;
 
     int schemaVersion = kSchemaVersion;
     ProjectMetadata metadata;

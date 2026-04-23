@@ -176,6 +176,8 @@ ProjectDocument CreateDefaultProject() {
     document.mp5.primaryBurstGrowth = L"0.0140";
     document.mp5.primaryBurstMaxAdditionalSpread = L"0.0950";
     document.mp5.primarySpreadRecovery = L"0.8000";
+    document.mp5.primaryBurstResetTime = L"0.3200";
+    document.mp5.primaryHoldPenaltyScale = L"0.8500";
     document.mp5.primaryFirstShotSpeedThreshold = L"30.0";
     document.mp5.primaryMaxSpread = L"0.1250";
     document.mp5.patternScaleX = L"0.2600";
@@ -503,6 +505,14 @@ bool ApplyKnownCvar(ProjectDocument& document, const std::wstring& name, const s
     }
     if (name == L"sv_exp_mp5_primary_spread_recovery") {
         document.mp5.primarySpreadRecovery = value;
+        return true;
+    }
+    if (name == L"sv_exp_mp5_primary_burst_reset_time") {
+        document.mp5.primaryBurstResetTime = value;
+        return true;
+    }
+    if (name == L"sv_exp_mp5_primary_hold_penalty_scale") {
+        document.mp5.primaryHoldPenaltyScale = value;
         return true;
     }
     if (name == L"sv_exp_mp5_primary_first_shot_accuracy") {
@@ -1048,6 +1058,8 @@ CvarMap BuildKnownCvarMap(const ProjectDocument& document) {
     SetCvarString(cvars, L"sv_exp_mp5_primary_burst_growth", document.mp5.primaryBurstGrowth);
     SetCvarString(cvars, L"sv_exp_mp5_primary_burst_max_additional_spread", document.mp5.primaryBurstMaxAdditionalSpread);
     SetCvarString(cvars, L"sv_exp_mp5_primary_spread_recovery", document.mp5.primarySpreadRecovery);
+    SetCvarString(cvars, L"sv_exp_mp5_primary_burst_reset_time", document.mp5.primaryBurstResetTime);
+    SetCvarString(cvars, L"sv_exp_mp5_primary_hold_penalty_scale", document.mp5.primaryHoldPenaltyScale);
     SetCvarBool(cvars, L"sv_exp_mp5_primary_first_shot_accuracy", document.mp5.primaryFirstShotAccuracy);
     SetCvarString(cvars, L"sv_exp_mp5_primary_first_shot_speed_threshold", document.mp5.primaryFirstShotSpeedThreshold);
     SetCvarString(cvars, L"sv_exp_mp5_primary_max_spread", document.mp5.primaryMaxSpread);
@@ -1254,6 +1266,8 @@ bool SaveProjectDocumentToFile(const ProjectDocument& document, const std::wstri
     SetString(mp5, L"sv_exp_mp5_primary_burst_growth", document.mp5.primaryBurstGrowth);
     SetString(mp5, L"sv_exp_mp5_primary_burst_max_additional_spread", document.mp5.primaryBurstMaxAdditionalSpread);
     SetString(mp5, L"sv_exp_mp5_primary_spread_recovery", document.mp5.primarySpreadRecovery);
+    SetString(mp5, L"sv_exp_mp5_primary_burst_reset_time", document.mp5.primaryBurstResetTime);
+    SetString(mp5, L"sv_exp_mp5_primary_hold_penalty_scale", document.mp5.primaryHoldPenaltyScale);
     SetBool(mp5, L"sv_exp_mp5_primary_first_shot_accuracy", document.mp5.primaryFirstShotAccuracy);
     SetString(mp5, L"sv_exp_mp5_primary_first_shot_speed_threshold", document.mp5.primaryFirstShotSpeedThreshold);
     SetString(mp5, L"sv_exp_mp5_primary_max_spread", document.mp5.primaryMaxSpread);
@@ -1478,6 +1492,8 @@ bool LoadProjectDocumentFromFile(const std::wstring& path, ProjectDocument& docu
         loaded.mp5.primaryBurstGrowth = ReadStringValue(*mp5, L"sv_exp_mp5_primary_burst_growth", loaded.mp5.primaryBurstGrowth);
         loaded.mp5.primaryBurstMaxAdditionalSpread = ReadStringValue(*mp5, L"sv_exp_mp5_primary_burst_max_additional_spread", loaded.mp5.primaryBurstMaxAdditionalSpread);
         loaded.mp5.primarySpreadRecovery = ReadStringValue(*mp5, L"sv_exp_mp5_primary_spread_recovery", loaded.mp5.primarySpreadRecovery);
+        loaded.mp5.primaryBurstResetTime = ReadStringValue(*mp5, L"sv_exp_mp5_primary_burst_reset_time", loaded.mp5.primaryBurstResetTime);
+        loaded.mp5.primaryHoldPenaltyScale = ReadStringValue(*mp5, L"sv_exp_mp5_primary_hold_penalty_scale", loaded.mp5.primaryHoldPenaltyScale);
         loaded.mp5.primaryFirstShotAccuracy = ReadBoolValue(*mp5, L"sv_exp_mp5_primary_first_shot_accuracy", loaded.mp5.primaryFirstShotAccuracy);
         loaded.mp5.primaryFirstShotSpeedThreshold = ReadStringValue(*mp5, L"sv_exp_mp5_primary_first_shot_speed_threshold", loaded.mp5.primaryFirstShotSpeedThreshold);
         loaded.mp5.primaryMaxSpread = ReadStringValue(*mp5, L"sv_exp_mp5_primary_max_spread", loaded.mp5.primaryMaxSpread);

@@ -70,6 +70,8 @@ float ExpShotgunPrimaryDuckPenaltyScale();
 float ExpMP5PrimaryBurstGrowth();
 float ExpMP5PrimaryBurstMaxAdditionalSpread();
 float ExpMP5PrimarySpreadRecoverySeconds();
+float ExpMP5PrimaryBurstResetTime();
+float ExpMP5PrimaryHoldPenaltyScale();
 bool ExpMP5PatternModeEnabled();
 float ExpMP5PatternScaleX();
 float ExpMP5PatternScaleY();

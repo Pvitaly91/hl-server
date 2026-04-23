@@ -1598,7 +1598,7 @@ void LogAcceptedMp5PrimaryShot(CBasePlayer *pPlayer, const Mp5AcceptedShotTeleme
 
     char timestamp[64];
     char deltaPreviousShot[32];
-    char line[1792];
+    char line[2048];
     FormatTimestamp(timestamp, sizeof(timestamp));
 
     if (telemetry.hasPreviousAcceptedShot)
@@ -1614,7 +1614,7 @@ void LogAcceptedMp5PrimaryShot(CBasePlayer *pPlayer, const Mp5AcceptedShotTeleme
         line,
         sizeof(line),
         _TRUNCATE,
-        "[weaponlog] type=accepted ts=%s map=%s player=\"%s\" entindex=%d userid=%d weapon=mp5 fire=primary experimental=%d profile=\"%s\" firstshot=%d spread=%.4f base=%.4f move_penalty=%.4f burst_additional_spread=%.4f recovery_applied=%.4f burst_growth=%.4f next_additional_spread=%.4f pattern_mode=%d pattern_index=%d pattern_offset_x=%.4f pattern_offset_y=%.4f pattern_reset=%d total_additional_spread=%.4f movement_contribution=%.4f cadence_growth_contribution=%.4f burst_index=%d speed_ratio=%.3f speed2d=%.1f maxspeed=%.1f grounded=%d ducking=%d delta_prev=%s clip=%d",
+        "[weaponlog] type=accepted ts=%s map=%s player=\"%s\" entindex=%d userid=%d weapon=mp5 fire=primary experimental=%d profile=\"%s\" firstshot=%d spread=%.4f base=%.4f move_penalty=%.4f burst_additional_spread=%.4f recovery_applied=%.4f burst_reset=%d burst_growth=%.4f hold_penalty=%.4f next_additional_spread=%.4f pattern_mode=%d pattern_index=%d pattern_offset_x=%.4f pattern_offset_y=%.4f pattern_reset=%d total_additional_spread=%.4f movement_contribution=%.4f air_contribution=%.4f crouch_bonus=%.4f cadence_growth_contribution=%.4f burst_index=%d speed_ratio=%.3f speed2d=%.1f maxspeed=%.1f grounded=%d ducking=%d delta_prev=%s clip=%d",
         timestamp,
         SanitizeLogValue(GetSafeMapName()).c_str(),
         GetSafePlayerName(pPlayer).c_str(),
@@ -1628,7 +1628,9 @@ void LogAcceptedMp5PrimaryShot(CBasePlayer *pPlayer, const Mp5AcceptedShotTeleme
         telemetry.movementPenalty,
         telemetry.burstAddedSpread,
         telemetry.recoveryApplied,
+        telemetry.burstResetApplied ? 1 : 0,
         telemetry.shotGrowth,
+        telemetry.holdPenalty,
         telemetry.nextAdditionalSpread,
         telemetry.patternModeActive ? 1 : 0,
         telemetry.patternIndex,
@@ -1637,6 +1639,8 @@ void LogAcceptedMp5PrimaryShot(CBasePlayer *pPlayer, const Mp5AcceptedShotTeleme
         telemetry.patternResetApplied ? 1 : 0,
         telemetry.totalAdditionalSpread,
         telemetry.movementContribution,
+        telemetry.airContribution,
+        telemetry.crouchBonus,
         telemetry.cadenceGrowthContribution,
         telemetry.burstShotIndex,
         telemetry.speedRatio,

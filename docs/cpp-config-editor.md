@@ -61,6 +61,8 @@ For the current Glock and MP5 feel pass, the editor now uses more direct tuning 
 
 - `Shot growth (cadence bloom per shot)` or `Burst growth (cadence bloom per shot)`
 - `Recovery seconds to clear cadence bloom`
+- `Burst reset time`
+- `Spray hold penalty scale`
 - `Crouch stability scale`
 - `Max spread clamp`
 - `Deterministic pattern mode`
@@ -73,10 +75,17 @@ The recommended preset buttons and names for this pass are:
 
 - Glock: `glock_cadence_soft`, `glock_cadence_tight`
 - 357: `357_precision_duel`, `357_cadence_headshot`
-- MP5: `mp5_pattern_burst`, `mp5_pattern_mobile`
+- MP5: `mp5_controlled_burst`, `mp5_mobile_soft`, `mp5_pattern_burst`, `mp5_spray_harsh`
 - Shotgun: `shotgun_pattern_soft`, `shotgun_pattern_tight`, `shotgun_close_quickkill`, `shotgun_precision_test`
 
 The intent is to make it obvious that the editor is tuning cadence growth plus recovery, with an optional deterministic follow-up pattern layered on top, instead of forcing a hard server-only tap-fire gate as the only way to get a skillful pistol or SMG feel.
+
+For the MP5 specifically, the current tab wording is meant to separate "good burst" from "bad spray":
+
+- `Burst growth` controls how quickly repeated accepted shots bloom
+- `Burst reset time` controls how long you need to pause before the burst state restarts cleanly
+- `Spray hold penalty scale` controls how much extra punishment long held fire adds on top of normal burst growth
+- `Pattern scale` and `Pattern reset time` control how learnable the early burst remains before the spray layer takes over
 
 For the current pistol cadence pass, the Glock and `357` tabs now also expose:
 

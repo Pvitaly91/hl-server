@@ -10,6 +10,8 @@
     "sv_exp_mp5_primary_burst_growth": "0.0130",
     "sv_exp_mp5_primary_burst_max_additional_spread": "0.0800",
     "sv_exp_mp5_primary_spread_recovery": "0.9000",
+    "sv_exp_mp5_primary_burst_reset_time": "0.2600",
+    "sv_exp_mp5_primary_hold_penalty_scale": "0.5000",
     "sv_exp_mp5_primary_first_shot_accuracy": "1",
     "sv_exp_mp5_primary_first_shot_speed_threshold": "40.0",
     "sv_exp_mp5_primary_max_spread": "0.1150",

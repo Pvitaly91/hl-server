@@ -1,0 +1,27 @@
+{
+  "name": "mp5_spray_harsh",
+  "description": "Experimental harsh-spray MP5 preset. Early shots stay readable, but sustained fire blooms harder, lingers longer, and punishes movement more clearly than the burst-favored presets.",
+  "cvars": {
+    "sv_exp_mp5_primary_enabled": "1",
+    "sv_exp_mp5_primary_base_spread": "0.0410",
+    "sv_exp_mp5_primary_ground_move_penalty": "0.0260",
+    "sv_exp_mp5_primary_air_move_penalty": "0.0620",
+    "sv_exp_mp5_primary_duck_penalty_scale": "0.5800",
+    "sv_exp_mp5_primary_burst_growth": "0.0200",
+    "sv_exp_mp5_primary_burst_max_additional_spread": "0.1200",
+    "sv_exp_mp5_primary_spread_recovery": "1.0500",
+    "sv_exp_mp5_primary_burst_reset_time": "0.4200",
+    "sv_exp_mp5_primary_hold_penalty_scale": "1.2500",
+    "sv_exp_mp5_primary_first_shot_accuracy": "0",
+    "sv_exp_mp5_primary_first_shot_speed_threshold": "22.0",
+    "sv_exp_mp5_primary_max_spread": "0.1550",
+    "sv_exp_mp5_pattern_mode": "1",
+    "sv_exp_mp5_pattern_scale_x": "0.2700",
+    "sv_exp_mp5_pattern_scale_y": "0.6200",
+    "sv_exp_mp5_pattern_reset_time": "0.3600",
+    "sv_exp_mp5_pattern_max_index": "7",
+    "sv_exp_mp5_primary_damage": "11.0",
+    "sv_exp_mp5_primary_headshot_scale": "3.0",
+    "sv_exp_mp5_primary_headshot_lethal": "0"
+  }
+}

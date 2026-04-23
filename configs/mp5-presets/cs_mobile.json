@@ -1,6 +1,6 @@
 {
   "name": "cs_mobile",
-  "description": "Legacy alias for the softer mobile MP5 preset. It blooms less aggressively than the burst preset and remains a server-side stock-client-compatible approximation.",
+  "description": "Legacy alias for the softer mobile MP5 preset. It keeps movement penalties and spray escalation lighter than the burst preset while remaining a stock-client-compatible server-side approximation.",
   "cvars": {
     "sv_exp_mp5_primary_enabled": "1",
     "sv_exp_mp5_primary_base_spread": "0.0440",
@@ -10,11 +10,18 @@
     "sv_exp_mp5_primary_burst_growth": "0.0130",
     "sv_exp_mp5_primary_burst_max_additional_spread": "0.0800",
     "sv_exp_mp5_primary_spread_recovery": "0.9000",
+    "sv_exp_mp5_primary_burst_reset_time": "0.2600",
+    "sv_exp_mp5_primary_hold_penalty_scale": "0.5000",
     "sv_exp_mp5_primary_damage": "11.5",
     "sv_exp_mp5_primary_headshot_scale": "3.0",
     "sv_exp_mp5_primary_headshot_lethal": "0",
     "sv_exp_mp5_primary_first_shot_accuracy": "1",
     "sv_exp_mp5_primary_first_shot_speed_threshold": "40.0",
-    "sv_exp_mp5_primary_max_spread": "0.1150"
+    "sv_exp_mp5_primary_max_spread": "0.1150",
+    "sv_exp_mp5_pattern_mode": "1",
+    "sv_exp_mp5_pattern_scale_x": "0.1800",
+    "sv_exp_mp5_pattern_scale_y": "0.3600",
+    "sv_exp_mp5_pattern_reset_time": "0.3200",
+    "sv_exp_mp5_pattern_max_index": "5"
   }
 }

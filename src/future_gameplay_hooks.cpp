@@ -482,6 +482,8 @@ cvar_t sv_exp_mp5_primary_duck_penalty_scale = {"sv_exp_mp5_primary_duck_penalty
 cvar_t sv_exp_mp5_primary_burst_growth = {"sv_exp_mp5_primary_burst_growth", "0.0140", FCVAR_SERVER};
 cvar_t sv_exp_mp5_primary_burst_max_additional_spread = {"sv_exp_mp5_primary_burst_max_additional_spread", "0.0950", FCVAR_SERVER};
 cvar_t sv_exp_mp5_primary_spread_recovery = {"sv_exp_mp5_primary_spread_recovery", "0.8000", FCVAR_SERVER};
+cvar_t sv_exp_mp5_primary_burst_reset_time = {"sv_exp_mp5_primary_burst_reset_time", "0.3200", FCVAR_SERVER};
+cvar_t sv_exp_mp5_primary_hold_penalty_scale = {"sv_exp_mp5_primary_hold_penalty_scale", "0.8500", FCVAR_SERVER};
 cvar_t sv_exp_mp5_pattern_mode = {"sv_exp_mp5_pattern_mode", "0", FCVAR_SERVER};
 cvar_t sv_exp_mp5_pattern_scale_x = {"sv_exp_mp5_pattern_scale_x", "0.2600", FCVAR_SERVER};
 cvar_t sv_exp_mp5_pattern_scale_y = {"sv_exp_mp5_pattern_scale_y", "0.5500", FCVAR_SERVER};
@@ -496,6 +498,8 @@ cvar_t sv_exp_mp5_primary_max_spread = {"sv_exp_mp5_primary_max_spread", "0.1250
 cvar_t sv_exp_mp5_lab_loadout = {"sv_exp_mp5_lab_loadout", "0", FCVAR_SERVER};
 cvar_t sv_exp_mp5_lab_ammo = {"sv_exp_mp5_lab_ammo", "250", FCVAR_SERVER};
 cvar_t sv_exp_mp5_lab_autoswitch = {"sv_exp_mp5_lab_autoswitch", "1", FCVAR_SERVER};
+cvar_t sv_exp_mp5_verify_autofire = {"sv_exp_mp5_verify_autofire", "0", FCVAR_SERVER};
+cvar_t sv_exp_mp5_verify_autofire_count = {"sv_exp_mp5_verify_autofire_count", "7", FCVAR_SERVER};
 cvar_t sv_exp_357_primary_enabled = {"sv_exp_357_primary_enabled", "0", FCVAR_SERVER};
 cvar_t sv_exp_357_primary_base_spread = {"sv_exp_357_primary_base_spread", "0.0125", FCVAR_SERVER};
 cvar_t sv_exp_357_primary_ground_move_penalty = {"sv_exp_357_primary_ground_move_penalty", "0.0300", FCVAR_SERVER};
@@ -652,6 +656,9 @@ ExpRoundTeamAssignment g_expRoundTeamAssignments[kMaxRoundTeamPlayerSlots] = {};
 ExpRoundFakeClientRecord g_expRoundFakeClientRecords[kMaxRoundTeamPlayerSlots] = {};
 ExpBuyPlayerState g_expBuyPlayerStates[kMaxRoundTeamPlayerSlots] = {};
 int g_expBuyLastRewardedRound = 0;
+int g_expMp5VerifyAutofireShotsFired = 0;
+int g_expMp5VerifyAutofirePlayerUserId = 0;
+float g_expMp5VerifyAutofireNextShotTime = 0.0f;
 int g_expShotgunVerifyAutofireShotsFired = 0;
 int g_expShotgunVerifyAutofirePlayerUserId = 0;
 float g_expShotgunVerifyAutofireNextShotTime = 0.0f;
@@ -734,6 +741,7 @@ bool TryBuildLabDummySpawnTransformFromAnchor(CBasePlayer *pPlayer, LabDummySpaw
 void MoveGlockLabDummyToSelection(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, const LabDummySpawnSelection &selection, const char *reason);
 CBaseEntity *SpawnGlockLabDummy(const LabDummySpawnSelection &selection, bool logAsRespawn);
 void LogLabDummySpawnFailure(const LabDummyFailureInfo &failure, CBasePlayer *pAnchorPlayer);
+void MaintainMp5VerificationAutofire();
 void MaintainShotgunVerificationAutofire();
 
 float GetNonNegativeCvarValue(const cvar_t &cvar)
@@ -5154,6 +5162,74 @@ bool TryFireShotgunVerificationShot(CBasePlayer *pPlayer, char *failureReason, s
     return true;
 }
 
+bool TryFireMp5VerificationShot(CBasePlayer *pPlayer, char *failureReason, size_t failureReasonSize)
+{
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    if (pPlayer == NULL || pPlayer->pev == NULL)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "player entity is unavailable");
+        }
+        return false;
+    }
+
+    if (!pPlayer->IsAlive() || pPlayer->pev->deadflag != DEAD_NO)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "player must be alive");
+        }
+        return false;
+    }
+
+    if (pPlayer->HasPlayerItemFromID(WEAPON_MP5) == FALSE)
+    {
+        pPlayer->GiveNamedItem("weapon_9mmAR");
+    }
+
+    const int ammoIndex = CBasePlayer::GetAmmoIndex("9mm");
+    if (ammoIndex >= 0 && pPlayer->AmmoInventory(ammoIndex) <= 0)
+    {
+        pPlayer->GiveAmmo(1, "9mm", _9MM_MAX_CARRY);
+    }
+
+    pPlayer->SelectItem("weapon_9mmAR");
+
+    CBasePlayerItem *pActiveItem = pPlayer->m_pActiveItem;
+    CBasePlayerWeapon *pWeapon = pActiveItem != NULL ? (CBasePlayerWeapon *)pActiveItem->GetWeaponPtr() : NULL;
+    if (pWeapon == NULL || pWeapon->m_iId != WEAPON_MP5)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "weapon_9mmAR is not active for the player");
+        }
+        return false;
+    }
+
+    const float currentTime = UTIL_WeaponTimeBase();
+    if (pWeapon->m_flNextPrimaryAttack > currentTime)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "mp5 is cooling down for %.2fs",
+                pWeapon->m_flNextPrimaryAttack - currentTime);
+        }
+        return false;
+    }
+
+    pWeapon->PrimaryAttack();
+    return true;
+}
+
 bool TryPrepareShotgunVerificationTarget(CBasePlayer *pPlayer, char *failureReason, size_t failureReasonSize)
 {
     if (failureReason != NULL && failureReasonSize > 0)
@@ -5220,6 +5296,80 @@ bool TryPrepareShotgunVerificationTarget(CBasePlayer *pPlayer, char *failureReas
 int GetShotgunVerificationAutofireCount()
 {
     return max(0, (int)sv_exp_shotgun_verify_autofire_count.value);
+}
+
+int GetMp5VerificationAutofireCount()
+{
+    return max(0, (int)sv_exp_mp5_verify_autofire_count.value);
+}
+
+void ResetMp5VerificationAutofireState()
+{
+    g_expMp5VerifyAutofireShotsFired = 0;
+    g_expMp5VerifyAutofirePlayerUserId = 0;
+    g_expMp5VerifyAutofireNextShotTime = 0.0f;
+}
+
+void MaintainMp5VerificationAutofire()
+{
+    if (gpGlobals == NULL || sv_exp_mp5_verify_autofire.value == 0.0f || GetMp5VerificationAutofireCount() <= 0)
+    {
+        ResetMp5VerificationAutofireState();
+        return;
+    }
+
+    CBasePlayer *pPlayer = NULL;
+    char failureReason[256];
+    if (!TryResolveDefaultBuyPlayer(&pPlayer, failureReason, sizeof(failureReason)))
+    {
+        return;
+    }
+
+    const int playerUserId = GetPlayerUserId(pPlayer);
+    if (playerUserId <= 0)
+    {
+        return;
+    }
+
+    if (g_expMp5VerifyAutofirePlayerUserId != playerUserId)
+    {
+        ResetMp5VerificationAutofireState();
+        g_expMp5VerifyAutofirePlayerUserId = playerUserId;
+        g_expMp5VerifyAutofireNextShotTime = gpGlobals->time + 0.75f;
+    }
+
+    if (g_expMp5VerifyAutofireShotsFired >= GetMp5VerificationAutofireCount() ||
+        gpGlobals->time < g_expMp5VerifyAutofireNextShotTime)
+    {
+        return;
+    }
+
+    RefreshFutureHooksMapState();
+    SetLabDummyEnabled(true);
+
+    if (!TryPrepareShotgunVerificationTarget(pPlayer, failureReason, sizeof(failureReason)))
+    {
+        g_expMp5VerifyAutofireNextShotTime = gpGlobals->time + 0.25f;
+        return;
+    }
+
+    if (!TryFireMp5VerificationShot(pPlayer, failureReason, sizeof(failureReason)))
+    {
+        if (failureReason[0] != '\0' && strstr(failureReason, "cooling down") == NULL)
+        {
+            PrintLabDummyConsoleLine("mp5 verify autofire failed: %s", failureReason);
+        }
+        g_expMp5VerifyAutofireNextShotTime = gpGlobals->time + 0.05f;
+        return;
+    }
+
+    ++g_expMp5VerifyAutofireShotsFired;
+    g_expMp5VerifyAutofireNextShotTime = gpGlobals->time + (g_expMp5VerifyAutofireShotsFired == 5 ? 0.75f : 0.11f);
+    PrintLabDummyConsoleLine(
+        "mp5 verify autofire: shot %d/%d from %s.",
+        g_expMp5VerifyAutofireShotsFired,
+        GetMp5VerificationAutofireCount(),
+        GetSafePlayerName(pPlayer));
 }
 
 void ResetShotgunVerificationAutofireState()
@@ -12467,6 +12617,8 @@ void RegisterFutureGameplayCvars()
     CVAR_REGISTER(&sv_exp_mp5_primary_burst_growth);
     CVAR_REGISTER(&sv_exp_mp5_primary_burst_max_additional_spread);
     CVAR_REGISTER(&sv_exp_mp5_primary_spread_recovery);
+    CVAR_REGISTER(&sv_exp_mp5_primary_burst_reset_time);
+    CVAR_REGISTER(&sv_exp_mp5_primary_hold_penalty_scale);
     CVAR_REGISTER(&sv_exp_mp5_pattern_mode);
     CVAR_REGISTER(&sv_exp_mp5_pattern_scale_x);
     CVAR_REGISTER(&sv_exp_mp5_pattern_scale_y);
@@ -12481,6 +12633,8 @@ void RegisterFutureGameplayCvars()
     CVAR_REGISTER(&sv_exp_mp5_lab_loadout);
     CVAR_REGISTER(&sv_exp_mp5_lab_ammo);
     CVAR_REGISTER(&sv_exp_mp5_lab_autoswitch);
+    CVAR_REGISTER(&sv_exp_mp5_verify_autofire);
+    CVAR_REGISTER(&sv_exp_mp5_verify_autofire_count);
     CVAR_REGISTER(&sv_exp_357_primary_enabled);
     CVAR_REGISTER(&sv_exp_357_primary_base_spread);
     CVAR_REGISTER(&sv_exp_357_primary_ground_move_penalty);
@@ -12617,6 +12771,7 @@ void UpdateFutureGameplayHooksFrame()
     Maintain357LabLoadout();
     MaintainShotgunLabLoadout();
     MaintainGlockLabDummy();
+    MaintainMp5VerificationAutofire();
     MaintainShotgunVerificationAutofire();
 }
 
@@ -12993,6 +13148,16 @@ float ExpMP5PrimaryBurstMaxAdditionalSpread()
 float ExpMP5PrimarySpreadRecoverySeconds()
 {
     return GetNonNegativeCvarValue(sv_exp_mp5_primary_spread_recovery);
+}
+
+float ExpMP5PrimaryBurstResetTime()
+{
+    return GetNonNegativeCvarValue(sv_exp_mp5_primary_burst_reset_time);
+}
+
+float ExpMP5PrimaryHoldPenaltyScale()
+{
+    return GetNonNegativeCvarValue(sv_exp_mp5_primary_hold_penalty_scale);
 }
 
 bool ExpMP5PatternModeEnabled()

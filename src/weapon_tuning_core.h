@@ -136,6 +136,18 @@ SharedWeaponCadenceResult ComputeSharedWeaponCadence(
     bool hasPreviousShot,
     float timeSincePreviousShot,
     bool holdingAttack);
+bool ShouldResetSharedAdditionalSpread(
+    bool hasPreviousShot,
+    float timeSincePreviousShot,
+    float resetTimeSeconds);
+float ComputeSharedAutomaticHoldPenalty(
+    float baseGrowthPerShot,
+    float currentSpread,
+    float maxAdditionalSpread,
+    float holdPenaltyScale,
+    float speedRatio,
+    bool grounded,
+    bool ducking);
 float RecoverSharedAdditionalSpread(
     float currentSpread,
     float elapsedSeconds,

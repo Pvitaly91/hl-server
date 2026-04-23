@@ -400,6 +400,8 @@ bool IsMp5Relevant(const ProjectDocument& document) {
            !EqualTrimmed(document.mp5.primaryBurstGrowth, defaults.mp5.primaryBurstGrowth) ||
            !EqualTrimmed(document.mp5.primaryBurstMaxAdditionalSpread, defaults.mp5.primaryBurstMaxAdditionalSpread) ||
            !EqualTrimmed(document.mp5.primarySpreadRecovery, defaults.mp5.primarySpreadRecovery) ||
+           !EqualTrimmed(document.mp5.primaryBurstResetTime, defaults.mp5.primaryBurstResetTime) ||
+           !EqualTrimmed(document.mp5.primaryHoldPenaltyScale, defaults.mp5.primaryHoldPenaltyScale) ||
            document.mp5.primaryFirstShotAccuracy != defaults.mp5.primaryFirstShotAccuracy ||
            !EqualTrimmed(document.mp5.primaryFirstShotSpeedThreshold, defaults.mp5.primaryFirstShotSpeedThreshold) ||
            !EqualTrimmed(document.mp5.primaryMaxSpread, defaults.mp5.primaryMaxSpread) ||
@@ -766,6 +768,14 @@ bool BuildCfgLines(const ProjectDocument& document, std::vector<std::wstring>& l
             return false;
         }
         AddLine(lines, L"sv_exp_mp5_primary_spread_recovery", normalized);
+        if (!NormalizeFloatValue(document.mp5.primaryBurstResetTime, normalized, errorMessage, L"MP5 burst reset time")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_mp5_primary_burst_reset_time", normalized);
+        if (!NormalizeFloatValue(document.mp5.primaryHoldPenaltyScale, normalized, errorMessage, L"MP5 hold penalty scale")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_mp5_primary_hold_penalty_scale", normalized);
         AddLine(lines, L"sv_exp_mp5_primary_first_shot_accuracy", document.mp5.primaryFirstShotAccuracy ? L"1" : L"0");
         if (!NormalizeFloatValue(document.mp5.primaryFirstShotSpeedThreshold, normalized, errorMessage, L"MP5 first-shot speed threshold")) {
             return false;

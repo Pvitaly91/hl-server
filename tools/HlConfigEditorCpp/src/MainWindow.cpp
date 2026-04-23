@@ -98,6 +98,8 @@ enum ControlId : int {
     IDC_MP5_PRIMARY_BURST_GROWTH,
     IDC_MP5_PRIMARY_BURST_MAX_ADDITIONAL_SPREAD,
     IDC_MP5_PRIMARY_SPREAD_RECOVERY,
+    IDC_MP5_PRIMARY_BURST_RESET_TIME,
+    IDC_MP5_PRIMARY_HOLD_PENALTY_SCALE,
     IDC_MP5_PRIMARY_FIRST_SHOT_ACCURACY,
     IDC_MP5_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD,
     IDC_MP5_PRIMARY_MAX_SPREAD,
@@ -1016,7 +1018,7 @@ private:
             ApplyPreset([&] { hlcfg::ApplyMp5Preset(document_, L"mp5_pattern_mobile"); });
             return 0;
         case IDC_MP5_PRESET_SPRAY_TEST:
-            ApplyPreset([&] { hlcfg::ApplyMp5Preset(document_, L"spray_test"); });
+            ApplyPreset([&] { hlcfg::ApplyMp5Preset(document_, L"mp5_spray_harsh"); });
             return 0;
         case IDC_357_PRESET_DEFAULT:
             ApplyPreset([&] { hlcfg::Apply357Preset(document_, L"default"); });
@@ -1343,7 +1345,7 @@ private:
         CreateButton(page, L"Default", IDC_MP5_PRESET_DEFAULT, 40, 45, 120, 24);
         CreateButton(page, L"Pattern Burst", IDC_MP5_PRESET_CS_BURST, 175, 45, 150, 24);
         CreateButton(page, L"Pattern Mobile", IDC_MP5_PRESET_CS_MOBILE, 340, 45, 130, 24);
-        CreateButton(page, L"Spray Test", IDC_MP5_PRESET_SPRAY_TEST, 455, 45, 130, 24);
+        CreateButton(page, L"Spray Harsh", IDC_MP5_PRESET_SPRAY_TEST, 455, 45, 130, 24);
 
         CreateGroupBox(page, L"General MP5 Settings", 20, 110, 500, 235);
         CreateCheckBox(page, L"Enable experimental MP5 primary", IDC_MP5_PRIMARY_ENABLED, 40, 145, 250, 20);
@@ -1382,7 +1384,7 @@ private:
         CreateEdit(page, IDC_MP5_PRIMARY_HEADSHOT_SCALE, 220, 430, 120, 24);
         CreateCheckBox(page, L"Lethal headshot", IDC_MP5_PRIMARY_HEADSHOT_LETHAL, 360, 430, 120, 20);
 
-        CreateGroupBox(page, L"Deterministic Pattern Layer", 20, 500, 500, 190);
+        CreateGroupBox(page, L"Pattern And Spray Control", 20, 500, 500, 290);
         CreateCheckBox(page, L"Deterministic pattern mode", IDC_MP5_PATTERN_MODE, 40, 535, 220, 20);
         CreateLabel(page, L"Horizontal pattern scale", 40, 570, 170, 20);
         CreateEdit(page, IDC_MP5_PATTERN_SCALE_X, 220, 565, 120, 24);
@@ -1392,6 +1394,10 @@ private:
         CreateEdit(page, IDC_MP5_PATTERN_RESET_TIME, 220, 635, 120, 24);
         CreateLabel(page, L"Pattern max index", 40, 675, 170, 20);
         CreateEdit(page, IDC_MP5_PATTERN_MAX_INDEX, 220, 670, 120, 24);
+        CreateLabel(page, L"Burst reset time", 40, 710, 170, 20);
+        CreateEdit(page, IDC_MP5_PRIMARY_BURST_RESET_TIME, 220, 705, 120, 24);
+        CreateLabel(page, L"Spray hold penalty scale", 40, 745, 170, 20);
+        CreateEdit(page, IDC_MP5_PRIMARY_HOLD_PENALTY_SCALE, 220, 740, 120, 24);
     }
 
     void Create357Page() {
@@ -2256,6 +2262,8 @@ private:
         } else if (weaponUnderTest == L"mp5") {
             const double burstGrowth = ParseConfigDouble(preview.mp5.primaryBurstGrowth, 0.0);
             const double recoverySeconds = ParseConfigDouble(preview.mp5.primarySpreadRecovery, 0.0);
+            const double burstResetSeconds = ParseConfigDouble(preview.mp5.primaryBurstResetTime, 0.0);
+            const double holdPenaltyScale = ParseConfigDouble(preview.mp5.primaryHoldPenaltyScale, 0.0);
             const double patternResetSeconds = ParseConfigDouble(preview.mp5.patternResetTime, 0.0);
             weaponFeel = preview.mp5.primaryFirstShotAccuracy ? L"burst favored" : L"spray heavy";
             if (preview.mp5.patternMode) {
@@ -2270,6 +2278,16 @@ private:
                 weaponFeel += L", quick reset";
             } else if (recoverySeconds >= 0.420) {
                 weaponFeel += L", recoil settles slowly";
+            }
+            if (burstResetSeconds > 0.0 && burstResetSeconds <= 0.320) {
+                weaponFeel += L", burst windows reset quickly";
+            } else if (burstResetSeconds >= 0.500) {
+                weaponFeel += L", sustained spray lingers";
+            }
+            if (holdPenaltyScale >= 0.900) {
+                weaponFeel += L", long spray punished hard";
+            } else if (holdPenaltyScale <= 0.450) {
+                weaponFeel += L", spray stays softer";
             }
             if (preview.mp5.patternMode && patternResetSeconds > 0.0 && patternResetSeconds <= 0.320) {
                 weaponFeel += L", burst pattern resets quickly";
@@ -2956,6 +2974,8 @@ private:
         SetTextValue(IDC_MP5_PRIMARY_BURST_GROWTH, document_.mp5.primaryBurstGrowth);
         SetTextValue(IDC_MP5_PRIMARY_BURST_MAX_ADDITIONAL_SPREAD, document_.mp5.primaryBurstMaxAdditionalSpread);
         SetTextValue(IDC_MP5_PRIMARY_SPREAD_RECOVERY, document_.mp5.primarySpreadRecovery);
+        SetTextValue(IDC_MP5_PRIMARY_BURST_RESET_TIME, document_.mp5.primaryBurstResetTime);
+        SetTextValue(IDC_MP5_PRIMARY_HOLD_PENALTY_SCALE, document_.mp5.primaryHoldPenaltyScale);
         Button_SetCheck(FindControl(IDC_MP5_PRIMARY_FIRST_SHOT_ACCURACY), document_.mp5.primaryFirstShotAccuracy ? BST_CHECKED : BST_UNCHECKED);
         SetTextValue(IDC_MP5_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD, document_.mp5.primaryFirstShotSpeedThreshold);
         SetTextValue(IDC_MP5_PRIMARY_MAX_SPREAD, document_.mp5.primaryMaxSpread);
@@ -3152,6 +3172,8 @@ private:
         document_.mp5.primaryBurstGrowth = GetTextValue(IDC_MP5_PRIMARY_BURST_GROWTH);
         document_.mp5.primaryBurstMaxAdditionalSpread = GetTextValue(IDC_MP5_PRIMARY_BURST_MAX_ADDITIONAL_SPREAD);
         document_.mp5.primarySpreadRecovery = GetTextValue(IDC_MP5_PRIMARY_SPREAD_RECOVERY);
+        document_.mp5.primaryBurstResetTime = GetTextValue(IDC_MP5_PRIMARY_BURST_RESET_TIME);
+        document_.mp5.primaryHoldPenaltyScale = GetTextValue(IDC_MP5_PRIMARY_HOLD_PENALTY_SCALE);
         document_.mp5.primaryFirstShotAccuracy = GetCheckValue(IDC_MP5_PRIMARY_FIRST_SHOT_ACCURACY);
         document_.mp5.primaryFirstShotSpeedThreshold = GetTextValue(IDC_MP5_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD);
         document_.mp5.primaryMaxSpread = GetTextValue(IDC_MP5_PRIMARY_MAX_SPREAD);
@@ -3642,6 +3664,8 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
     mp5.mp5.primaryBurstGrowth = L"0.0180";
     mp5.mp5.primaryBurstMaxAdditionalSpread = L"0.0950";
     mp5.mp5.primarySpreadRecovery = L"0.9500";
+    mp5.mp5.primaryBurstResetTime = L"0.3000";
+    mp5.mp5.primaryHoldPenaltyScale = L"1.0500";
     mp5.general.debugWeaponLog = true;
     mp5.general.debugWeaponLogRejections = true;
 
@@ -3665,9 +3689,11 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
         !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_primary_enabled 1") ||
         !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_profile_name \"editor_mp5_simple\"") ||
         !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_primary_burst_growth 0.018") ||
+        !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_primary_burst_reset_time 0.3") ||
+        !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_primary_hold_penalty_scale 1.05") ||
         !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_pattern_mode 1") ||
-        !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_pattern_scale_y 0.5") ||
-        !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_pattern_reset_time 0.26") ||
+        !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_pattern_scale_y 0.48") ||
+        !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_pattern_reset_time 0.3") ||
         !ValidateContains(mp5Export.cfgText, L"sv_exp_mp5_lab_loadout 1") ||
         !ValidateContains(mp5Export.cfgText, L"sv_exp_glock_lab_target_profile_name \"vest\"") ||
         mp5Export.execCommand != L"exec editor_mp5_simple.cfg" ||

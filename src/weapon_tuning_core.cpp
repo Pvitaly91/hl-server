@@ -701,6 +701,52 @@ SharedWeaponCadenceResult ComputeSharedWeaponCadence(
     return result;
 }
 
+bool ShouldResetSharedAdditionalSpread(
+    bool hasPreviousShot,
+    float timeSincePreviousShot,
+    float resetTimeSeconds)
+{
+    return hasPreviousShot &&
+        resetTimeSeconds > 0.0f &&
+        timeSincePreviousShot >= resetTimeSeconds;
+}
+
+float ComputeSharedAutomaticHoldPenalty(
+    float baseGrowthPerShot,
+    float currentSpread,
+    float maxAdditionalSpread,
+    float holdPenaltyScale,
+    float speedRatio,
+    bool grounded,
+    bool ducking)
+{
+    if (baseGrowthPerShot <= 0.0f ||
+        currentSpread <= 0.0f ||
+        maxAdditionalSpread <= 0.0f ||
+        holdPenaltyScale <= 0.0f)
+    {
+        return 0.0f;
+    }
+
+    const float sprayRatio = ClampSharedValue(currentSpread / maxAdditionalSpread, 0.0f, 1.0f);
+    float penalty = baseGrowthPerShot * holdPenaltyScale * sprayRatio;
+
+    if (!grounded)
+    {
+        penalty *= 1.35f;
+    }
+    else
+    {
+        penalty *= 1.0f + (ClampSharedValue(speedRatio, 0.0f, 1.0f) * 0.45f);
+        if (ducking)
+        {
+            penalty *= 0.82f;
+        }
+    }
+
+    return penalty > 0.0f ? penalty : 0.0f;
+}
+
 float RecoverSharedAdditionalSpread(
     float currentSpread,
     float elapsedSeconds,

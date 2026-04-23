@@ -1238,6 +1238,22 @@ The lab dummy armor model is experimental and dummy-only. It is useful for compa
 
 The repo now carries a parallel server-side MP5 primary experiment that stays on `-game valve`, keeps the stock client compatible, and reuses the same disposable testbed plus analyzer pipeline as the Glock work.
 
+The current MP5 recommendation is still not "full CS." It is a stock-client-compatible server-side approximation built around two cooperating layers:
+
+- deterministic early-burst pattern progression so the first few follow-up shots are learnable
+- burst-growth plus recovery so 2-5 shot bursts stay useful while long held spray blooms much harder
+
+The focused spray-control knobs for this pass are:
+
+- `sv_exp_mp5_primary_burst_growth`
+- `sv_exp_mp5_primary_burst_max_additional_spread`
+- `sv_exp_mp5_primary_spread_recovery`
+- `sv_exp_mp5_primary_burst_reset_time`
+- `sv_exp_mp5_primary_hold_penalty_scale`
+- `sv_exp_mp5_pattern_scale_x`
+- `sv_exp_mp5_pattern_scale_y`
+- `sv_exp_mp5_pattern_reset_time`
+
 List the checked-in MP5 presets:
 
 ```powershell
@@ -1282,6 +1298,13 @@ Analyze the newest MP5-focused log:
 ```powershell
 .\scripts\analyze-weapon-log.ps1 -Latest -Weapon mp5
 ```
+
+Recommended live verification loop for the current MP5 pass:
+
+1. Export or apply a burst-focused cfg such as `editor_mp5_simple.cfg` or preset `mp5_controlled_burst`.
+2. Run `exp_target_use_saved default`, `exp_target_respawn`, and `exp_target_tp_front`.
+3. Fire one short 2-5 shot burst, then one longer held spray, then wait long enough for reset.
+4. Check the live log or analyzer for `pattern_mode`, `pattern_index`, `burst_growth`, `hold_penalty`, `next_additional_spread`, and `burst_reset`.
 
 Run MP5-focused analyzer assertions against a known synthetic fixture:
 

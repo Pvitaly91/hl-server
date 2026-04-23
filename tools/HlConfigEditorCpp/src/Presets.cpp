@@ -45,6 +45,8 @@ void ApplyMp5Defaults(ProjectDocument& document) {
     document.mp5.primaryBurstGrowth = L"0.0140";
     document.mp5.primaryBurstMaxAdditionalSpread = L"0.0950";
     document.mp5.primarySpreadRecovery = L"0.8000";
+    document.mp5.primaryBurstResetTime = L"0.3200";
+    document.mp5.primaryHoldPenaltyScale = L"0.8500";
     document.mp5.primaryFirstShotAccuracy = true;
     document.mp5.primaryFirstShotSpeedThreshold = L"30.0";
     document.mp5.primaryMaxSpread = L"0.1250";
@@ -309,15 +311,17 @@ void ApplyMp5Preset(ProjectDocument& document, const std::wstring& presetName) {
         document.mp5.primaryAirMovePenalty = L"0.0550";
         document.mp5.primaryDuckPenaltyScale = L"0.6000";
         document.mp5.primaryBurstGrowth = L"0.0180";
-        document.mp5.primaryBurstMaxAdditionalSpread = L"0.0950";
+        document.mp5.primaryBurstMaxAdditionalSpread = L"0.1000";
         document.mp5.primarySpreadRecovery = L"0.9500";
+        document.mp5.primaryBurstResetTime = L"0.3000";
+        document.mp5.primaryHoldPenaltyScale = L"1.0500";
         document.mp5.primaryFirstShotAccuracy = true;
         document.mp5.primaryFirstShotSpeedThreshold = L"28.0";
         document.mp5.primaryMaxSpread = L"0.1250";
         document.mp5.patternMode = true;
-        document.mp5.patternScaleX = L"0.2400";
-        document.mp5.patternScaleY = L"0.5000";
-        document.mp5.patternResetTime = L"0.2600";
+        document.mp5.patternScaleX = L"0.2350";
+        document.mp5.patternScaleY = L"0.4800";
+        document.mp5.patternResetTime = L"0.3000";
         document.mp5.patternMaxIndex = L"6";
         document.mp5.primaryDamage = L"12.0";
         document.mp5.primaryHeadshotScale = L"3.30";
@@ -333,6 +337,8 @@ void ApplyMp5Preset(ProjectDocument& document, const std::wstring& presetName) {
         document.mp5.primaryBurstGrowth = L"0.0130";
         document.mp5.primaryBurstMaxAdditionalSpread = L"0.0800";
         document.mp5.primarySpreadRecovery = L"0.9000";
+        document.mp5.primaryBurstResetTime = L"0.2600";
+        document.mp5.primaryHoldPenaltyScale = L"0.5000";
         document.mp5.primaryFirstShotAccuracy = true;
         document.mp5.primaryFirstShotSpeedThreshold = L"40.0";
         document.mp5.primaryMaxSpread = L"0.1150";
@@ -346,20 +352,28 @@ void ApplyMp5Preset(ProjectDocument& document, const std::wstring& presetName) {
         return;
     }
 
-    if (presetName == L"spray_test") {
-        document.mp5.profileName = L"spray_test";
-        document.mp5.primaryBaseSpread = L"0.0550";
-        document.mp5.primaryGroundMovePenalty = L"0.0250";
-        document.mp5.primaryAirMovePenalty = L"0.0600";
-        document.mp5.primaryDuckPenaltyScale = L"0.8000";
-        document.mp5.primaryBurstGrowth = L"0.0120";
-        document.mp5.primaryBurstMaxAdditionalSpread = L"0.1100";
-        document.mp5.primarySpreadRecovery = L"0.2000";
+    if (presetName == L"spray_test" || presetName == L"mp5_spray_harsh") {
+        document.mp5.profileName = L"mp5_spray_harsh";
+        document.mp5.primaryBaseSpread = L"0.0410";
+        document.mp5.primaryGroundMovePenalty = L"0.0260";
+        document.mp5.primaryAirMovePenalty = L"0.0620";
+        document.mp5.primaryDuckPenaltyScale = L"0.5800";
+        document.mp5.primaryBurstGrowth = L"0.0200";
+        document.mp5.primaryBurstMaxAdditionalSpread = L"0.1200";
+        document.mp5.primarySpreadRecovery = L"1.0500";
+        document.mp5.primaryBurstResetTime = L"0.4200";
+        document.mp5.primaryHoldPenaltyScale = L"1.2500";
         document.mp5.primaryFirstShotAccuracy = false;
-        document.mp5.primaryFirstShotSpeedThreshold = L"20.0";
-        document.mp5.primaryMaxSpread = L"0.1500";
+        document.mp5.primaryFirstShotSpeedThreshold = L"22.0";
+        document.mp5.primaryMaxSpread = L"0.1550";
+        document.mp5.patternMode = true;
+        document.mp5.patternScaleX = L"0.2700";
+        document.mp5.patternScaleY = L"0.6200";
+        document.mp5.patternResetTime = L"0.3600";
+        document.mp5.patternMaxIndex = L"7";
         document.mp5.primaryDamage = L"11.0";
         document.mp5.primaryHeadshotScale = L"3.0";
+        return;
     }
 }
 

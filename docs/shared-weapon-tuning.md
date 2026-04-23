@@ -55,6 +55,7 @@ This repository is explicitly improving stock-client-compatible HLDM gameplay, n
 - The old hard tap-fire gate can still exist as a legacy switch, but it is no longer the recommended path for skillful pistol feel.
 - 357 now uses the same cadence model so patient clicks stay precise, rushed follow-up clicks add a visible penalty, and waiting long enough resets the cadence state.
 - MP5 now favors controlled bursts: repeated accepted shots add burst spread, waiting lets that extra spread decay, and long held fire is meant to bloom more than short bursts.
+- MP5 now also has an explicit burst reset window and sustained-spray hold penalty so short 2-5 shot strings recover cleanly while deeper spray stacks more aggressively.
 - MP5 can now optionally layer a deterministic early-burst pattern over the same shared spread and recovery model so the opening spray shape is more learnable.
 - Shotgun primary fire now uses a deterministic pellet-layout mode on top of the shared spread and recovery inputs so the cone stays recognizably shotgun-like while repeated close-range shots become more learnable than a pure random pellet cloud.
 - Movement, air state, crouch stability, and readable headshot damage remain part of the shared model.
@@ -84,7 +85,7 @@ For repeatable live verification, two focused helpers are now available:
 
 - Glock: `glock_cadence_soft` for a softer cadence-sensitive pistol feel, `glock_cadence_tight` for a stricter rhythm-focused single-shot path, and `glock_pattern_tight` when you also want a stronger learnable follow-up pattern.
 - 357: `357_precision_duel` for precise duel pacing and `357_cadence_headshot` for stronger headshot-oriented live validation.
-- MP5: `mp5_pattern_burst` for the main "short burst beats spray" path, `mp5_pattern_mobile` for a lighter movement-oriented variant.
+- MP5: `mp5_controlled_burst` for the main "short burst beats spray" path, `mp5_mobile_soft` for a lighter movement-oriented variant, `mp5_pattern_burst` when you want stronger learnable early-burst patterning, and `mp5_spray_harsh` when you want a deliberately punishing long-spray comparison preset.
 - Shotgun: `shotgun_pattern_soft` for a gentler learnable pellet spread, `shotgun_pattern_tight` for the tighter deterministic layout, `shotgun_close_quickkill` for heavier close-range testing, and `shotgun_precision_test` for cleaner dummy validation.
 
 Relevant new cvars for this pass:
@@ -92,10 +93,17 @@ Relevant new cvars for this pass:
 - Glock cadence: `sv_exp_glock_primary_cadence_mode`, `sv_exp_glock_primary_cycle_time`, `sv_exp_glock_primary_click_penalty`, `sv_exp_glock_primary_click_penalty_scale`, `sv_exp_glock_primary_click_reset_time`, `sv_exp_glock_primary_hold_penalty_scale`
 - 357 cadence: `sv_exp_357_primary_cadence_mode`, `sv_exp_357_primary_cycle_time`, `sv_exp_357_primary_click_penalty`, `sv_exp_357_primary_click_penalty_scale`, `sv_exp_357_primary_click_reset_time`, `sv_exp_357_primary_hold_penalty_scale`
 - Glock: `sv_exp_glock_pattern_mode`, `sv_exp_glock_pattern_scale_x`, `sv_exp_glock_pattern_scale_y`, `sv_exp_glock_pattern_reset_time`, `sv_exp_glock_pattern_max_index`
-- MP5: `sv_exp_mp5_pattern_mode`, `sv_exp_mp5_pattern_scale_x`, `sv_exp_mp5_pattern_scale_y`, `sv_exp_mp5_pattern_reset_time`, `sv_exp_mp5_pattern_max_index`
+- MP5: `sv_exp_mp5_primary_burst_growth`, `sv_exp_mp5_primary_burst_max_additional_spread`, `sv_exp_mp5_primary_spread_recovery`, `sv_exp_mp5_primary_burst_reset_time`, `sv_exp_mp5_primary_hold_penalty_scale`, `sv_exp_mp5_pattern_mode`, `sv_exp_mp5_pattern_scale_x`, `sv_exp_mp5_pattern_scale_y`, `sv_exp_mp5_pattern_reset_time`, `sv_exp_mp5_pattern_max_index`
 - Shotgun: `sv_exp_shotgun_primary_shot_growth`, `sv_exp_shotgun_pattern_mode`, `sv_exp_shotgun_pattern_scale_x`, `sv_exp_shotgun_pattern_scale_y`, `sv_exp_shotgun_pattern_reset_time`, `sv_exp_shotgun_pattern_max_index`, `sv_exp_shotgun_primary_pellet_spread_mode`
 
 Cadence mode and pattern mode are still server-side approximations. They do not add client-side recoil animation or a custom prediction model.
+
+For the current MP5 polish pass, read the model like this:
+
+- first few accepted shots: deterministic pattern makes the opening burst more learnable
+- continued held fire: burst growth plus hold penalty push `next_additional_spread` up faster
+- short idle pause: recovery reduces current spread
+- longer idle pause: burst reset and pattern reset return the weapon closer to its clean opening state
 
 ## Real-Player Headshot And Armor Telemetry
 

@@ -169,6 +169,10 @@ void CMP5::PrimaryAttack()
 	const BOOL fExperimentalPrimary = ExpMP5PrimaryEnabled();
 	const BOOL fHasPreviousAcceptedShot = m_flLastAcceptedPrimaryShotTime >= 0.0f;
 	const float flTimeSincePreviousAcceptedShot = fHasPreviousAcceptedShot ? (gpGlobals->time - m_flLastAcceptedPrimaryShotTime) : 0.0f;
+	const BOOL fBurstResetApplied = ShouldResetSharedAdditionalSpread(
+		fHasPreviousAcceptedShot != FALSE,
+		flTimeSincePreviousAcceptedShot,
+		ExpMP5PrimaryBurstResetTime()) ? TRUE : FALSE;
 	const float flRecoveredBurstAddedSpread = fHasPreviousAcceptedShot
 		? RecoverBurstAdditionalSpread(m_flPrimaryBurstSpreadAccumulator, flTimeSincePreviousAcceptedShot)
 		: 0.0f;
@@ -187,6 +191,9 @@ void CMP5::PrimaryAttack()
 	BOOL fFirstShotAccuracyApplied = FALSE;
 	float flMovementPenalty = 0.0f;
 	float flBurstAddedSpread = 0.0f;
+	float flAirContribution = 0.0f;
+	float flCrouchBonus = 0.0f;
+	float flHoldPenalty = 0.0f;
 	int iBurstShotIndex = 1;
 	float flHorizontalSpeed = 0.0f;
 	float flMaxSpeedForNormalization = kMp5FallbackMaxSpeed;
@@ -195,8 +202,8 @@ void CMP5::PrimaryAttack()
 
 	if (fExperimentalPrimary)
 	{
-		flBurstAddedSpread = flRecoveredBurstAddedSpread;
-		iBurstShotIndex = (flBurstAddedSpread > 0.0001f && m_iPrimaryBurstShotCount > 0)
+		flBurstAddedSpread = fBurstResetApplied ? 0.0f : flRecoveredBurstAddedSpread;
+		iBurstShotIndex = (flBurstAddedSpread > 0.0001f && m_iPrimaryBurstShotCount > 0 && !fBurstResetApplied)
 			? (m_iPrimaryBurstShotCount + 1)
 			: 1;
 		const SharedWeaponSpreadProfile spreadProfile = BuildMp5PrimarySpreadProfile();
@@ -217,12 +224,29 @@ void CMP5::PrimaryAttack()
 			m_iPrimaryPatternIndex);
 		fFirstShotAccuracyApplied = spreadResult.firstShotAccuracyApplied ? TRUE : FALSE;
 		flMovementPenalty = spreadResult.movementPenalty;
+		flAirContribution = !spreadState.grounded ? spreadResult.movementPenalty : 0.0f;
+		if (spreadState.grounded && spreadState.ducking)
+		{
+			const float flStandingMovePenalty = spreadProfile.groundMovePenalty * spreadResult.speedRatio * spreadProfile.movementPenaltyScale;
+			flCrouchBonus = flStandingMovePenalty > spreadResult.movementPenalty
+				? (flStandingMovePenalty - spreadResult.movementPenalty)
+				: 0.0f;
+		}
 		const float flCadenceRecoveryApplied = fHasPreviousAcceptedShot
 			? (m_flPrimaryBurstSpreadAccumulator - flRecoveredBurstAddedSpread)
 			: 0.0f;
+		flHoldPenalty = ComputeSharedAutomaticHoldPenalty(
+			ExpMP5PrimaryBurstGrowth(),
+			flBurstAddedSpread,
+			ExpMP5PrimaryBurstMaxAdditionalSpread(),
+			ExpMP5PrimaryHoldPenaltyScale(),
+			spreadResult.speedRatio,
+			spreadState.grounded,
+			spreadState.ducking);
+		const float flShotGrowth = ExpMP5PrimaryBurstGrowth() + flHoldPenalty;
 		const float flNextBurstAddedSpread = GrowSharedAdditionalSpread(
 			flBurstAddedSpread,
-			ExpMP5PrimaryBurstGrowth(),
+			flShotGrowth,
 			ExpMP5PrimaryBurstMaxAdditionalSpread());
 		flHorizontalSpeed = spreadState.horizontalSpeed;
 		flMaxSpeedForNormalization = spreadResult.normalizedMaxSpeed;
@@ -250,7 +274,9 @@ void CMP5::PrimaryAttack()
 			acceptedTelemetry.movementPenalty = flMovementPenalty;
 			acceptedTelemetry.burstAddedSpread = flBurstAddedSpread;
 			acceptedTelemetry.recoveryApplied = flCadenceRecoveryApplied > 0.0f ? flCadenceRecoveryApplied : 0.0f;
-			acceptedTelemetry.shotGrowth = ExpMP5PrimaryBurstGrowth();
+			acceptedTelemetry.burstResetApplied = fBurstResetApplied != FALSE;
+			acceptedTelemetry.shotGrowth = flShotGrowth;
+			acceptedTelemetry.holdPenalty = flHoldPenalty;
 			acceptedTelemetry.nextAdditionalSpread = flNextBurstAddedSpread;
 			acceptedTelemetry.patternModeActive = patternResult.enabled;
 			acceptedTelemetry.patternIndex = patternResult.patternIndex;
@@ -259,6 +285,8 @@ void CMP5::PrimaryAttack()
 			acceptedTelemetry.patternResetApplied = patternResult.resetApplied;
 			acceptedTelemetry.totalAdditionalSpread = flMovementPenalty + flBurstAddedSpread;
 			acceptedTelemetry.movementContribution = flMovementPenalty;
+			acceptedTelemetry.airContribution = flAirContribution;
+			acceptedTelemetry.crouchBonus = flCrouchBonus;
 			acceptedTelemetry.cadenceGrowthContribution = flBurstAddedSpread;
 			acceptedTelemetry.speedRatio = spreadResult.speedRatio;
 			acceptedTelemetry.burstShotIndex = iBurstShotIndex;

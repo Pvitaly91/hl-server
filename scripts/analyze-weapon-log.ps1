@@ -73,14 +73,18 @@ function P([string]$l,[int]$n){
   PatternOffsetX=N(FF $h @('pattern_offset_x','patternOffsetX'))
   PatternOffsetY=N(FF $h @('pattern_offset_y','patternOffsetY'))
   PatternReset=B(FF $h @('pattern_reset','patternReset'))
+  BurstReset=B(FF $h @('burst_reset','burstReset'))
   TotalAdditionalSpread=N(FF $h @('total_additional_spread','totalAdditionalSpread'))
   MovementContribution=N(FF $h @('movement_contribution','movementContribution'))
+  AirContribution=N(FF $h @('air_contribution','airContribution'))
+  CrouchBonus=N(FF $h @('crouch_bonus','crouchBonus'))
   CadenceGrowthContribution=N(FF $h @('cadence_growth_contribution','cadenceGrowthContribution'))
   CadenceMode=B(FF $h @('cadence_mode','cadenceMode'))
   CadenceInterval=N(FF $h @('cadence_interval','cadenceInterval'))
   CadencePenalty=N(FF $h @('cadence_penalty','cadencePenalty'))
   CadenceReset=B(FF $h @('cadence_reset','cadenceReset'))
   HoldPenalty=N(FF $h @('hold_penalty','holdPenalty'))
+  NextAdditionalSpread=N(FF $h @('next_additional_spread','nextAdditionalSpread'))
   PatternContribution=N(FF $h @('pattern_contribution','patternContribution'))
   CadenceContribution=N(FF $h @('cadence_contribution','cadenceContribution'))
   RecoveryApplied=N(FF $h @('recovery_applied','recoveryApplied'))
@@ -122,7 +126,54 @@ function P([string]$l,[int]$n){
  }}
 $log=Resolve-LogFile;$events=@();$warnings=New-Object Collections.ArrayList;$obs=New-Object Collections.ArrayList;$assert=New-Object Collections.ArrayList;$i=0;foreach($line in Get-Content -LiteralPath $log.FullName){$i++;$e=P $line $i;if($e -and $e.Type -ne 'unknown'){$events+=$e}elseif($line.Trim()){[void]$warnings.Add("Skipped non-telemetry line $i because it did not match the expected single-line key=value format.")}}
 $session=@($events|?{$_.Type -eq 'session'}|select -first 1);$session=if($session.Count){$session[0]}else{$null};$effectiveWeapon=if($Weapon -ne 'all'){$Weapon}else{$session.WeaponUnderTest}
-$accepted=@($events|?{$_.Type -eq 'accepted' -and (M $_)});$rejected=@($events|?{$_.Type -eq 'rejected' -and (M $_)});$hits=@($events|?{$_.Type -eq 'hit' -and (M $_)});$kills=@($events|?{$_.Type -eq 'kill' -and (M $_)});$dummySpawns=@($events|?{$_.Type -eq 'dummy_spawn'});$dummyRespawns=@($events|?{$_.Type -eq 'dummy_respawn'});$dummySpawnFailures=@($events|?{$_.Type -eq 'dummy_spawn_failed'});$targetMarks=@($events|?{$_.Type -eq 'target_mark'});$targetUnmarks=@($events|?{$_.Type -eq 'target_unmark'});$targetUseSaved=@($events|?{$_.Type -eq 'target_use_saved'});$dummyClears=@($events|?{$_.Type -eq 'dummy_clear'});$dummyRepositions=@($events|?{$_.Type -eq 'dummy_reposition'});$headshotHits=@($hits|?{$_.Headshot -eq $true});$headshotKills=@($kills|?{$_.Headshot -eq $true});$lethal=@($hits|?{$_.HeadshotLethalApplied -eq $true});if($lethal.Count -eq 0){$lethal=@($kills|?{$_.HeadshotLethalApplied -eq $true})};$dummyHits=@($hits|?{D $_});$dummyKills=@($kills|?{D $_});$dummyHeadshotHits=@($dummyHits|?{$_.Headshot -eq $true});$dummyHeadshotKills=@($dummyKills|?{$_.Headshot -eq $true});$dummyLethal=@($dummyHits|?{$_.HeadshotLethalApplied -eq $true});if($dummyLethal.Count -eq 0){$dummyLethal=@($dummyKills|?{$_.HeadshotLethalApplied -eq $true})};$armoredDummyHits=@($dummyHits|?{A $_});$protectedDummyHeadshotHits=@($dummyHits|?{$_.Headshot -eq $true -and $_.HeadProtected -eq $true});$protectedDummyHeadshotKills=@($dummyKills|?{$_.Headshot -eq $true -and $_.HeadProtected -eq $true});$firstShotAccepted=@($accepted|?{$_.FirstShot -eq $true});$movePenaltyAccepted=@($accepted|?{$_.MovementPenalty -gt 0});$burstGrowthAccepted=@($accepted|?{$_.AdditionalSpread -gt 0 -or $_.ShotIndex -gt 1 -or $_.RecoveryApplied -gt 0});$cadenceAccepted=@($accepted|?{$_.CadenceMode -eq $true});$cadencePenaltyAccepted=@($accepted|?{$_.CadenceMode -eq $true -and (($_.CadencePenalty -gt 0) -or ($_.CadenceReset -eq $true) -or ($_.ShotIndex -gt 1))});$cadenceResetAccepted=@($accepted|?{$_.CadenceReset -eq $true});$patternAccepted=@($accepted|?{$_.PatternMode -eq $true});$patternResetAccepted=@($accepted|?{$_.PatternReset -eq $true});$standing=@($accepted|?{$_.Grounded -eq $true -and $_.Ducking -eq $false -and $_.MovementPenalty -ne $null -and $_.HorizontalSpeed -gt 0 -and $_.MaxSpeed -gt 0}|%{$_.MovementPenalty/([Math]::Min([Math]::Max(($_.HorizontalSpeed/$_.MaxSpeed),0.0),1.0))});$crouch=@($accepted|?{$_.Grounded -eq $true -and $_.Ducking -eq $true -and $_.MovementPenalty -ne $null -and $_.HorizontalSpeed -gt 0 -and $_.MaxSpeed -gt 0}|%{$_.MovementPenalty/([Math]::Min([Math]::Max(($_.HorizontalSpeed/$_.MaxSpeed),0.0),1.0))});$crouchMoveEvidence=($standing.Count -gt 0 -and $crouch.Count -gt 0 -and ($crouch|measure -Average).Average -lt ($standing|measure -Average).Average);$recoveryReturnedFirstShot=$false;if($effectiveWeapon -ne 'mp5'){$seen=$false;foreach($a in $accepted){if($a.FirstShot -eq $false){$seen=$true;continue};if($seen -and $a.FirstShot -eq $true){$recoveryReturnedFirstShot=$true;break}}};$targetSpawnLifecycle=@($dummySpawns+$dummyRespawns);$savedSpotUsage=@($targetSpawnLifecycle|?{$_.Source -eq 'saved_spot'});$targetSpawnBySource=@($targetSpawnLifecycle|Group-Object Source|Sort-Object Name|ForEach-Object{[ordered]@{Name=$(if([string]::IsNullOrWhiteSpace($_.Name)){'unknown'}else{$_.Name});Count=$_.Count}})
+$accepted=@($events|?{$_.Type -eq 'accepted' -and (M $_)})
+$rejected=@($events|?{$_.Type -eq 'rejected' -and (M $_)})
+$hits=@($events|?{$_.Type -eq 'hit' -and (M $_)})
+$kills=@($events|?{$_.Type -eq 'kill' -and (M $_)})
+$dummySpawns=@($events|?{$_.Type -eq 'dummy_spawn'})
+$dummyRespawns=@($events|?{$_.Type -eq 'dummy_respawn'})
+$dummySpawnFailures=@($events|?{$_.Type -eq 'dummy_spawn_failed'})
+$targetMarks=@($events|?{$_.Type -eq 'target_mark'})
+$targetUnmarks=@($events|?{$_.Type -eq 'target_unmark'})
+$targetUseSaved=@($events|?{$_.Type -eq 'target_use_saved'})
+$dummyClears=@($events|?{$_.Type -eq 'dummy_clear'})
+$dummyRepositions=@($events|?{$_.Type -eq 'dummy_reposition'})
+$headshotHits=@($hits|?{$_.Headshot -eq $true})
+$headshotKills=@($kills|?{$_.Headshot -eq $true})
+$lethal=@($hits|?{$_.HeadshotLethalApplied -eq $true})
+if($lethal.Count -eq 0){$lethal=@($kills|?{$_.HeadshotLethalApplied -eq $true})}
+$dummyHits=@($hits|?{D $_})
+$dummyKills=@($kills|?{D $_})
+$dummyHeadshotHits=@($dummyHits|?{$_.Headshot -eq $true})
+$dummyHeadshotKills=@($dummyKills|?{$_.Headshot -eq $true})
+$dummyLethal=@($dummyHits|?{$_.HeadshotLethalApplied -eq $true})
+if($dummyLethal.Count -eq 0){$dummyLethal=@($dummyKills|?{$_.HeadshotLethalApplied -eq $true})}
+$armoredDummyHits=@($dummyHits|?{A $_})
+$protectedDummyHeadshotHits=@($dummyHits|?{$_.Headshot -eq $true -and $_.HeadProtected -eq $true})
+$protectedDummyHeadshotKills=@($dummyKills|?{$_.Headshot -eq $true -and $_.HeadProtected -eq $true})
+$firstShotAccepted=@($accepted|?{$_.FirstShot -eq $true})
+$movePenaltyAccepted=@($accepted|?{$_.MovementPenalty -gt 0})
+$burstGrowthAccepted=@($accepted|?{$_.AdditionalSpread -gt 0 -or $_.ShotIndex -gt 1 -or $_.RecoveryApplied -gt 0})
+$burstResetAccepted=@($accepted|?{$_.BurstReset -eq $true})
+$cadenceAccepted=@($accepted|?{$_.CadenceMode -eq $true})
+$cadencePenaltyAccepted=@($accepted|?{$_.CadenceMode -eq $true -and (($_.CadencePenalty -gt 0) -or ($_.CadenceReset -eq $true) -or ($_.ShotIndex -gt 1))})
+$cadenceResetAccepted=@($accepted|?{$_.CadenceReset -eq $true})
+$patternAccepted=@($accepted|?{$_.PatternMode -eq $true})
+$patternResetAccepted=@($accepted|?{$_.PatternReset -eq $true})
+$standing=@($accepted|?{$_.Grounded -eq $true -and $_.Ducking -eq $false -and $_.MovementPenalty -ne $null -and $_.HorizontalSpeed -gt 0 -and $_.MaxSpeed -gt 0}|%{$_.MovementPenalty/([Math]::Min([Math]::Max(($_.HorizontalSpeed/$_.MaxSpeed),0.0),1.0))})
+$crouch=@($accepted|?{$_.Grounded -eq $true -and $_.Ducking -eq $true -and $_.MovementPenalty -ne $null -and $_.HorizontalSpeed -gt 0 -and $_.MaxSpeed -gt 0}|%{$_.MovementPenalty/([Math]::Min([Math]::Max(($_.HorizontalSpeed/$_.MaxSpeed),0.0),1.0))})
+$crouchMoveEvidence=($standing.Count -gt 0 -and $crouch.Count -gt 0 -and ($crouch|measure -Average).Average -lt ($standing|measure -Average).Average)
+$recoveryReturnedFirstShot=$false
+if($effectiveWeapon -ne 'mp5'){
+ $seen=$false
+ foreach($a in $accepted){
+  if($a.FirstShot -eq $false){$seen=$true;continue}
+  if($seen -and $a.FirstShot -eq $true){$recoveryReturnedFirstShot=$true;break}
+ }
+}
+$targetSpawnLifecycle=@($dummySpawns+$dummyRespawns)
+$savedSpotUsage=@($targetSpawnLifecycle|?{$_.Source -eq 'saved_spot'})
+$targetSpawnBySource=@($targetSpawnLifecycle|Group-Object Source|Sort-Object Name|ForEach-Object{[ordered]@{Name=$(if([string]::IsNullOrWhiteSpace($_.Name)){'unknown'}else{$_.Name});Count=$_.Count}})
 $playerHits=@($hits|?{$_.VictimKind -eq 'player' -or $_.VictimKind -eq 'fake_client'})
 $playerKills=@($kills|?{$_.VictimKind -eq 'player' -or $_.VictimKind -eq 'fake_client'})
 $fakePlayerHits=@($playerHits|?{$_.VictimKind -eq 'fake_client' -or $_.VictimIsFake -eq $true})
@@ -141,14 +192,23 @@ $additionalStats=S($accepted|%{$_.AdditionalSpread})
 $recoveryStats=S($accepted|%{$_.RecoveryApplied})
 $shotGrowthStats=S($accepted|%{$_.ShotGrowth})
 $burstStats=S($accepted|%{$_.BurstAddedSpread})
+$nextAdditionalSpreadStats=S($accepted|%{$_.NextAdditionalSpread})
 $cadenceIntervalStats=S($cadenceAccepted|%{$_.CadenceInterval})
 $cadencePenaltyStats=S($cadenceAccepted|%{$_.CadencePenalty})
-$holdPenaltyStats=S($cadenceAccepted|%{$_.HoldPenalty})
+$holdPenaltyStats=S($accepted|%{$_.HoldPenalty})
+$movementContributionStats=S($accepted|%{$_.MovementContribution})
+$airContributionStats=S($accepted|%{$_.AirContribution})
+$crouchBonusStats=S($accepted|%{$_.CrouchBonus})
 $patternContributionStats=S($accepted|%{$_.PatternContribution})
 $cadenceContributionStats=S($accepted|%{$_.CadenceContribution})
 $patternIndexStats=S($patternAccepted|%{$_.PatternIndex})
 $patternOffsetXStats=S($patternAccepted|%{$_.PatternOffsetX})
 $patternOffsetYStats=S($patternAccepted|%{$_.PatternOffsetY})
+$mp5BurstAccepted=@($accepted|?{$_.Weapon -eq 'mp5' -and $_.BurstIndex -ne $null})
+$mp5ShortBurstAccepted=@($mp5BurstAccepted|?{$_.BurstIndex -ge 2 -and $_.BurstIndex -le 5})
+$mp5LongBurstAccepted=@($mp5BurstAccepted|?{$_.BurstIndex -ge 6})
+$mp5ShortBurstSpreadStats=S($mp5ShortBurstAccepted|%{$_.NextAdditionalSpread})
+$mp5LongBurstSpreadStats=S($mp5LongBurstAccepted|%{$_.NextAdditionalSpread})
 $appliedStats=S($hits|%{$_.AppliedDamage})
 $damageToHealthStats=S($hits|%{$_.DamageToHealth})
 $damageAbsorbedStats=S($hits|%{$_.DamageAbsorbed})
@@ -190,6 +250,13 @@ if($directPlayerArmorEvidenceHits.Count){
  [void]$obs.Add("Direct player armor telemetry exists ($($directPlayerArmorEvidenceHits.Count)) with absorbed total $(if($playerArmorAbsorbedTotal -ne $null){('{0:F4}' -f $playerArmorAbsorbedTotal)}else{'n/a'}).")
 }elseif($playerHits.Count){
  [void]$warnings.Add('Player/fake-player hit telemetry exists, but no hit carried full direct armor-before/after and damage breakdown fields.')
+}
+if(($effectiveWeapon -eq 'mp5' -or $Weapon -eq 'mp5') -and $mp5ShortBurstSpreadStats -and $mp5LongBurstSpreadStats){
+ if($mp5LongBurstSpreadStats.Average -gt $mp5ShortBurstSpreadStats.Average){
+  [void]$obs.Add(("MP5 spray progression is visible: longer sprays carried higher next additional spread than short bursts ({0:F4} -> {1:F4})." -f $mp5ShortBurstSpreadStats.Average,$mp5LongBurstSpreadStats.Average))
+ }else{
+  [void]$warnings.Add(("MP5 short-burst vs long-spray next additional spread did not separate cleanly in this log ({0:F4} vs {1:F4})." -f $mp5ShortBurstSpreadStats.Average,$mp5LongBurstSpreadStats.Average))
+ }
 }
 if($hits.Count -gt 0){
  if($fullyConsistentHits.Count -eq $hits.Count){
@@ -291,6 +358,7 @@ $summary=[ordered]@{
  protectedDummyHeadshotKillCount=$protectedDummyHeadshotKills.Count
  targetRecentFailureReasons=@($recentTargetFailureReasons)
  burstGrowthEvidenceCount=$burstGrowthAccepted.Count
+ burstResetCount=$burstResetAccepted.Count
  cadenceGrowthEvidenceCount=$burstGrowthAccepted.Count
  cadenceEvidenceCount=$cadencePenaltyAccepted.Count
  cadenceResetCount=$cadenceResetAccepted.Count
@@ -318,7 +386,12 @@ $summary=[ordered]@{
   average=$(if($shotGrowthStats){$shotGrowthStats.Average}else{$null})
   max=$(if($shotGrowthStats){$shotGrowthStats.Max}else{$null})
  }
- cadenceInterval=[ordered]@{
+ nextAdditionalSpread=[ordered]@{
+  min=$(if($nextAdditionalSpreadStats){$nextAdditionalSpreadStats.Min}else{$null})
+  average=$(if($nextAdditionalSpreadStats){$nextAdditionalSpreadStats.Average}else{$null})
+  max=$(if($nextAdditionalSpreadStats){$nextAdditionalSpreadStats.Max}else{$null})
+ }
+  cadenceInterval=[ordered]@{
   min=$(if($cadenceIntervalStats){$cadenceIntervalStats.Min}else{$null})
   average=$(if($cadenceIntervalStats){$cadenceIntervalStats.Average}else{$null})
   max=$(if($cadenceIntervalStats){$cadenceIntervalStats.Max}else{$null})
@@ -332,6 +405,21 @@ $summary=[ordered]@{
   min=$(if($holdPenaltyStats){$holdPenaltyStats.Min}else{$null})
   average=$(if($holdPenaltyStats){$holdPenaltyStats.Average}else{$null})
   max=$(if($holdPenaltyStats){$holdPenaltyStats.Max}else{$null})
+ }
+ movementContribution=[ordered]@{
+  min=$(if($movementContributionStats){$movementContributionStats.Min}else{$null})
+  average=$(if($movementContributionStats){$movementContributionStats.Average}else{$null})
+  max=$(if($movementContributionStats){$movementContributionStats.Max}else{$null})
+ }
+ airContribution=[ordered]@{
+  min=$(if($airContributionStats){$airContributionStats.Min}else{$null})
+  average=$(if($airContributionStats){$airContributionStats.Average}else{$null})
+  max=$(if($airContributionStats){$airContributionStats.Max}else{$null})
+ }
+ crouchBonus=[ordered]@{
+  min=$(if($crouchBonusStats){$crouchBonusStats.Min}else{$null})
+  average=$(if($crouchBonusStats){$crouchBonusStats.Average}else{$null})
+  max=$(if($crouchBonusStats){$crouchBonusStats.Max}else{$null})
  }
  patternIndex=[ordered]@{
   min=$(if($patternIndexStats){$patternIndexStats.Min}else{$null})
@@ -400,6 +488,16 @@ $summary=[ordered]@{
   min=$(if($headshotPelletStats){$headshotPelletStats.Min}else{$null})
   average=$(if($headshotPelletStats){$headshotPelletStats.Average}else{$null})
   max=$(if($headshotPelletStats){$headshotPelletStats.Max}else{$null})
+ }
+ mp5ShortBurstNextAdditionalSpread=[ordered]@{
+  min=$(if($mp5ShortBurstSpreadStats){$mp5ShortBurstSpreadStats.Min}else{$null})
+  average=$(if($mp5ShortBurstSpreadStats){$mp5ShortBurstSpreadStats.Average}else{$null})
+  max=$(if($mp5ShortBurstSpreadStats){$mp5ShortBurstSpreadStats.Max}else{$null})
+ }
+ mp5LongBurstNextAdditionalSpread=[ordered]@{
+  min=$(if($mp5LongBurstSpreadStats){$mp5LongBurstSpreadStats.Min}else{$null})
+  average=$(if($mp5LongBurstSpreadStats){$mp5LongBurstSpreadStats.Average}else{$null})
+  max=$(if($mp5LongBurstSpreadStats){$mp5LongBurstSpreadStats.Max}else{$null})
  }
  evidence=[ordered]@{
   tapFireRejection=$signals.tapFireHoldRejections
@@ -608,6 +706,7 @@ Write-Host "  player armor absorbed    : $(if($playerArmorAbsorbedTotal -ne $nul
 Write-Host "  player armor drain total : $(if($playerArmorDrainTotal -ne $null){('{0:F4}' -f $playerArmorDrainTotal)}else{'n/a'})"
 Write-Host "  accepted move_penalty>0  : $($movePenaltyAccepted.Count)"
 if($effectiveWeapon -eq 'glock' -or $effectiveWeapon -eq 'mp5' -or $Weapon -eq 'glock' -or $Weapon -eq 'mp5'){Write-Host "  cadence growth evidence  : $($burstGrowthAccepted.Count)"}
+if($effectiveWeapon -eq 'mp5' -or $Weapon -eq 'mp5'){Write-Host "  burst resets            : $($burstResetAccepted.Count)"}
 if($effectiveWeapon -eq 'glock' -or $effectiveWeapon -eq '357' -or $Weapon -eq 'glock' -or $Weapon -eq '357'){Write-Host "  cadence evidence         : $($cadencePenaltyAccepted.Count)"}
 if($effectiveWeapon -eq 'glock' -or $effectiveWeapon -eq '357' -or $Weapon -eq 'glock' -or $Weapon -eq '357'){Write-Host "  cadence resets           : $($cadenceResetAccepted.Count)"}
 if($effectiveWeapon -eq 'glock' -or $effectiveWeapon -eq 'mp5' -or $effectiveWeapon -eq 'shotgun' -or $Weapon -eq 'glock' -or $Weapon -eq 'mp5' -or $Weapon -eq 'shotgun'){Write-Host "  pattern evidence         : $($patternAccepted.Count)"}
@@ -635,6 +734,13 @@ if($effectiveWeapon -eq 'glock' -or $effectiveWeapon -eq 'mp5' -or $effectiveWea
 if($effectiveWeapon -eq 'glock' -or $effectiveWeapon -eq 'mp5' -or $effectiveWeapon -eq 'shotgun' -or $Weapon -eq 'glock' -or $Weapon -eq 'mp5' -or $Weapon -eq 'shotgun'){Write-Host "  pattern y min/avg/max    : $(if($patternOffsetYStats){('{0:F4} / {1:F4} / {2:F4}' -f $patternOffsetYStats.Min,$patternOffsetYStats.Average,$patternOffsetYStats.Max)}else{'n/a / n/a / n/a'})"}
 if($effectiveWeapon -eq 'glock' -or $effectiveWeapon -eq '357' -or $Weapon -eq 'glock' -or $Weapon -eq '357'){Write-Host "  cadence contrib min/avg/max: $(if($cadenceContributionStats){('{0:F4} / {1:F4} / {2:F4}' -f $cadenceContributionStats.Min,$cadenceContributionStats.Average,$cadenceContributionStats.Max)}else{'n/a / n/a / n/a'})"}
 if($effectiveWeapon -eq 'mp5' -or $Weapon -eq 'mp5'){Write-Host "  burst add min/avg/max    : $(if($burstStats){('{0:F4} / {1:F4} / {2:F4}' -f $burstStats.Min,$burstStats.Average,$burstStats.Max)}else{'n/a / n/a / n/a'})"}
+if($effectiveWeapon -eq 'mp5' -or $Weapon -eq 'mp5'){Write-Host "  next add min/avg/max     : $(if($nextAdditionalSpreadStats){('{0:F4} / {1:F4} / {2:F4}' -f $nextAdditionalSpreadStats.Min,$nextAdditionalSpreadStats.Average,$nextAdditionalSpreadStats.Max)}else{'n/a / n/a / n/a'})"}
+if($effectiveWeapon -eq 'mp5' -or $Weapon -eq 'mp5'){Write-Host "  move contrib min/avg/max : $(if($movementContributionStats){('{0:F4} / {1:F4} / {2:F4}' -f $movementContributionStats.Min,$movementContributionStats.Average,$movementContributionStats.Max)}else{'n/a / n/a / n/a'})"}
+if($effectiveWeapon -eq 'mp5' -or $Weapon -eq 'mp5'){Write-Host "  air contrib min/avg/max  : $(if($airContributionStats){('{0:F4} / {1:F4} / {2:F4}' -f $airContributionStats.Min,$airContributionStats.Average,$airContributionStats.Max)}else{'n/a / n/a / n/a'})"}
+if($effectiveWeapon -eq 'mp5' -or $Weapon -eq 'mp5'){Write-Host "  crouch bonus min/avg/max : $(if($crouchBonusStats){('{0:F4} / {1:F4} / {2:F4}' -f $crouchBonusStats.Min,$crouchBonusStats.Average,$crouchBonusStats.Max)}else{'n/a / n/a / n/a'})"}
+if($effectiveWeapon -eq 'mp5' -or $Weapon -eq 'mp5'){Write-Host "  hold pen min/avg/max     : $(if($holdPenaltyStats){('{0:F4} / {1:F4} / {2:F4}' -f $holdPenaltyStats.Min,$holdPenaltyStats.Average,$holdPenaltyStats.Max)}else{'n/a / n/a / n/a'})"}
+if($effectiveWeapon -eq 'mp5' -or $Weapon -eq 'mp5'){Write-Host "  short burst next avg     : $(if($mp5ShortBurstSpreadStats){('{0:F4}' -f $mp5ShortBurstSpreadStats.Average)}else{'n/a'})"}
+if($effectiveWeapon -eq 'mp5' -or $Weapon -eq 'mp5'){Write-Host "  long spray next avg      : $(if($mp5LongBurstSpreadStats){('{0:F4}' -f $mp5LongBurstSpreadStats.Average)}else{'n/a'})"}
 if($effectiveWeapon -eq 'shotgun' -or $Weapon -eq 'shotgun'){Write-Host "  pellets min/avg/max      : $(if($pelletPlanStats){('{0:N0} / {1:F2} / {2:N0}' -f $pelletPlanStats.Min,$pelletPlanStats.Average,$pelletPlanStats.Max)}else{'n/a / n/a / n/a'})"}
 if($effectiveWeapon -eq 'shotgun' -or $Weapon -eq 'shotgun'){Write-Host "  pellet hits min/avg/max  : $(if($pelletHitStats){('{0:N0} / {1:F2} / {2:N0}' -f $pelletHitStats.Min,$pelletHitStats.Average,$pelletHitStats.Max)}else{'n/a / n/a / n/a'})"}
 if($effectiveWeapon -eq 'shotgun' -or $Weapon -eq 'shotgun'){Write-Host "  hs pellets min/avg/max   : $(if($headshotPelletStats){('{0:N0} / {1:F2} / {2:N0}' -f $headshotPelletStats.Min,$headshotPelletStats.Average,$headshotPelletStats.Max)}else{'n/a / n/a / n/a'})"}

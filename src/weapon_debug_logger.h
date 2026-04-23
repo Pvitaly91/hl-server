@@ -59,7 +59,9 @@ struct Mp5AcceptedShotTelemetry
     float movementPenalty;
     float burstAddedSpread;
     float recoveryApplied;
+    bool burstResetApplied;
     float shotGrowth;
+    float holdPenalty;
     float nextAdditionalSpread;
     bool patternModeActive;
     int patternIndex;
@@ -68,6 +70,8 @@ struct Mp5AcceptedShotTelemetry
     bool patternResetApplied;
     float totalAdditionalSpread;
     float movementContribution;
+    float airContribution;
+    float crouchBonus;
     float cadenceGrowthContribution;
     float speedRatio;
     int burstShotIndex;
