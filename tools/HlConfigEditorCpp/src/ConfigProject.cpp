@@ -312,6 +312,884 @@ std::wstring EnsureCfgFileName(const std::wstring& value) {
     return fileName;
 }
 
+namespace {
+
+std::wstring BoolToCvarString(bool value) {
+    return value ? L"1" : L"0";
+}
+
+bool ParseBoolCvarValue(const std::wstring& value, bool fallbackValue) {
+    const std::wstring trimmed = Trimmed(value);
+    if (trimmed.empty()) {
+        return fallbackValue;
+    }
+
+    std::wstring lowered = trimmed;
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](wchar_t ch) {
+        return static_cast<wchar_t>(::towlower(ch));
+    });
+
+    if (lowered == L"1" || lowered == L"true" || lowered == L"yes" || lowered == L"on") {
+        return true;
+    }
+
+    if (lowered == L"0" || lowered == L"false" || lowered == L"no" || lowered == L"off") {
+        return false;
+    }
+
+    return fallbackValue;
+}
+
+void SetCvarString(CvarMap& cvars, const std::wstring& name, const std::wstring& value) {
+    cvars[name] = value;
+}
+
+void SetCvarBool(CvarMap& cvars, const std::wstring& name, bool value) {
+    cvars[name] = BoolToCvarString(value);
+}
+
+bool ApplyKnownCvar(ProjectDocument& document, const std::wstring& name, const std::wstring& value) {
+    if (name == L"sv_exp_weapon_under_test") {
+        document.general.weaponUnderTest = value;
+        return true;
+    }
+    if (name == L"sv_exp_session_tag") {
+        document.general.sessionTag = value;
+        return true;
+    }
+    if (name == L"sv_exp_debug_weaponlog") {
+        document.general.debugWeaponLog = ParseBoolCvarValue(value, document.general.debugWeaponLog);
+        return true;
+    }
+    if (name == L"sv_exp_debug_weaponlog_rejections") {
+        document.general.debugWeaponLogRejections = ParseBoolCvarValue(value, document.general.debugWeaponLogRejections);
+        return true;
+    }
+    if (name == L"sv_exp_pistol_tapfire") {
+        document.glock.tapFire = ParseBoolCvarValue(value, document.glock.tapFire);
+        return true;
+    }
+    if (name == L"sv_exp_first_shot_accuracy") {
+        document.glock.firstShotAccuracy = ParseBoolCvarValue(value, document.glock.firstShotAccuracy);
+        return true;
+    }
+    if (name == L"sv_exp_spread_recovery") {
+        document.glock.spreadRecovery = value;
+        return true;
+    }
+    if (name == L"sv_exp_move_spread_scale") {
+        document.glock.moveSpreadScale = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_profile_name") {
+        document.glock.profileName = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_primary_base_spread") {
+        document.glock.primaryBaseSpread = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_primary_ground_move_penalty") {
+        document.glock.primaryGroundMovePenalty = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_primary_air_move_penalty") {
+        document.glock.primaryAirMovePenalty = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_primary_duck_penalty_scale") {
+        document.glock.primaryDuckPenaltyScale = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_primary_shot_growth") {
+        document.glock.primaryShotGrowth = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_primary_first_shot_speed_threshold") {
+        document.glock.primaryFirstShotSpeedThreshold = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_primary_max_spread") {
+        document.glock.primaryMaxSpread = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_primary_cadence_mode") {
+        document.glock.cadenceMode = ParseBoolCvarValue(value, document.glock.cadenceMode);
+        return true;
+    }
+    if (name == L"sv_exp_glock_primary_cycle_time") {
+        document.glock.primaryCadenceCycleTime = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_primary_click_penalty") {
+        document.glock.primaryClickPenalty = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_primary_click_penalty_scale") {
+        document.glock.primaryClickPenaltyScale = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_primary_click_reset_time") {
+        document.glock.primaryClickResetTime = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_primary_hold_penalty_scale") {
+        document.glock.primaryHoldPenaltyScale = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_pattern_mode") {
+        document.glock.patternMode = ParseBoolCvarValue(value, document.glock.patternMode);
+        return true;
+    }
+    if (name == L"sv_exp_glock_pattern_scale_x") {
+        document.glock.patternScaleX = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_pattern_scale_y") {
+        document.glock.patternScaleY = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_pattern_reset_time") {
+        document.glock.patternResetTime = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_pattern_max_index") {
+        document.glock.patternMaxIndex = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_primary_damage") {
+        document.glock.primaryDamage = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_primary_headshot_scale") {
+        document.glock.primaryHeadshotScale = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_primary_headshot_lethal") {
+        document.glock.primaryHeadshotLethal = ParseBoolCvarValue(value, document.glock.primaryHeadshotLethal);
+        return true;
+    }
+    if (name == L"sv_exp_mp5_primary_enabled") {
+        document.mp5.primaryEnabled = ParseBoolCvarValue(value, document.mp5.primaryEnabled);
+        return true;
+    }
+    if (name == L"sv_exp_mp5_profile_name") {
+        document.mp5.profileName = value;
+        return true;
+    }
+    if (name == L"sv_exp_mp5_primary_base_spread") {
+        document.mp5.primaryBaseSpread = value;
+        return true;
+    }
+    if (name == L"sv_exp_mp5_primary_ground_move_penalty") {
+        document.mp5.primaryGroundMovePenalty = value;
+        return true;
+    }
+    if (name == L"sv_exp_mp5_primary_air_move_penalty") {
+        document.mp5.primaryAirMovePenalty = value;
+        return true;
+    }
+    if (name == L"sv_exp_mp5_primary_duck_penalty_scale") {
+        document.mp5.primaryDuckPenaltyScale = value;
+        return true;
+    }
+    if (name == L"sv_exp_mp5_primary_burst_growth") {
+        document.mp5.primaryBurstGrowth = value;
+        return true;
+    }
+    if (name == L"sv_exp_mp5_primary_burst_max_additional_spread") {
+        document.mp5.primaryBurstMaxAdditionalSpread = value;
+        return true;
+    }
+    if (name == L"sv_exp_mp5_primary_spread_recovery") {
+        document.mp5.primarySpreadRecovery = value;
+        return true;
+    }
+    if (name == L"sv_exp_mp5_primary_first_shot_accuracy") {
+        document.mp5.primaryFirstShotAccuracy = ParseBoolCvarValue(value, document.mp5.primaryFirstShotAccuracy);
+        return true;
+    }
+    if (name == L"sv_exp_mp5_primary_first_shot_speed_threshold") {
+        document.mp5.primaryFirstShotSpeedThreshold = value;
+        return true;
+    }
+    if (name == L"sv_exp_mp5_primary_max_spread") {
+        document.mp5.primaryMaxSpread = value;
+        return true;
+    }
+    if (name == L"sv_exp_mp5_pattern_mode") {
+        document.mp5.patternMode = ParseBoolCvarValue(value, document.mp5.patternMode);
+        return true;
+    }
+    if (name == L"sv_exp_mp5_pattern_scale_x") {
+        document.mp5.patternScaleX = value;
+        return true;
+    }
+    if (name == L"sv_exp_mp5_pattern_scale_y") {
+        document.mp5.patternScaleY = value;
+        return true;
+    }
+    if (name == L"sv_exp_mp5_pattern_reset_time") {
+        document.mp5.patternResetTime = value;
+        return true;
+    }
+    if (name == L"sv_exp_mp5_pattern_max_index") {
+        document.mp5.patternMaxIndex = value;
+        return true;
+    }
+    if (name == L"sv_exp_mp5_primary_damage") {
+        document.mp5.primaryDamage = value;
+        return true;
+    }
+    if (name == L"sv_exp_mp5_primary_headshot_scale") {
+        document.mp5.primaryHeadshotScale = value;
+        return true;
+    }
+    if (name == L"sv_exp_mp5_primary_headshot_lethal") {
+        document.mp5.primaryHeadshotLethal = ParseBoolCvarValue(value, document.mp5.primaryHeadshotLethal);
+        return true;
+    }
+    if (name == L"sv_exp_mp5_lab_loadout") {
+        document.mp5.labLoadout = ParseBoolCvarValue(value, document.mp5.labLoadout);
+        return true;
+    }
+    if (name == L"sv_exp_mp5_lab_ammo") {
+        document.mp5.labAmmo = value;
+        return true;
+    }
+    if (name == L"sv_exp_mp5_lab_autoswitch") {
+        document.mp5.labAutoswitch = ParseBoolCvarValue(value, document.mp5.labAutoswitch);
+        return true;
+    }
+    if (name == L"sv_exp_357_primary_enabled") {
+        document.weapon357.primaryEnabled = ParseBoolCvarValue(value, document.weapon357.primaryEnabled);
+        return true;
+    }
+    if (name == L"sv_exp_357_profile_name") {
+        document.weapon357.profileName = value;
+        return true;
+    }
+    if (name == L"sv_exp_357_primary_base_spread") {
+        document.weapon357.primaryBaseSpread = value;
+        return true;
+    }
+    if (name == L"sv_exp_357_primary_ground_move_penalty") {
+        document.weapon357.primaryGroundMovePenalty = value;
+        return true;
+    }
+    if (name == L"sv_exp_357_primary_air_move_penalty") {
+        document.weapon357.primaryAirMovePenalty = value;
+        return true;
+    }
+    if (name == L"sv_exp_357_primary_duck_penalty_scale") {
+        document.weapon357.primaryDuckPenaltyScale = value;
+        return true;
+    }
+    if (name == L"sv_exp_357_primary_first_shot_accuracy") {
+        document.weapon357.primaryFirstShotAccuracy = ParseBoolCvarValue(value, document.weapon357.primaryFirstShotAccuracy);
+        return true;
+    }
+    if (name == L"sv_exp_357_primary_first_shot_speed_threshold") {
+        document.weapon357.primaryFirstShotSpeedThreshold = value;
+        return true;
+    }
+    if (name == L"sv_exp_357_primary_spread_recovery") {
+        document.weapon357.primarySpreadRecovery = value;
+        return true;
+    }
+    if (name == L"sv_exp_357_primary_max_spread") {
+        document.weapon357.primaryMaxSpread = value;
+        return true;
+    }
+    if (name == L"sv_exp_357_primary_cadence_mode") {
+        document.weapon357.cadenceMode = ParseBoolCvarValue(value, document.weapon357.cadenceMode);
+        return true;
+    }
+    if (name == L"sv_exp_357_primary_cycle_time") {
+        document.weapon357.primaryCadenceCycleTime = value;
+        return true;
+    }
+    if (name == L"sv_exp_357_primary_click_penalty") {
+        document.weapon357.primaryClickPenalty = value;
+        return true;
+    }
+    if (name == L"sv_exp_357_primary_click_penalty_scale") {
+        document.weapon357.primaryClickPenaltyScale = value;
+        return true;
+    }
+    if (name == L"sv_exp_357_primary_click_reset_time") {
+        document.weapon357.primaryClickResetTime = value;
+        return true;
+    }
+    if (name == L"sv_exp_357_primary_hold_penalty_scale") {
+        document.weapon357.primaryHoldPenaltyScale = value;
+        return true;
+    }
+    if (name == L"sv_exp_357_primary_damage") {
+        document.weapon357.primaryDamage = value;
+        return true;
+    }
+    if (name == L"sv_exp_357_primary_headshot_scale") {
+        document.weapon357.primaryHeadshotScale = value;
+        return true;
+    }
+    if (name == L"sv_exp_357_primary_headshot_lethal") {
+        document.weapon357.primaryHeadshotLethal = ParseBoolCvarValue(value, document.weapon357.primaryHeadshotLethal);
+        return true;
+    }
+    if (name == L"sv_exp_357_lab_loadout") {
+        document.weapon357.labLoadout = ParseBoolCvarValue(value, document.weapon357.labLoadout);
+        return true;
+    }
+    if (name == L"sv_exp_357_lab_ammo") {
+        document.weapon357.labAmmo = value;
+        return true;
+    }
+    if (name == L"sv_exp_357_lab_autoswitch") {
+        document.weapon357.labAutoswitch = ParseBoolCvarValue(value, document.weapon357.labAutoswitch);
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_primary_enabled") {
+        document.shotgun.primaryEnabled = ParseBoolCvarValue(value, document.shotgun.primaryEnabled);
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_profile_name") {
+        document.shotgun.profileName = value;
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_primary_base_spread") {
+        document.shotgun.primaryBaseSpread = value;
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_primary_ground_move_penalty") {
+        document.shotgun.primaryGroundMovePenalty = value;
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_primary_air_move_penalty") {
+        document.shotgun.primaryAirMovePenalty = value;
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_primary_duck_penalty_scale") {
+        document.shotgun.primaryDuckPenaltyScale = value;
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_primary_first_shot_accuracy") {
+        document.shotgun.primaryFirstShotAccuracy = ParseBoolCvarValue(value, document.shotgun.primaryFirstShotAccuracy);
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_primary_first_shot_speed_threshold") {
+        document.shotgun.primaryFirstShotSpeedThreshold = value;
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_primary_spread_recovery") {
+        document.shotgun.primarySpreadRecovery = value;
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_primary_max_spread") {
+        document.shotgun.primaryMaxSpread = value;
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_primary_shot_growth") {
+        document.shotgun.primaryShotGrowth = value;
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_pattern_mode") {
+        document.shotgun.patternMode = ParseBoolCvarValue(value, document.shotgun.patternMode);
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_pattern_scale_x") {
+        document.shotgun.patternScaleX = value;
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_pattern_scale_y") {
+        document.shotgun.patternScaleY = value;
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_pattern_reset_time") {
+        document.shotgun.patternResetTime = value;
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_pattern_max_index") {
+        document.shotgun.patternMaxIndex = value;
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_primary_pellet_spread_mode") {
+        document.shotgun.primaryPelletSpreadMode = value;
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_primary_damage_per_pellet") {
+        document.shotgun.primaryDamagePerPellet = value;
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_primary_pellet_count") {
+        document.shotgun.primaryPelletCount = value;
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_primary_headshot_scale") {
+        document.shotgun.primaryHeadshotScale = value;
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_primary_headshot_lethal") {
+        document.shotgun.primaryHeadshotLethal = ParseBoolCvarValue(value, document.shotgun.primaryHeadshotLethal);
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_lab_loadout") {
+        document.shotgun.labLoadout = ParseBoolCvarValue(value, document.shotgun.labLoadout);
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_lab_ammo") {
+        document.shotgun.labAmmo = value;
+        return true;
+    }
+    if (name == L"sv_exp_shotgun_lab_autoswitch") {
+        document.shotgun.labAutoswitch = ParseBoolCvarValue(value, document.shotgun.labAutoswitch);
+        return true;
+    }
+    if (name == L"sv_exp_glock_lab_dummy") {
+        document.targetDummy.enabled = ParseBoolCvarValue(value, document.targetDummy.enabled);
+        return true;
+    }
+    if (name == L"sv_exp_glock_lab_target_profile_name") {
+        document.targetDummy.targetProfileName = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_lab_dummy_health") {
+        document.targetDummy.dummyHealth = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_lab_dummy_armor") {
+        document.targetDummy.dummyArmor = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_lab_dummy_head_protected") {
+        document.targetDummy.dummyHeadProtected = ParseBoolCvarValue(value, document.targetDummy.dummyHeadProtected);
+        return true;
+    }
+    if (name == L"sv_exp_glock_lab_dummy_armor_health_fraction") {
+        document.targetDummy.armorHealthFraction = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_lab_dummy_armor_drain_scale") {
+        document.targetDummy.armorDrainScale = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_lab_dummy_autorespawn") {
+        document.targetDummy.autorespawn = ParseBoolCvarValue(value, document.targetDummy.autorespawn);
+        return true;
+    }
+    if (name == L"sv_exp_glock_lab_dummy_respawn_delay") {
+        document.targetDummy.respawnDelay = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_lab_dummy_spawn_distance") {
+        document.targetDummy.spawnDistance = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_lab_dummy_offset_right") {
+        document.targetDummy.offsetRight = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_lab_dummy_offset_up") {
+        document.targetDummy.offsetUp = value;
+        return true;
+    }
+    if (name == L"sv_exp_glock_lab_dummy_face_player") {
+        document.targetDummy.facePlayer = ParseBoolCvarValue(value, document.targetDummy.facePlayer);
+        return true;
+    }
+    if (name == L"sv_exp_glock_lab_dummy_model") {
+        document.targetDummy.model = value;
+        return true;
+    }
+    if (name == L"sv_exp_round_mode") {
+        document.roundMode.enabled = ParseBoolCvarValue(value, document.roundMode.enabled);
+        return true;
+    }
+    if (name == L"sv_exp_round_freeze_time") {
+        document.roundMode.freezeTime = value;
+        return true;
+    }
+    if (name == L"sv_exp_round_restart_delay") {
+        document.roundMode.restartDelay = value;
+        return true;
+    }
+    if (name == L"sv_exp_round_start_health") {
+        document.roundMode.startHealth = value;
+        return true;
+    }
+    if (name == L"sv_exp_round_start_armor") {
+        document.roundMode.startArmor = value;
+        return true;
+    }
+    if (name == L"sv_exp_round_no_respawn") {
+        document.roundMode.noRespawn = ParseBoolCvarValue(value, document.roundMode.noRespawn);
+        return true;
+    }
+    if (name == L"sv_exp_round_friendlyfire") {
+        document.roundMode.friendlyFire = ParseBoolCvarValue(value, document.roundMode.friendlyFire);
+        return true;
+    }
+    if (name == L"sv_exp_round_weapon_profile") {
+        document.roundMode.weaponProfile = value;
+        return true;
+    }
+    if (name == L"sv_exp_round_loadout_mode") {
+        document.roundMode.loadoutMode = value;
+        return true;
+    }
+    if (name == L"sv_exp_team_round_mode") {
+        document.teamRound.enabled = ParseBoolCvarValue(value, document.teamRound.enabled);
+        return true;
+    }
+    if (name == L"sv_exp_team_round_teamplay") {
+        document.teamRound.teamplay = ParseBoolCvarValue(value, document.teamRound.teamplay);
+        return true;
+    }
+    if (name == L"sv_exp_team_round_spawn_mode") {
+        document.teamRound.spawnMode = value;
+        return true;
+    }
+    if (name == L"sv_exp_team_round_team1_name") {
+        document.teamRound.team1Name = value;
+        return true;
+    }
+    if (name == L"sv_exp_team_round_team2_name") {
+        document.teamRound.team2Name = value;
+        return true;
+    }
+    if (name == L"sv_exp_team_round_team1_loadout") {
+        document.teamRound.team1Loadout = value;
+        return true;
+    }
+    if (name == L"sv_exp_team_round_team2_loadout") {
+        document.teamRound.team2Loadout = value;
+        return true;
+    }
+    if (name == L"sv_exp_team_round_team1_health") {
+        document.teamRound.team1Health = value;
+        return true;
+    }
+    if (name == L"sv_exp_team_round_team2_health") {
+        document.teamRound.team2Health = value;
+        return true;
+    }
+    if (name == L"sv_exp_team_round_team1_armor") {
+        document.teamRound.team1Armor = value;
+        return true;
+    }
+    if (name == L"sv_exp_team_round_team2_armor") {
+        document.teamRound.team2Armor = value;
+        return true;
+    }
+    if (name == L"sv_exp_buy_mode") {
+        document.buy.enabled = ParseBoolCvarValue(value, document.buy.enabled);
+        return true;
+    }
+    if (name == L"sv_exp_buy_freeze_only") {
+        document.buy.freezeOnly = ParseBoolCvarValue(value, document.buy.freezeOnly);
+        return true;
+    }
+    if (name == L"sv_exp_buy_team_shared_catalog") {
+        document.buy.teamSharedCatalog = ParseBoolCvarValue(value, document.buy.teamSharedCatalog);
+        return true;
+    }
+    if (name == L"sv_exp_buy_start_money") {
+        document.buy.startMoney = value;
+        return true;
+    }
+    if (name == L"sv_exp_buy_round_win_reward") {
+        document.buy.roundWinReward = value;
+        return true;
+    }
+    if (name == L"sv_exp_buy_round_loss_reward") {
+        document.buy.roundLossReward = value;
+        return true;
+    }
+    if (name == L"sv_exp_buy_max_money") {
+        document.buy.maxMoney = value;
+        return true;
+    }
+    if (name == L"sv_exp_buy_allow_glock") {
+        document.buy.allowGlock = ParseBoolCvarValue(value, document.buy.allowGlock);
+        return true;
+    }
+    if (name == L"sv_exp_buy_allow_mp5") {
+        document.buy.allowMp5 = ParseBoolCvarValue(value, document.buy.allowMp5);
+        return true;
+    }
+    if (name == L"sv_exp_buy_allow_357") {
+        document.buy.allow357 = ParseBoolCvarValue(value, document.buy.allow357);
+        return true;
+    }
+    if (name == L"sv_exp_buy_allow_shotgun") {
+        document.buy.allowShotgun = ParseBoolCvarValue(value, document.buy.allowShotgun);
+        return true;
+    }
+    if (name == L"sv_exp_buy_allow_armor") {
+        document.buy.allowArmor = ParseBoolCvarValue(value, document.buy.allowArmor);
+        return true;
+    }
+    if (name == L"sv_exp_buy_allow_helmet") {
+        document.buy.allowHelmet = ParseBoolCvarValue(value, document.buy.allowHelmet);
+        return true;
+    }
+    if (name == L"sv_exp_buy_allow_handgrenade") {
+        document.buy.allowHandgrenade = ParseBoolCvarValue(value, document.buy.allowHandgrenade);
+        return true;
+    }
+    if (name == L"sv_exp_buy_cost_glock") {
+        document.buy.costGlock = value;
+        return true;
+    }
+    if (name == L"sv_exp_buy_cost_mp5") {
+        document.buy.costMp5 = value;
+        return true;
+    }
+    if (name == L"sv_exp_buy_cost_357") {
+        document.buy.cost357 = value;
+        return true;
+    }
+    if (name == L"sv_exp_buy_cost_shotgun") {
+        document.buy.costShotgun = value;
+        return true;
+    }
+    if (name == L"sv_exp_buy_cost_armor") {
+        document.buy.costArmor = value;
+        return true;
+    }
+    if (name == L"sv_exp_buy_cost_helmet") {
+        document.buy.costHelmet = value;
+        return true;
+    }
+    if (name == L"sv_exp_buy_cost_handgrenade") {
+        document.buy.costHandgrenade = value;
+        return true;
+    }
+    if (name == L"sv_exp_armor_mode") {
+        document.armorEquipment.armorMode = ParseBoolCvarValue(value, document.armorEquipment.armorMode);
+        return true;
+    }
+    if (name == L"sv_exp_armor_start_value") {
+        document.armorEquipment.armorStartValue = value;
+        return true;
+    }
+    if (name == L"sv_exp_armor_max_value") {
+        document.armorEquipment.armorMaxValue = value;
+        return true;
+    }
+    if (name == L"sv_exp_armor_health_fraction") {
+        document.armorEquipment.armorHealthFraction = value;
+        return true;
+    }
+    if (name == L"sv_exp_armor_drain_scale") {
+        document.armorEquipment.armorDrainScale = value;
+        return true;
+    }
+    if (name == L"sv_exp_helmet_mode") {
+        document.armorEquipment.helmetMode = ParseBoolCvarValue(value, document.armorEquipment.helmetMode);
+        return true;
+    }
+    if (name == L"sv_exp_helmet_start_enabled") {
+        document.armorEquipment.helmetStartEnabled = ParseBoolCvarValue(value, document.armorEquipment.helmetStartEnabled);
+        return true;
+    }
+    if (name == L"sv_exp_helmet_headshot_protection") {
+        document.armorEquipment.helmetHeadshotProtection =
+            ParseBoolCvarValue(value, document.armorEquipment.helmetHeadshotProtection);
+        return true;
+    }
+
+    return false;
+}
+
+}  // namespace
+
+CvarMap BuildKnownCvarMap(const ProjectDocument& document) {
+    CvarMap cvars;
+
+    SetCvarString(cvars, L"sv_exp_weapon_under_test", document.general.weaponUnderTest);
+    SetCvarString(cvars, L"sv_exp_session_tag", document.general.sessionTag);
+    SetCvarBool(cvars, L"sv_exp_debug_weaponlog", document.general.debugWeaponLog);
+    SetCvarBool(cvars, L"sv_exp_debug_weaponlog_rejections", document.general.debugWeaponLogRejections);
+
+    SetCvarBool(cvars, L"sv_exp_pistol_tapfire", document.glock.tapFire);
+    SetCvarBool(cvars, L"sv_exp_first_shot_accuracy", document.glock.firstShotAccuracy);
+    SetCvarString(cvars, L"sv_exp_spread_recovery", document.glock.spreadRecovery);
+    SetCvarString(cvars, L"sv_exp_move_spread_scale", document.glock.moveSpreadScale);
+    SetCvarString(cvars, L"sv_exp_glock_profile_name", document.glock.profileName);
+    SetCvarString(cvars, L"sv_exp_glock_primary_base_spread", document.glock.primaryBaseSpread);
+    SetCvarString(cvars, L"sv_exp_glock_primary_ground_move_penalty", document.glock.primaryGroundMovePenalty);
+    SetCvarString(cvars, L"sv_exp_glock_primary_air_move_penalty", document.glock.primaryAirMovePenalty);
+    SetCvarString(cvars, L"sv_exp_glock_primary_duck_penalty_scale", document.glock.primaryDuckPenaltyScale);
+    SetCvarString(cvars, L"sv_exp_glock_primary_shot_growth", document.glock.primaryShotGrowth);
+    SetCvarString(cvars, L"sv_exp_glock_primary_first_shot_speed_threshold", document.glock.primaryFirstShotSpeedThreshold);
+    SetCvarString(cvars, L"sv_exp_glock_primary_max_spread", document.glock.primaryMaxSpread);
+    SetCvarBool(cvars, L"sv_exp_glock_primary_cadence_mode", document.glock.cadenceMode);
+    SetCvarString(cvars, L"sv_exp_glock_primary_cycle_time", document.glock.primaryCadenceCycleTime);
+    SetCvarString(cvars, L"sv_exp_glock_primary_click_penalty", document.glock.primaryClickPenalty);
+    SetCvarString(cvars, L"sv_exp_glock_primary_click_penalty_scale", document.glock.primaryClickPenaltyScale);
+    SetCvarString(cvars, L"sv_exp_glock_primary_click_reset_time", document.glock.primaryClickResetTime);
+    SetCvarString(cvars, L"sv_exp_glock_primary_hold_penalty_scale", document.glock.primaryHoldPenaltyScale);
+    SetCvarBool(cvars, L"sv_exp_glock_pattern_mode", document.glock.patternMode);
+    SetCvarString(cvars, L"sv_exp_glock_pattern_scale_x", document.glock.patternScaleX);
+    SetCvarString(cvars, L"sv_exp_glock_pattern_scale_y", document.glock.patternScaleY);
+    SetCvarString(cvars, L"sv_exp_glock_pattern_reset_time", document.glock.patternResetTime);
+    SetCvarString(cvars, L"sv_exp_glock_pattern_max_index", document.glock.patternMaxIndex);
+    SetCvarString(cvars, L"sv_exp_glock_primary_damage", document.glock.primaryDamage);
+    SetCvarString(cvars, L"sv_exp_glock_primary_headshot_scale", document.glock.primaryHeadshotScale);
+    SetCvarBool(cvars, L"sv_exp_glock_primary_headshot_lethal", document.glock.primaryHeadshotLethal);
+
+    SetCvarBool(cvars, L"sv_exp_mp5_primary_enabled", document.mp5.primaryEnabled);
+    SetCvarString(cvars, L"sv_exp_mp5_profile_name", document.mp5.profileName);
+    SetCvarString(cvars, L"sv_exp_mp5_primary_base_spread", document.mp5.primaryBaseSpread);
+    SetCvarString(cvars, L"sv_exp_mp5_primary_ground_move_penalty", document.mp5.primaryGroundMovePenalty);
+    SetCvarString(cvars, L"sv_exp_mp5_primary_air_move_penalty", document.mp5.primaryAirMovePenalty);
+    SetCvarString(cvars, L"sv_exp_mp5_primary_duck_penalty_scale", document.mp5.primaryDuckPenaltyScale);
+    SetCvarString(cvars, L"sv_exp_mp5_primary_burst_growth", document.mp5.primaryBurstGrowth);
+    SetCvarString(cvars, L"sv_exp_mp5_primary_burst_max_additional_spread", document.mp5.primaryBurstMaxAdditionalSpread);
+    SetCvarString(cvars, L"sv_exp_mp5_primary_spread_recovery", document.mp5.primarySpreadRecovery);
+    SetCvarBool(cvars, L"sv_exp_mp5_primary_first_shot_accuracy", document.mp5.primaryFirstShotAccuracy);
+    SetCvarString(cvars, L"sv_exp_mp5_primary_first_shot_speed_threshold", document.mp5.primaryFirstShotSpeedThreshold);
+    SetCvarString(cvars, L"sv_exp_mp5_primary_max_spread", document.mp5.primaryMaxSpread);
+    SetCvarBool(cvars, L"sv_exp_mp5_pattern_mode", document.mp5.patternMode);
+    SetCvarString(cvars, L"sv_exp_mp5_pattern_scale_x", document.mp5.patternScaleX);
+    SetCvarString(cvars, L"sv_exp_mp5_pattern_scale_y", document.mp5.patternScaleY);
+    SetCvarString(cvars, L"sv_exp_mp5_pattern_reset_time", document.mp5.patternResetTime);
+    SetCvarString(cvars, L"sv_exp_mp5_pattern_max_index", document.mp5.patternMaxIndex);
+    SetCvarString(cvars, L"sv_exp_mp5_primary_damage", document.mp5.primaryDamage);
+    SetCvarString(cvars, L"sv_exp_mp5_primary_headshot_scale", document.mp5.primaryHeadshotScale);
+    SetCvarBool(cvars, L"sv_exp_mp5_primary_headshot_lethal", document.mp5.primaryHeadshotLethal);
+    SetCvarBool(cvars, L"sv_exp_mp5_lab_loadout", document.mp5.labLoadout);
+    SetCvarString(cvars, L"sv_exp_mp5_lab_ammo", document.mp5.labAmmo);
+    SetCvarBool(cvars, L"sv_exp_mp5_lab_autoswitch", document.mp5.labAutoswitch);
+
+    SetCvarBool(cvars, L"sv_exp_357_primary_enabled", document.weapon357.primaryEnabled);
+    SetCvarString(cvars, L"sv_exp_357_profile_name", document.weapon357.profileName);
+    SetCvarString(cvars, L"sv_exp_357_primary_base_spread", document.weapon357.primaryBaseSpread);
+    SetCvarString(cvars, L"sv_exp_357_primary_ground_move_penalty", document.weapon357.primaryGroundMovePenalty);
+    SetCvarString(cvars, L"sv_exp_357_primary_air_move_penalty", document.weapon357.primaryAirMovePenalty);
+    SetCvarString(cvars, L"sv_exp_357_primary_duck_penalty_scale", document.weapon357.primaryDuckPenaltyScale);
+    SetCvarBool(cvars, L"sv_exp_357_primary_first_shot_accuracy", document.weapon357.primaryFirstShotAccuracy);
+    SetCvarString(cvars, L"sv_exp_357_primary_first_shot_speed_threshold", document.weapon357.primaryFirstShotSpeedThreshold);
+    SetCvarString(cvars, L"sv_exp_357_primary_spread_recovery", document.weapon357.primarySpreadRecovery);
+    SetCvarString(cvars, L"sv_exp_357_primary_max_spread", document.weapon357.primaryMaxSpread);
+    SetCvarBool(cvars, L"sv_exp_357_primary_cadence_mode", document.weapon357.cadenceMode);
+    SetCvarString(cvars, L"sv_exp_357_primary_cycle_time", document.weapon357.primaryCadenceCycleTime);
+    SetCvarString(cvars, L"sv_exp_357_primary_click_penalty", document.weapon357.primaryClickPenalty);
+    SetCvarString(cvars, L"sv_exp_357_primary_click_penalty_scale", document.weapon357.primaryClickPenaltyScale);
+    SetCvarString(cvars, L"sv_exp_357_primary_click_reset_time", document.weapon357.primaryClickResetTime);
+    SetCvarString(cvars, L"sv_exp_357_primary_hold_penalty_scale", document.weapon357.primaryHoldPenaltyScale);
+    SetCvarString(cvars, L"sv_exp_357_primary_damage", document.weapon357.primaryDamage);
+    SetCvarString(cvars, L"sv_exp_357_primary_headshot_scale", document.weapon357.primaryHeadshotScale);
+    SetCvarBool(cvars, L"sv_exp_357_primary_headshot_lethal", document.weapon357.primaryHeadshotLethal);
+    SetCvarBool(cvars, L"sv_exp_357_lab_loadout", document.weapon357.labLoadout);
+    SetCvarString(cvars, L"sv_exp_357_lab_ammo", document.weapon357.labAmmo);
+    SetCvarBool(cvars, L"sv_exp_357_lab_autoswitch", document.weapon357.labAutoswitch);
+
+    SetCvarBool(cvars, L"sv_exp_shotgun_primary_enabled", document.shotgun.primaryEnabled);
+    SetCvarString(cvars, L"sv_exp_shotgun_profile_name", document.shotgun.profileName);
+    SetCvarString(cvars, L"sv_exp_shotgun_primary_base_spread", document.shotgun.primaryBaseSpread);
+    SetCvarString(cvars, L"sv_exp_shotgun_primary_ground_move_penalty", document.shotgun.primaryGroundMovePenalty);
+    SetCvarString(cvars, L"sv_exp_shotgun_primary_air_move_penalty", document.shotgun.primaryAirMovePenalty);
+    SetCvarString(cvars, L"sv_exp_shotgun_primary_duck_penalty_scale", document.shotgun.primaryDuckPenaltyScale);
+    SetCvarBool(cvars, L"sv_exp_shotgun_primary_first_shot_accuracy", document.shotgun.primaryFirstShotAccuracy);
+    SetCvarString(cvars, L"sv_exp_shotgun_primary_first_shot_speed_threshold", document.shotgun.primaryFirstShotSpeedThreshold);
+    SetCvarString(cvars, L"sv_exp_shotgun_primary_spread_recovery", document.shotgun.primarySpreadRecovery);
+    SetCvarString(cvars, L"sv_exp_shotgun_primary_max_spread", document.shotgun.primaryMaxSpread);
+    SetCvarString(cvars, L"sv_exp_shotgun_primary_shot_growth", document.shotgun.primaryShotGrowth);
+    SetCvarBool(cvars, L"sv_exp_shotgun_pattern_mode", document.shotgun.patternMode);
+    SetCvarString(cvars, L"sv_exp_shotgun_pattern_scale_x", document.shotgun.patternScaleX);
+    SetCvarString(cvars, L"sv_exp_shotgun_pattern_scale_y", document.shotgun.patternScaleY);
+    SetCvarString(cvars, L"sv_exp_shotgun_pattern_reset_time", document.shotgun.patternResetTime);
+    SetCvarString(cvars, L"sv_exp_shotgun_pattern_max_index", document.shotgun.patternMaxIndex);
+    SetCvarString(cvars, L"sv_exp_shotgun_primary_pellet_spread_mode", document.shotgun.primaryPelletSpreadMode);
+    SetCvarString(cvars, L"sv_exp_shotgun_primary_damage_per_pellet", document.shotgun.primaryDamagePerPellet);
+    SetCvarString(cvars, L"sv_exp_shotgun_primary_pellet_count", document.shotgun.primaryPelletCount);
+    SetCvarString(cvars, L"sv_exp_shotgun_primary_headshot_scale", document.shotgun.primaryHeadshotScale);
+    SetCvarBool(cvars, L"sv_exp_shotgun_primary_headshot_lethal", document.shotgun.primaryHeadshotLethal);
+    SetCvarBool(cvars, L"sv_exp_shotgun_lab_loadout", document.shotgun.labLoadout);
+    SetCvarString(cvars, L"sv_exp_shotgun_lab_ammo", document.shotgun.labAmmo);
+    SetCvarBool(cvars, L"sv_exp_shotgun_lab_autoswitch", document.shotgun.labAutoswitch);
+
+    SetCvarBool(cvars, L"sv_exp_glock_lab_dummy", document.targetDummy.enabled);
+    SetCvarString(cvars, L"sv_exp_glock_lab_target_profile_name", document.targetDummy.targetProfileName);
+    SetCvarString(cvars, L"sv_exp_glock_lab_dummy_health", document.targetDummy.dummyHealth);
+    SetCvarString(cvars, L"sv_exp_glock_lab_dummy_armor", document.targetDummy.dummyArmor);
+    SetCvarBool(cvars, L"sv_exp_glock_lab_dummy_head_protected", document.targetDummy.dummyHeadProtected);
+    SetCvarString(cvars, L"sv_exp_glock_lab_dummy_armor_health_fraction", document.targetDummy.armorHealthFraction);
+    SetCvarString(cvars, L"sv_exp_glock_lab_dummy_armor_drain_scale", document.targetDummy.armorDrainScale);
+    SetCvarBool(cvars, L"sv_exp_glock_lab_dummy_autorespawn", document.targetDummy.autorespawn);
+    SetCvarString(cvars, L"sv_exp_glock_lab_dummy_respawn_delay", document.targetDummy.respawnDelay);
+    SetCvarString(cvars, L"sv_exp_glock_lab_dummy_spawn_distance", document.targetDummy.spawnDistance);
+    SetCvarString(cvars, L"sv_exp_glock_lab_dummy_offset_right", document.targetDummy.offsetRight);
+    SetCvarString(cvars, L"sv_exp_glock_lab_dummy_offset_up", document.targetDummy.offsetUp);
+    SetCvarBool(cvars, L"sv_exp_glock_lab_dummy_face_player", document.targetDummy.facePlayer);
+    SetCvarString(cvars, L"sv_exp_glock_lab_dummy_model", document.targetDummy.model);
+
+    SetCvarBool(cvars, L"sv_exp_round_mode", document.roundMode.enabled);
+    SetCvarString(cvars, L"sv_exp_round_freeze_time", document.roundMode.freezeTime);
+    SetCvarString(cvars, L"sv_exp_round_restart_delay", document.roundMode.restartDelay);
+    SetCvarString(cvars, L"sv_exp_round_start_health", document.roundMode.startHealth);
+    SetCvarString(cvars, L"sv_exp_round_start_armor", document.roundMode.startArmor);
+    SetCvarBool(cvars, L"sv_exp_round_no_respawn", document.roundMode.noRespawn);
+    SetCvarBool(cvars, L"sv_exp_round_friendlyfire", document.roundMode.friendlyFire);
+    SetCvarString(cvars, L"sv_exp_round_weapon_profile", document.roundMode.weaponProfile);
+    SetCvarString(cvars, L"sv_exp_round_loadout_mode", document.roundMode.loadoutMode);
+
+    SetCvarBool(cvars, L"sv_exp_team_round_mode", document.teamRound.enabled);
+    SetCvarBool(cvars, L"sv_exp_team_round_teamplay", document.teamRound.teamplay);
+    SetCvarString(cvars, L"sv_exp_team_round_spawn_mode", document.teamRound.spawnMode);
+    SetCvarString(cvars, L"sv_exp_team_round_team1_name", document.teamRound.team1Name);
+    SetCvarString(cvars, L"sv_exp_team_round_team2_name", document.teamRound.team2Name);
+    SetCvarString(cvars, L"sv_exp_team_round_team1_loadout", document.teamRound.team1Loadout);
+    SetCvarString(cvars, L"sv_exp_team_round_team2_loadout", document.teamRound.team2Loadout);
+    SetCvarString(cvars, L"sv_exp_team_round_team1_health", document.teamRound.team1Health);
+    SetCvarString(cvars, L"sv_exp_team_round_team2_health", document.teamRound.team2Health);
+    SetCvarString(cvars, L"sv_exp_team_round_team1_armor", document.teamRound.team1Armor);
+    SetCvarString(cvars, L"sv_exp_team_round_team2_armor", document.teamRound.team2Armor);
+
+    SetCvarBool(cvars, L"sv_exp_buy_mode", document.buy.enabled);
+    SetCvarBool(cvars, L"sv_exp_buy_freeze_only", document.buy.freezeOnly);
+    SetCvarBool(cvars, L"sv_exp_buy_team_shared_catalog", document.buy.teamSharedCatalog);
+    SetCvarString(cvars, L"sv_exp_buy_start_money", document.buy.startMoney);
+    SetCvarString(cvars, L"sv_exp_buy_round_win_reward", document.buy.roundWinReward);
+    SetCvarString(cvars, L"sv_exp_buy_round_loss_reward", document.buy.roundLossReward);
+    SetCvarString(cvars, L"sv_exp_buy_max_money", document.buy.maxMoney);
+    SetCvarBool(cvars, L"sv_exp_buy_allow_glock", document.buy.allowGlock);
+    SetCvarBool(cvars, L"sv_exp_buy_allow_mp5", document.buy.allowMp5);
+    SetCvarBool(cvars, L"sv_exp_buy_allow_357", document.buy.allow357);
+    SetCvarBool(cvars, L"sv_exp_buy_allow_shotgun", document.buy.allowShotgun);
+    SetCvarBool(cvars, L"sv_exp_buy_allow_armor", document.buy.allowArmor);
+    SetCvarBool(cvars, L"sv_exp_buy_allow_helmet", document.buy.allowHelmet);
+    SetCvarBool(cvars, L"sv_exp_buy_allow_handgrenade", document.buy.allowHandgrenade);
+    SetCvarString(cvars, L"sv_exp_buy_cost_glock", document.buy.costGlock);
+    SetCvarString(cvars, L"sv_exp_buy_cost_mp5", document.buy.costMp5);
+    SetCvarString(cvars, L"sv_exp_buy_cost_357", document.buy.cost357);
+    SetCvarString(cvars, L"sv_exp_buy_cost_shotgun", document.buy.costShotgun);
+    SetCvarString(cvars, L"sv_exp_buy_cost_armor", document.buy.costArmor);
+    SetCvarString(cvars, L"sv_exp_buy_cost_helmet", document.buy.costHelmet);
+    SetCvarString(cvars, L"sv_exp_buy_cost_handgrenade", document.buy.costHandgrenade);
+
+    SetCvarBool(cvars, L"sv_exp_armor_mode", document.armorEquipment.armorMode);
+    SetCvarString(cvars, L"sv_exp_armor_start_value", document.armorEquipment.armorStartValue);
+    SetCvarString(cvars, L"sv_exp_armor_max_value", document.armorEquipment.armorMaxValue);
+    SetCvarString(cvars, L"sv_exp_armor_health_fraction", document.armorEquipment.armorHealthFraction);
+    SetCvarString(cvars, L"sv_exp_armor_drain_scale", document.armorEquipment.armorDrainScale);
+    SetCvarBool(cvars, L"sv_exp_helmet_mode", document.armorEquipment.helmetMode);
+    SetCvarBool(cvars, L"sv_exp_helmet_start_enabled", document.armorEquipment.helmetStartEnabled);
+    SetCvarBool(cvars, L"sv_exp_helmet_headshot_protection", document.armorEquipment.helmetHeadshotProtection);
+
+    return cvars;
+}
+
+void MergeKnownCvarMap(ProjectDocument& document, const CvarMap& cvars, std::vector<std::wstring>* unknownCvars) {
+    for (const auto& [name, value] : cvars) {
+        if (!ApplyKnownCvar(document, name, value) && unknownCvars != nullptr) {
+            unknownCvars->push_back(name);
+        }
+    }
+}
+
 bool SaveProjectDocumentToFile(const ProjectDocument& document, const std::wstring& path, std::wstring& errorMessage) {
     JsonValue root = JsonValue::MakeObject();
     JsonValue::Object& rootObject = root.AsObject();

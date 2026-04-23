@@ -143,6 +143,16 @@ When those fields are present and the cfg is exported into `<HalfLifeRoot>\hlser
 
 The editor self-test now verifies this sidecar path too.
 
+The editor now also has a dedicated `Browser` tab for the pack layer:
+
+- it lists the available runtime packs from `<HalfLifeRoot>\hlserver_testbed\match_packs\`
+- selecting a pack shows description, tags, notes, referenced cfg path, and the leading cvars from that cfg
+- the diff pane compares the current editor project against the incoming pack cvars
+- `Load Into Current Project` merges that pack into the open project
+- `Copy Apply Command` then gives the exact runtime command for the loaded project
+
+That means the pack layer can now be reused from inside the editor without leaving the existing `.hlcfg.json -> .cfg -> apply command` workflow.
+
 ## Recommended workflow
 
 1. Run `exp_matchcfg_list`.

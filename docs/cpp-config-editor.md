@@ -95,6 +95,39 @@ The same `General` page now also carries optional match-pack metadata:
 
 When the pack name is filled and the cfg is exported into the live mod root, the editor writes a sidecar JSON file into `<HalfLifeRoot>\hlserver_testbed\match_packs\` so the runtime can apply that config through `exp_matchcfg_apply <pack-name>`.
 
+## Browser tab
+
+The editor now includes a dedicated `Browser` tab for the preset and match-pack layer that already exists in the repository and live mod.
+
+Weapon presets:
+
+- listed from `configs\glock-presets\`, `configs\mp5-presets\`, `configs\357-presets\`, and `configs\shotgun-presets\`
+- filterable by weapon family
+- previewed with source path, description, and cvar count
+
+Match packs:
+
+- listed from `<HalfLifeRoot>\hlserver_testbed\match_packs\`
+- previewed with description, tags, notes, and referenced cfg path
+- loaded through the referenced cfg so the preview shows the real server cvar set, not only the JSON metadata
+
+Diff / merge behavior:
+
+- `Selected Entry Preview` shows the entry metadata and the leading cvars
+- `Current vs Incoming Diff` shows a simple per-cvar comparison of current and incoming values
+- `Load Into Current Project` merges the selected entry into the open project
+- if the current project is still the generic untitled/default project, loading a preset or pack adopts that entry name as the starting project and cfg name
+- if the project already has unsaved changes, the editor warns before overwriting matching fields
+
+Live-apply helper behavior:
+
+- `Copy Apply Command` copies the exact live command for the currently loaded project
+- `Quick Export + Copy Apply Command` writes the cfg into `<HalfLifeRoot>\hlserver_testbed\` and then copies the exact apply command
+- when the loaded project includes match-pack metadata and exports into the live mod root, the copied command becomes `exp_matchcfg_apply <pack-name>`
+- otherwise the copied command is `exp_cfg_apply <cfg-name>`
+
+The editor still does not push settings directly into a running server. The browser tab is intentionally a browse/preview/export/copy-command workflow, not server control.
+
 In the simple path, the editor writes directly into:
 
 ```text
@@ -221,6 +254,17 @@ For shotgun specifically, the same editor path applies:
 6. Use the `Deterministic pellet pattern`, `Pellet spread mode`, `Pellet pattern X scale`, `Pellet pattern Y scale`, `Pattern reset time`, and `Per-shot spread growth` controls when you want a learnable shotgun cone instead of the older random-like spread.
 7. Use `exp_target_profile unarmored` and `exp_target_tp_front` when you want deterministic close-range dummy checks.
 8. Review shotgun-only telemetry with `.\scripts\analyze-weapon-log.ps1 -Latest -Weapon shotgun`.
+
+One real editor session on `2026-04-23` verified the browser workflow end to end:
+
+- preset browser listed Glock presets including `glock_cadence_tight`
+- preset diff preview showed 21 changed cvars before load
+- loading that preset into the current project worked
+- `Quick Export + Copy Apply Command` then wrote `<HalfLifeRoot>\hlserver_testbed\glock_cadence_tight.cfg` and copied `exp_cfg_apply glock_cadence_tight.cfg`
+- match-pack browser listed `team_mp5_buy`
+- match-pack diff preview showed the incoming round/team/buy changes before load
+- loading that pack into the current project worked
+- `Copy Apply Command` then copied `exp_matchcfg_apply team_mp5_buy`
 
 ## Match-rule configs
 

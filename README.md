@@ -164,6 +164,17 @@ The editor now covers the full currently checked-in server config surface in one
 
 The `General` page now also shows a compact "What This Config Will Affect" summary so it is obvious whether the current project enables round mode, team round mode, buy mode, a specific main loadout, or armor and helmet support.
 
+The editor now also has a dedicated `Browser` tab for the existing preset and match-pack surface:
+
+- weapon presets are listed directly from `configs\glock-presets\`, `configs\mp5-presets\`, `configs\357-presets\`, and `configs\shotgun-presets\`
+- match packs are listed from `<HalfLifeRoot>\hlserver_testbed\match_packs\`
+- selecting an entry shows a preview plus a simple `current -> incoming` cvar diff
+- `Load Into Current Project` merges the selected preset or pack into the open project
+- `Copy Apply Command` copies the exact live command for the currently loaded project
+- `Quick Export + Copy Apply Command` writes the cfg first, then copies the exact `exp_cfg_apply ...` or `exp_matchcfg_apply ...` command
+
+This is still a browser/export workflow, not direct live server control from the editor. The intended loop is: browse, preview, load, export, then run the copied command in HLDS.
+
 For the current Glock and MP5 feel pass, the most important editor fields are now labeled more directly:
 
 - `Shot growth (cadence bloom per shot)` or `Burst growth (cadence bloom per shot)`
@@ -314,6 +325,14 @@ Recommended daily flow:
 5. If you want to leave pack mode and go back to a plain cfg, use `exp_cfg_apply my_match.cfg` or legacy `exec my_match.cfg`.
 
 The native editor now understands match-pack metadata too. If the `General` page includes a pack name and the cfg is exported into the live mod, the editor also writes a sidecar JSON file into `match_packs\` so that exported configs can be reused through `exp_matchcfg_apply`.
+
+The same workflow is now available from inside the editor's `Browser` tab:
+
+1. Browse a checked-in weapon preset or a live/runtime match pack.
+2. Read the selected entry preview and the `current vs incoming` diff.
+3. Click `Load Into Current Project`.
+4. Use `Quick Export + Copy Apply Command`.
+5. Paste the copied `exp_cfg_apply ...` or `exp_matchcfg_apply ...` command into the running server.
 
 One real client-attached session on `2026-04-22` verified the full pack loop on `crossfire`: `exp_matchcfg_list` enumerated six starter packs, `exp_matchcfg_apply duel_glock` switched the server into a round-based Glock duel, `exp_matchcfg_apply team_mp5_buy` switched the same live server into a team/buy pack, and a later `exp_cfg_apply editor_buy_armor.cfg` proved the older direct cfg path still remained usable afterward.
 

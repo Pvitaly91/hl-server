@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <cstring>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -17,6 +18,7 @@
 
 #include "CfgExport.h"
 #include "ConfigProject.h"
+#include "JsonLite.h"
 #include "Presets.h"
 
 #pragma comment(linker, "\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
@@ -252,6 +254,22 @@ enum ControlId : int {
     IDC_HELMET_START_ENABLED,
     IDC_HELMET_HEADSHOT_PROTECTION,
 
+    IDC_BROWSER_PRESET_CATEGORY = 1600,
+    IDC_BROWSER_PRESET_LIST,
+    IDC_BROWSER_PRESET_OPEN_FOLDER,
+    IDC_BROWSER_PRESET_LOAD,
+    IDC_BROWSER_MATCH_PACK_LIST,
+    IDC_BROWSER_MATCH_PACK_OPEN_FOLDER,
+    IDC_BROWSER_MATCH_PACK_LOAD,
+    IDC_BROWSER_REFRESH,
+    IDC_BROWSER_DETAILS,
+    IDC_BROWSER_DIFF,
+    IDC_BROWSER_APPLY_COMMAND,
+    IDC_BROWSER_COPY_APPLY_COMMAND,
+    IDC_BROWSER_QUICK_EXPORT_COPY,
+    IDC_BROWSER_OPEN_LIVE_MOD_FOLDER,
+    IDC_BROWSER_STATUS,
+
     IDC_LIVE_MOD_FOLDER_PREVIEW = 1400,
     IDC_EXPORT_FOLDER,
     IDC_BROWSE_EXPORT_FOLDER,
@@ -273,11 +291,12 @@ enum ControlId : int {
     IDC_EXPORT_STATUS,
 };
 
-constexpr int kPageCount = 10;
+constexpr int kPageCount = 11;
 constexpr int kRoundPageIndex = 6;
 constexpr int kTeamRoundPageIndex = 7;
 constexpr int kBuyEquipmentPageIndex = 8;
-constexpr int kExportPageIndex = 9;
+constexpr int kBrowserPageIndex = 9;
+constexpr int kExportPageIndex = 10;
 
 HFONT GetUiFont() {
     return static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
@@ -357,6 +376,20 @@ HWND CreateButton(HWND parent, const wchar_t* text, int id, int x, int y, int wi
 
 HWND CreateCombo(HWND parent, int id, int x, int y, int width, int height) {
     return CreateChildControl(parent, WC_COMBOBOXW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL, 0, x, y, width, height, id);
+}
+
+HWND CreateListBox(HWND parent, int id, int x, int y, int width, int height) {
+    return CreateChildControl(
+        parent,
+        L"LISTBOX",
+        L"",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | LBS_NOTIFY | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
+        WS_EX_CLIENTEDGE,
+        x,
+        y,
+        width,
+        height,
+        id);
 }
 
 std::wstring GetTextFromWindow(HWND window) {
@@ -561,6 +594,244 @@ std::wstring BuildSuggestedCfgFileName(const hlcfg::ProjectDocument& document) {
     return hlcfg::EnsureCfgFileName(safeStem);
 }
 
+enum class BrowserEntryKind {
+    None,
+    WeaponPreset,
+    MatchPack,
+};
+
+struct BrowserEntry {
+    BrowserEntryKind kind = BrowserEntryKind::None;
+    std::wstring category;
+    std::wstring name;
+    std::wstring description;
+    std::wstring tags;
+    std::wstring notes;
+    std::wstring sourcePath;
+    std::wstring referencedCfgPath;
+    hlcfg::CvarMap cvars;
+};
+
+std::wstring Utf8ToWide(const std::string& value) {
+    if (value.empty()) {
+        return {};
+    }
+
+    const int required = MultiByteToWideChar(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), nullptr, 0);
+    if (required <= 0) {
+        return {};
+    }
+
+    std::wstring result(static_cast<std::size_t>(required), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), result.data(), required);
+    return result;
+}
+
+bool ReadUtf8TextFile(const std::filesystem::path& path, std::wstring& text, std::wstring& errorMessage) {
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream) {
+        errorMessage = L"Unable to open " + path.wstring();
+        return false;
+    }
+
+    const std::string bytes((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+    text = Utf8ToWide(bytes);
+    return true;
+}
+
+const hlcfg::JsonValue* FindJsonMember(const hlcfg::JsonValue::Object& object, const std::wstring& key) {
+    const auto it = object.find(key);
+    return it == object.end() ? nullptr : &it->second;
+}
+
+std::wstring ReadJsonString(const hlcfg::JsonValue::Object& object, const std::wstring& key) {
+    const hlcfg::JsonValue* value = FindJsonMember(object, key);
+    return value != nullptr && value->IsString() ? value->AsString() : std::wstring();
+}
+
+std::wstring UnquoteCfgValue(const std::wstring& value) {
+    const std::wstring trimmed = hlcfg::Trimmed(value);
+    if (trimmed.size() < 2 || trimmed.front() != L'"' || trimmed.back() != L'"') {
+        return trimmed;
+    }
+
+    std::wstring unquoted;
+    unquoted.reserve(trimmed.size() - 2);
+    bool escaping = false;
+    for (std::size_t index = 1; index + 1 < trimmed.size(); ++index) {
+        const wchar_t ch = trimmed[index];
+        if (escaping) {
+            unquoted.push_back(ch);
+            escaping = false;
+            continue;
+        }
+
+        if (ch == L'\\') {
+            escaping = true;
+            continue;
+        }
+
+        unquoted.push_back(ch);
+    }
+
+    return unquoted;
+}
+
+bool ParseCfgCvarMap(const std::wstring& cfgText, hlcfg::CvarMap& cvars) {
+    std::wstringstream stream(cfgText);
+    std::wstring line;
+    while (std::getline(stream, line)) {
+        const std::wstring trimmed = hlcfg::Trimmed(line);
+        if (trimmed.empty() || trimmed[0] == L'#' || (trimmed.size() >= 2 && trimmed[0] == L'/' && trimmed[1] == L'/')) {
+            continue;
+        }
+
+        const std::size_t split = trimmed.find_first_of(L" \t");
+        if (split == std::wstring::npos) {
+            continue;
+        }
+
+        const std::wstring name = hlcfg::Trimmed(trimmed.substr(0, split));
+        const std::wstring rawValue = hlcfg::Trimmed(trimmed.substr(split + 1));
+        if (name.empty() || rawValue.empty()) {
+            continue;
+        }
+
+        cvars[name] = UnquoteCfgValue(rawValue);
+    }
+
+    return true;
+}
+
+std::filesystem::path ResolveMatchPackCfgPath(
+    const std::filesystem::path& metadataPath,
+    const std::wstring& cfgPath,
+    const hlcfg::EnvironmentPaths& environment) {
+    const std::filesystem::path candidate(cfgPath);
+    std::error_code error;
+    if (candidate.is_absolute() && std::filesystem::exists(candidate, error)) {
+        return candidate;
+    }
+
+    const std::filesystem::path metadataParent = metadataPath.parent_path();
+    std::vector<std::filesystem::path> candidates;
+    candidates.emplace_back(metadataParent / candidate);
+
+    if (!environment.liveModRoot.empty()) {
+        candidates.emplace_back(std::filesystem::path(environment.liveModRoot) / candidate);
+    }
+    if (!environment.stagedLiveModRoot.empty()) {
+        candidates.emplace_back(std::filesystem::path(environment.stagedLiveModRoot) / candidate);
+    }
+    if (!environment.repoRoot.empty()) {
+        const std::filesystem::path repoMatchPackRoot = std::filesystem::path(environment.repoRoot) / L"configs" / L"match-packs";
+        candidates.emplace_back(repoMatchPackRoot / candidate.filename());
+        if (candidate.generic_wstring().rfind(L"match_packs/", 0) == 0) {
+            candidates.emplace_back(repoMatchPackRoot / candidate.filename());
+        }
+    }
+
+    for (const std::filesystem::path& current : candidates) {
+        if (current.empty()) {
+            continue;
+        }
+
+        if (std::filesystem::exists(current, error) && !error) {
+            return current;
+        }
+    }
+
+    return {};
+}
+
+bool LoadWeaponPresetEntry(const std::filesystem::path& path, const std::wstring& category, BrowserEntry& entry, std::wstring& errorMessage) {
+    std::wstring text;
+    if (!ReadUtf8TextFile(path, text, errorMessage)) {
+        return false;
+    }
+
+    hlcfg::JsonValue root;
+    if (!hlcfg::ParseJsonText(text, root, errorMessage) || !root.IsObject()) {
+        errorMessage = L"Unable to parse preset JSON: " + path.wstring();
+        return false;
+    }
+
+    const hlcfg::JsonValue::Object& object = root.AsObject();
+    const hlcfg::JsonValue* cvarsValue = FindJsonMember(object, L"cvars");
+    if (cvarsValue == nullptr || !cvarsValue->IsObject()) {
+        errorMessage = L"Preset JSON is missing a cvars object: " + path.wstring();
+        return false;
+    }
+
+    entry = {};
+    entry.kind = BrowserEntryKind::WeaponPreset;
+    entry.category = category;
+    entry.name = ReadJsonString(object, L"name");
+    entry.description = ReadJsonString(object, L"description");
+    entry.sourcePath = path.wstring();
+
+    if (entry.name.empty()) {
+        entry.name = path.stem().wstring();
+    }
+
+    for (const auto& [name, value] : cvarsValue->AsObject()) {
+        if (value.IsString()) {
+            entry.cvars[name] = value.AsString();
+        } else if (value.IsBool()) {
+            entry.cvars[name] = value.AsBool() ? L"1" : L"0";
+        } else if (value.IsNumber()) {
+            std::wostringstream stream;
+            stream.precision(15);
+            stream << value.AsNumber();
+            entry.cvars[name] = stream.str();
+        }
+    }
+
+    return true;
+}
+
+bool LoadMatchPackEntry(const std::filesystem::path& path, const hlcfg::EnvironmentPaths& environment, BrowserEntry& entry, std::wstring& errorMessage) {
+    std::wstring text;
+    if (!ReadUtf8TextFile(path, text, errorMessage)) {
+        return false;
+    }
+
+    hlcfg::JsonValue root;
+    if (!hlcfg::ParseJsonText(text, root, errorMessage) || !root.IsObject()) {
+        errorMessage = L"Unable to parse match-pack JSON: " + path.wstring();
+        return false;
+    }
+
+    const hlcfg::JsonValue::Object& object = root.AsObject();
+    entry = {};
+    entry.kind = BrowserEntryKind::MatchPack;
+    entry.name = ReadJsonString(object, L"name");
+    entry.description = ReadJsonString(object, L"description");
+    entry.tags = ReadJsonString(object, L"tags");
+    entry.notes = ReadJsonString(object, L"notes");
+    entry.category = ReadJsonString(object, L"mode");
+    entry.sourcePath = path.wstring();
+
+    const std::wstring cfgPath = ReadJsonString(object, L"cfg");
+    std::filesystem::path resolvedCfg = ResolveMatchPackCfgPath(path, cfgPath, environment);
+    entry.referencedCfgPath = resolvedCfg.wstring();
+
+    if (entry.name.empty()) {
+        entry.name = path.stem().wstring();
+    }
+
+    if (!resolvedCfg.empty()) {
+        std::wstring cfgText;
+        if (ReadUtf8TextFile(resolvedCfg, cfgText, errorMessage)) {
+            ParseCfgCvarMap(cfgText, entry.cvars);
+        } else {
+            errorMessage.clear();
+        }
+    }
+
+    return true;
+}
+
 class EditorWindow {
 public:
     EditorWindow(HINSTANCE instance, const std::wstring& moduleFilePath)
@@ -663,6 +934,7 @@ private:
         case WM_CREATE:
             CreateMenus();
             CreateUi();
+            ReloadBrowserEntries();
             LoadDocumentToControls();
             UpdateWindowTitle();
             return 0;
@@ -797,6 +1069,49 @@ private:
         case IDC_MATCH_PRESET_BUY_TEST:
             ApplyPreset([&] { hlcfg::ApplyMatchPreset(document_, L"buy_test"); });
             return 0;
+        case IDC_BROWSER_PRESET_CATEGORY:
+            if (notifyCode == CBN_SELCHANGE) {
+                PopulatePresetBrowserList();
+                RefreshBrowserPanels();
+            }
+            return 0;
+        case IDC_BROWSER_PRESET_LIST:
+            if (notifyCode == LBN_SELCHANGE) {
+                CapturePresetBrowserSelection();
+                RefreshBrowserPanels();
+            }
+            return 0;
+        case IDC_BROWSER_MATCH_PACK_LIST:
+            if (notifyCode == LBN_SELCHANGE) {
+                CaptureMatchPackBrowserSelection();
+                RefreshBrowserPanels();
+            }
+            return 0;
+        case IDC_BROWSER_PRESET_LOAD:
+            LoadPresetBrowserEntry();
+            return 0;
+        case IDC_BROWSER_MATCH_PACK_LOAD:
+            LoadMatchPackBrowserEntry();
+            return 0;
+        case IDC_BROWSER_PRESET_OPEN_FOLDER:
+            OpenPresetBrowserFolder();
+            return 0;
+        case IDC_BROWSER_MATCH_PACK_OPEN_FOLDER:
+            OpenMatchPackBrowserFolder();
+            return 0;
+        case IDC_BROWSER_REFRESH:
+            ReloadBrowserEntries();
+            RefreshBrowserControls();
+            return 0;
+        case IDC_BROWSER_COPY_APPLY_COMMAND:
+            CopyBrowserApplyCommand();
+            return 0;
+        case IDC_BROWSER_QUICK_EXPORT_COPY:
+            QuickExportAndCopyApplyCommand();
+            return 0;
+        case IDC_BROWSER_OPEN_LIVE_MOD_FOLDER:
+            OpenResolvedFolder(GetLiveModFolder(), L"The live mod folder could not be resolved.", L"Opened live mod folder");
+            return 0;
         case IDC_BROWSE_EXPORT_FOLDER:
             BrowseExportFolder();
             return 0;
@@ -841,6 +1156,7 @@ private:
                 dirty_ = true;
                 UpdateWindowTitle();
                 RefreshMatchSummary();
+                RefreshBrowserPanels();
                 if (controlId == IDC_EXPORT_FOLDER || controlId == IDC_EXPORT_FILE_NAME || TabCtrl_GetCurSel(tab_) == kExportPageIndex) {
                     RefreshExportPreview(true);
                 }
@@ -886,6 +1202,7 @@ private:
             L"Round Mode",
             L"Team Round",
             L"Buy & Equipment",
+            L"Browser",
             L"Export",
         };
         for (int index = 0; index < kPageCount; ++index) {
@@ -907,6 +1224,7 @@ private:
         CreateRoundPage();
         CreateTeamRoundPage();
         CreateBuyEquipmentPage();
+        CreateBrowserPage();
         CreateExportPage();
         ShowActivePage(0);
     }
@@ -1367,6 +1685,45 @@ private:
         CreateEdit(page, IDC_BUY_COST_HANDGRENADE, 900, 410, 120, 24);
     }
 
+    void CreateBrowserPage() {
+        HWND page = pages_[kBrowserPageIndex];
+
+        CreateGroupBox(page, L"Weapon Preset Browser", 20, 20, 500, 290);
+        CreateLabel(page, L"Category", 40, 55, 90, 20);
+        HWND categoryCombo = CreateCombo(page, IDC_BROWSER_PRESET_CATEGORY, 120, 50, 220, 200);
+        ComboBox_AddString(categoryCombo, L"all");
+        ComboBox_AddString(categoryCombo, L"glock");
+        ComboBox_AddString(categoryCombo, L"mp5");
+        ComboBox_AddString(categoryCombo, L"357");
+        ComboBox_AddString(categoryCombo, L"shotgun");
+        ComboBox_SetCurSel(categoryCombo, 0);
+        CreateButton(page, L"Refresh", IDC_BROWSER_REFRESH, 360, 50, 120, 24);
+        CreateListBox(page, IDC_BROWSER_PRESET_LIST, 40, 90, 440, 150);
+        CreateButton(page, L"Load Into Current Project", IDC_BROWSER_PRESET_LOAD, 40, 255, 200, 24);
+        CreateButton(page, L"Open Presets Folder", IDC_BROWSER_PRESET_OPEN_FOLDER, 255, 255, 160, 24);
+
+        CreateGroupBox(page, L"Match-Pack Browser", 540, 20, 520, 290);
+        CreateLabel(page, L"Source", 560, 55, 60, 20);
+        CreateLabel(page, L"Prefers live mod packs when available, otherwise checked-in configs\\match-packs\\", 620, 55, 390, 20);
+        CreateListBox(page, IDC_BROWSER_MATCH_PACK_LIST, 560, 90, 460, 150);
+        CreateButton(page, L"Load Into Current Project", IDC_BROWSER_MATCH_PACK_LOAD, 560, 255, 200, 24);
+        CreateButton(page, L"Open Match Packs Folder", IDC_BROWSER_MATCH_PACK_OPEN_FOLDER, 775, 255, 180, 24);
+
+        CreateGroupBox(page, L"Selected Entry Preview", 20, 330, 500, 240);
+        CreateMultiLineEdit(page, IDC_BROWSER_DETAILS, 40, 360, 440, 180, true);
+
+        CreateGroupBox(page, L"Current vs Incoming Diff", 540, 330, 520, 240);
+        CreateMultiLineEdit(page, IDC_BROWSER_DIFF, 560, 360, 460, 180, true);
+
+        CreateGroupBox(page, L"Live Apply Helper", 20, 585, 1040, 130);
+        CreateLabel(page, L"After quick export, apply with", 40, 620, 160, 20);
+        CreateEdit(page, IDC_BROWSER_APPLY_COMMAND, 210, 615, 810, 24, ES_READONLY);
+        CreateButton(page, L"Quick Export + Copy Apply Command", IDC_BROWSER_QUICK_EXPORT_COPY, 40, 650, 260, 24);
+        CreateButton(page, L"Copy Apply Command", IDC_BROWSER_COPY_APPLY_COMMAND, 315, 650, 180, 24);
+        CreateButton(page, L"Open Live Mod Folder", IDC_BROWSER_OPEN_LIVE_MOD_FOLDER, 510, 650, 170, 24);
+        CreateMultiLineEdit(page, IDC_BROWSER_STATUS, 700, 645, 320, 38, true);
+    }
+
     void CreateExportPage() {
         HWND page = pages_[kExportPageIndex];
         CreateGroupBox(page, L"Resolved Paths And Targets", 20, 20, 1040, 255);
@@ -1431,6 +1788,8 @@ private:
 
         if (pageIndex == kExportPageIndex) {
             RefreshExportPreview(true);
+        } else if (pageIndex == kBrowserPageIndex) {
+            RefreshBrowserPanels();
         }
     }
 
@@ -1438,6 +1797,7 @@ private:
         document_ = hlcfg::CreateDefaultProject();
         document_.exportSettings.exportFolder = environment_.defaultExportFolder;
         document_.exportSettings.cfgFileName = BuildSuggestedCfgFileName(document_);
+        lastBrowserStatus_.clear();
         dirty_ = false;
     }
 
@@ -1528,7 +1888,7 @@ private:
         MessageBoxW(hwnd_, dialogText.c_str(), kWindowTitle, MB_ICONINFORMATION | MB_OK);
     }
 
-    void RunExportWorkflow(const std::wstring* forcedExportFolder, bool quickExport) {
+    bool RunExportWorkflow(const std::wstring* forcedExportFolder, bool quickExport) {
         hlcfg::ProjectDocument exportDocument;
         PrepareDocumentForExport(exportDocument, forcedExportFolder);
 
@@ -1543,12 +1903,12 @@ private:
                 quickExport ? BuildQuickExportTargetPathPreview() : std::wstring(),
                 quickExport ? L"Verify the Half-Life root, the live mod path, and the cfg file name."
                             : L"Choose a writable folder and confirm the cfg file name.");
-            return;
+            return false;
         }
 
         if (!ConfirmOverwrite(preview.exportPath, actionLabel)) {
             SetActionStatus(std::wstring(actionLabel) + L" was cancelled.\n\nTarget path:\n" + preview.exportPath);
-            return;
+            return false;
         }
 
         hlcfg::ExportResult result;
@@ -1559,7 +1919,7 @@ private:
                 errorMessage,
                 preview.exportPath,
                 L"Check that the target folder exists and is writable, then try again.");
-            return;
+            return false;
         }
 
         std::error_code verifyError;
@@ -1570,7 +1930,7 @@ private:
                 L"The cfg export completed, but the written file could not be confirmed on disk.",
                 result.exportPath,
                 L"Check file permissions, confirm the target folder, and try again.");
-            return;
+            return false;
         }
 
         document_ = std::move(exportDocument);
@@ -1579,6 +1939,8 @@ private:
         LoadDocumentToControls();
         dirty_ = true;
         UpdateWindowTitle();
+        ReloadBrowserEntries();
+        RefreshBrowserControls();
 
         std::wstring successMessage = (quickExport ? L"Quick-exported cfg to:\n" : L"Exported cfg to:\n") + result.exportPath +
                                       L"\n\nLoad it in HLDS with:\n" + result.execCommand;
@@ -1599,6 +1961,7 @@ private:
         }
 
         ShowActionInfo(statusText, successMessage);
+        return true;
     }
 
     HWND FindControl(int controlId) const {
@@ -1969,6 +2332,579 @@ private:
         }
     }
 
+    void SetBrowserStatus(const std::wstring& value) {
+        lastBrowserStatus_ = value;
+        if (HWND control = FindControl(IDC_BROWSER_STATUS)) {
+            const bool wasLoadingControls = loadingControls_;
+            loadingControls_ = true;
+            SetTextOnWindow(control, value.c_str());
+            loadingControls_ = wasLoadingControls;
+        }
+    }
+
+    std::wstring GetPresetBrowserCategory() const {
+        std::wstring category = GetComboSelectionValue(IDC_BROWSER_PRESET_CATEGORY);
+        if (category.empty()) {
+            category = L"all";
+        }
+        return category;
+    }
+
+    void ReloadBrowserEntries() {
+        presetBrowserEntries_.clear();
+        matchPackBrowserEntries_.clear();
+
+        const std::filesystem::path repoRoot(environment_.repoRoot);
+        const std::pair<const wchar_t*, const wchar_t*> presetRoots[] = {
+            {L"glock", L"glock-presets"},
+            {L"mp5", L"mp5-presets"},
+            {L"357", L"357-presets"},
+            {L"shotgun", L"shotgun-presets"},
+        };
+
+        std::wstring ignoredError;
+        for (const auto& [category, folderName] : presetRoots) {
+            const std::filesystem::path folder = repoRoot / L"configs" / folderName;
+            std::error_code error;
+            if (!std::filesystem::exists(folder, error)) {
+                continue;
+            }
+
+            for (const auto& entry : std::filesystem::directory_iterator(folder, error)) {
+                if (error || !entry.is_regular_file() || entry.path().extension() != L".json") {
+                    continue;
+                }
+
+                BrowserEntry browserEntry;
+                if (LoadWeaponPresetEntry(entry.path(), category, browserEntry, ignoredError)) {
+                    presetBrowserEntries_.push_back(std::move(browserEntry));
+                }
+            }
+        }
+
+        std::sort(presetBrowserEntries_.begin(), presetBrowserEntries_.end(), [](const BrowserEntry& left, const BrowserEntry& right) {
+            if (left.category != right.category) {
+                return left.category < right.category;
+            }
+
+            return left.name < right.name;
+        });
+
+        std::map<std::wstring, BrowserEntry> matchPackByName;
+        auto loadMatchPackFolder = [&](const std::filesystem::path& folder) {
+            std::error_code error;
+            if (!std::filesystem::exists(folder, error)) {
+                return;
+            }
+
+            for (const auto& entry : std::filesystem::directory_iterator(folder, error)) {
+                if (error || !entry.is_regular_file() || entry.path().extension() != L".json") {
+                    continue;
+                }
+
+                BrowserEntry browserEntry;
+                if (!LoadMatchPackEntry(entry.path(), environment_, browserEntry, ignoredError)) {
+                    continue;
+                }
+
+                std::wstring key = browserEntry.name.empty() ? entry.path().stem().wstring() : browserEntry.name;
+                std::transform(key.begin(), key.end(), key.begin(), [](wchar_t ch) {
+                    return static_cast<wchar_t>(::towlower(ch));
+                });
+                matchPackByName[key] = std::move(browserEntry);
+            }
+        };
+
+        loadMatchPackFolder(repoRoot / L"configs" / L"match-packs");
+        if (!environment_.matchPacksRoot.empty()) {
+            loadMatchPackFolder(std::filesystem::path(environment_.matchPacksRoot));
+        }
+
+        for (auto& [key, value] : matchPackByName) {
+            (void)key;
+            matchPackBrowserEntries_.push_back(std::move(value));
+        }
+
+        std::sort(matchPackBrowserEntries_.begin(), matchPackBrowserEntries_.end(), [](const BrowserEntry& left, const BrowserEntry& right) {
+            return left.name < right.name;
+        });
+    }
+
+    void PopulatePresetBrowserList() {
+        HWND list = FindControl(IDC_BROWSER_PRESET_LIST);
+        if (list == nullptr) {
+            return;
+        }
+
+        const BrowserEntryKind previousKind = activeBrowserEntryKind_;
+        std::wstring previousName;
+        if (activeBrowserEntryKind_ == BrowserEntryKind::WeaponPreset) {
+            if (const BrowserEntry* active = GetActiveBrowserEntry()) {
+                previousName = active->name;
+            }
+        }
+
+        presetBrowserVisibleIndices_.clear();
+        ListBox_ResetContent(list);
+
+        const std::wstring category = GetPresetBrowserCategory();
+        for (std::size_t index = 0; index < presetBrowserEntries_.size(); ++index) {
+            const BrowserEntry& entry = presetBrowserEntries_[index];
+            if (category != L"all" && entry.category != category) {
+                continue;
+            }
+
+            std::wstring label = entry.name;
+            if (category == L"all" && !entry.category.empty()) {
+                label += L" [" + entry.category + L"]";
+            }
+
+            const int row = static_cast<int>(SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str())));
+            if (row >= 0) {
+                SendMessageW(list, LB_SETITEMDATA, row, static_cast<LPARAM>(index));
+                presetBrowserVisibleIndices_.push_back(index);
+            }
+        }
+
+        int selection = LB_ERR;
+        for (int row = 0; row < static_cast<int>(presetBrowserVisibleIndices_.size()); ++row) {
+            const BrowserEntry& entry = presetBrowserEntries_[presetBrowserVisibleIndices_[static_cast<std::size_t>(row)]];
+            if (!previousName.empty() && entry.name == previousName) {
+                selection = row;
+                break;
+            }
+        }
+
+        if (selection == LB_ERR && !presetBrowserVisibleIndices_.empty()) {
+            selection = 0;
+        }
+
+        if (selection != LB_ERR && (previousKind == BrowserEntryKind::WeaponPreset || previousKind == BrowserEntryKind::None)) {
+            SendMessageW(list, LB_SETCURSEL, selection, 0);
+            activeBrowserEntryKind_ = BrowserEntryKind::WeaponPreset;
+            activeBrowserEntryIndex_ = presetBrowserVisibleIndices_[static_cast<std::size_t>(selection)];
+        } else if (activeBrowserEntryKind_ == BrowserEntryKind::WeaponPreset) {
+            activeBrowserEntryKind_ = BrowserEntryKind::None;
+            activeBrowserEntryIndex_ = 0;
+        }
+    }
+
+    void PopulateMatchPackBrowserList() {
+        HWND list = FindControl(IDC_BROWSER_MATCH_PACK_LIST);
+        if (list == nullptr) {
+            return;
+        }
+
+        const BrowserEntryKind previousKind = activeBrowserEntryKind_;
+        std::wstring previousName;
+        if (activeBrowserEntryKind_ == BrowserEntryKind::MatchPack) {
+            if (const BrowserEntry* active = GetActiveBrowserEntry()) {
+                previousName = active->name;
+            }
+        }
+
+        ListBox_ResetContent(list);
+        for (std::size_t index = 0; index < matchPackBrowserEntries_.size(); ++index) {
+            const BrowserEntry& entry = matchPackBrowserEntries_[index];
+            std::wstring label = entry.name;
+            if (!entry.category.empty()) {
+                label += L" [" + entry.category + L"]";
+            }
+
+            const int row = static_cast<int>(SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str())));
+            if (row >= 0) {
+                SendMessageW(list, LB_SETITEMDATA, row, static_cast<LPARAM>(index));
+            }
+        }
+
+        int selection = LB_ERR;
+        for (int row = 0; row < static_cast<int>(matchPackBrowserEntries_.size()); ++row) {
+            const BrowserEntry& entry = matchPackBrowserEntries_[static_cast<std::size_t>(row)];
+            if (!previousName.empty() && entry.name == previousName) {
+                selection = row;
+                break;
+            }
+        }
+
+        if (selection == LB_ERR && !matchPackBrowserEntries_.empty()) {
+            selection = 0;
+        }
+
+        if (selection != LB_ERR && (previousKind == BrowserEntryKind::MatchPack || previousKind == BrowserEntryKind::None)) {
+            SendMessageW(list, LB_SETCURSEL, selection, 0);
+            activeBrowserEntryKind_ = BrowserEntryKind::MatchPack;
+            activeBrowserEntryIndex_ = static_cast<std::size_t>(selection);
+        } else if (activeBrowserEntryKind_ == BrowserEntryKind::MatchPack) {
+            activeBrowserEntryKind_ = BrowserEntryKind::None;
+            activeBrowserEntryIndex_ = 0;
+        }
+    }
+
+    const BrowserEntry* GetActiveBrowserEntry() const {
+        switch (activeBrowserEntryKind_) {
+        case BrowserEntryKind::WeaponPreset:
+            return activeBrowserEntryIndex_ < presetBrowserEntries_.size() ? &presetBrowserEntries_[activeBrowserEntryIndex_] : nullptr;
+        case BrowserEntryKind::MatchPack:
+            return activeBrowserEntryIndex_ < matchPackBrowserEntries_.size() ? &matchPackBrowserEntries_[activeBrowserEntryIndex_] : nullptr;
+        default:
+            return nullptr;
+        }
+    }
+
+    void CapturePresetBrowserSelection() {
+        HWND list = FindControl(IDC_BROWSER_PRESET_LIST);
+        if (list == nullptr) {
+            return;
+        }
+
+        const int row = static_cast<int>(SendMessageW(list, LB_GETCURSEL, 0, 0));
+        if (row == LB_ERR) {
+            return;
+        }
+
+        const LRESULT itemData = SendMessageW(list, LB_GETITEMDATA, row, 0);
+        if (itemData == LB_ERR) {
+            return;
+        }
+
+        activeBrowserEntryKind_ = BrowserEntryKind::WeaponPreset;
+        activeBrowserEntryIndex_ = static_cast<std::size_t>(itemData);
+    }
+
+    void CaptureMatchPackBrowserSelection() {
+        HWND list = FindControl(IDC_BROWSER_MATCH_PACK_LIST);
+        if (list == nullptr) {
+            return;
+        }
+
+        const int row = static_cast<int>(SendMessageW(list, LB_GETCURSEL, 0, 0));
+        if (row == LB_ERR) {
+            return;
+        }
+
+        const LRESULT itemData = SendMessageW(list, LB_GETITEMDATA, row, 0);
+        if (itemData == LB_ERR) {
+            return;
+        }
+
+        activeBrowserEntryKind_ = BrowserEntryKind::MatchPack;
+        activeBrowserEntryIndex_ = static_cast<std::size_t>(itemData);
+    }
+
+    std::wstring BuildBrowserDetailsText(const BrowserEntry* entry) {
+        if (entry == nullptr) {
+            return L"Select a preset or match pack to preview it inside the editor.";
+        }
+
+        std::wstring details;
+        details += L"Name: " + entry->name + L"\r\n";
+        details += L"Type: " + std::wstring(entry->kind == BrowserEntryKind::WeaponPreset ? L"weapon preset" : L"match pack") + L"\r\n";
+        if (!entry->category.empty()) {
+            details += L"Category: " + entry->category + L"\r\n";
+        }
+        if (!entry->description.empty()) {
+            details += L"Description: " + entry->description + L"\r\n";
+        }
+        if (!entry->tags.empty()) {
+            details += L"Tags: " + entry->tags + L"\r\n";
+        }
+        if (!entry->notes.empty()) {
+            details += L"Notes: " + entry->notes + L"\r\n";
+        }
+        if (!entry->sourcePath.empty()) {
+            details += L"Source: " + entry->sourcePath + L"\r\n";
+        }
+        if (!entry->referencedCfgPath.empty()) {
+            details += L"Referenced cfg: " + entry->referencedCfgPath + L"\r\n";
+        }
+        details += L"Cvar count: " + std::to_wstring(entry->cvars.size()) + L"\r\n";
+
+        int previewCount = 0;
+        for (const auto& [name, value] : entry->cvars) {
+            if (previewCount++ >= 10) {
+                details += L"...";
+                break;
+            }
+
+            details += name + L" = " + value + L"\r\n";
+        }
+
+        return details;
+    }
+
+    std::wstring BuildBrowserDiffText(const BrowserEntry* entry) {
+        if (entry == nullptr) {
+            return L"Diff preview appears here after selecting a preset or match pack.";
+        }
+
+        SyncDocumentFromControls();
+        const hlcfg::CvarMap currentCvars = hlcfg::BuildKnownCvarMap(document_);
+
+        std::wstring diff;
+        int changedCount = 0;
+        int unchangedCount = 0;
+        int unknownCount = 0;
+        for (const auto& [name, incomingValue] : entry->cvars) {
+            const auto currentIt = currentCvars.find(name);
+            const bool known = currentIt != currentCvars.end();
+            const std::wstring currentValue = known ? currentIt->second : L"(not represented in the editor)";
+            if (!known) {
+                ++unknownCount;
+            }
+
+            if (currentValue == incomingValue) {
+                ++unchangedCount;
+                continue;
+            }
+
+            ++changedCount;
+            diff += name + L"\r\n";
+            diff += L"  current : " + currentValue + L"\r\n";
+            diff += L"  incoming: " + incomingValue + L"\r\n\r\n";
+        }
+
+        if (changedCount == 0) {
+            diff = L"The selected entry already matches the current project for all represented cvars.";
+            if (unchangedCount > 0) {
+                diff += L"\r\n\r\nMatched cvars: " + std::to_wstring(unchangedCount);
+            }
+        } else {
+            diff += L"Changed cvars: " + std::to_wstring(changedCount);
+            diff += L"\r\nMatched cvars: " + std::to_wstring(unchangedCount);
+        }
+
+        if (unknownCount > 0) {
+            diff += L"\r\nUnknown-to-editor cvars: " + std::to_wstring(unknownCount);
+        }
+
+        return diff;
+    }
+
+    bool BuildBrowserApplyCommand(std::wstring& command, std::wstring& details) {
+        const std::wstring liveModFolder = GetLiveModFolder();
+        if (liveModFolder.empty()) {
+            details = L"Live mod root is unresolved. Quick export first needs a valid Half-Life root.";
+            return false;
+        }
+
+        hlcfg::ProjectDocument exportDocument;
+        PrepareDocumentForExport(exportDocument, &liveModFolder);
+
+        hlcfg::ExportResult result;
+        std::wstring errorMessage;
+        if (!hlcfg::BuildExportResult(exportDocument, environment_, result, errorMessage)) {
+            details = errorMessage;
+            return false;
+        }
+
+        if (!hlcfg::Trimmed(exportDocument.matchPack.name).empty() && !result.matchPackPath.empty()) {
+            command = L"exp_matchcfg_apply " + hlcfg::Trimmed(exportDocument.matchPack.name);
+            details = L"Quick export will write cfg plus match-pack sidecar.";
+            return true;
+        }
+
+        command = L"exp_cfg_apply " + std::filesystem::path(result.exportPath).filename().wstring();
+        details = L"Quick export will write a plain cfg to the live mod root.";
+        return true;
+    }
+
+    void RefreshBrowserPanels() {
+        const BrowserEntry* entry = GetActiveBrowserEntry();
+        const bool wasLoadingControls = loadingControls_;
+        loadingControls_ = true;
+        SetTextValue(IDC_BROWSER_DETAILS, BuildBrowserDetailsText(entry));
+        SetTextValue(IDC_BROWSER_DIFF, BuildBrowserDiffText(entry));
+        std::wstring command;
+        std::wstring details;
+        if (BuildBrowserApplyCommand(command, details)) {
+            SetTextValue(IDC_BROWSER_APPLY_COMMAND, command);
+            if (lastBrowserStatus_.empty()) {
+                SetTextValue(IDC_BROWSER_STATUS, details);
+            }
+        } else {
+            SetTextValue(IDC_BROWSER_APPLY_COMMAND, L"(quick export target unresolved)");
+            if (lastBrowserStatus_.empty()) {
+                SetTextValue(IDC_BROWSER_STATUS, details);
+            }
+        }
+        loadingControls_ = wasLoadingControls;
+    }
+
+    void RefreshBrowserControls() {
+        PopulatePresetBrowserList();
+        PopulateMatchPackBrowserList();
+        if (lastBrowserStatus_.empty()) {
+            lastBrowserStatus_ = L"Select a preset or match pack, review the diff, then load it into the current project.";
+        }
+        RefreshBrowserPanels();
+        SetBrowserStatus(lastBrowserStatus_);
+    }
+
+    bool ConfirmBrowserLoad(const BrowserEntry& entry) {
+        if (!dirty_) {
+            return true;
+        }
+
+        std::wstring message = L"Unsaved changes are present.\n\nLoading ";
+        message += entry.name;
+        message += L" will merge its cvars into the current project and overwrite matching fields.\n\nContinue?";
+        return MessageBoxW(hwnd_, message.c_str(), kWindowTitle, MB_ICONWARNING | MB_YESNO) == IDYES;
+    }
+
+    void ApplyBrowserEntryToDocument(const BrowserEntry& entry) {
+        SyncDocumentFromControls();
+
+        const hlcfg::ProjectDocument defaultProject = hlcfg::CreateDefaultProject();
+        const std::wstring previousSuggested = BuildSuggestedCfgFileName(document_);
+        const std::wstring trimmedProjectName = hlcfg::Trimmed(document_.metadata.projectName);
+        const std::wstring defaultProjectName = hlcfg::Trimmed(defaultProject.metadata.projectName);
+        if (trimmedProjectName.empty() || trimmedProjectName == defaultProjectName) {
+            document_.metadata.projectName = entry.name;
+        }
+
+        if (entry.kind == BrowserEntryKind::WeaponPreset && !entry.category.empty()) {
+            document_.general.weaponUnderTest = entry.category;
+        }
+        if (entry.kind == BrowserEntryKind::MatchPack) {
+            document_.matchPack.name = entry.name;
+            document_.matchPack.description = entry.description;
+            document_.matchPack.tags = entry.tags;
+        }
+
+        std::vector<std::wstring> unknownCvars;
+        hlcfg::MergeKnownCvarMap(document_, entry.cvars, &unknownCvars);
+
+        const std::wstring currentFileName = hlcfg::EnsureCfgFileName(document_.exportSettings.cfgFileName);
+        if (hlcfg::Trimmed(document_.exportSettings.cfgFileName).empty() ||
+            currentFileName == defaultProject.exportSettings.cfgFileName ||
+            currentFileName == previousSuggested) {
+            document_.exportSettings.cfgFileName = BuildSuggestedCfgFileName(document_);
+        }
+
+        LoadDocumentToControls();
+        dirty_ = true;
+        UpdateWindowTitle();
+
+        std::wstring status = L"Loaded " + entry.name + L" into the current project.";
+        if (!unknownCvars.empty()) {
+            status += L"\r\nIgnored unknown cvars: " + std::to_wstring(unknownCvars.size());
+        }
+        SetBrowserStatus(status);
+    }
+
+    void LoadPresetBrowserEntry() {
+        const BrowserEntry* entry = GetActiveBrowserEntry();
+        if (entry == nullptr || entry->kind != BrowserEntryKind::WeaponPreset) {
+            SetBrowserStatus(L"Select a weapon preset first.");
+            return;
+        }
+
+        if (!ConfirmBrowserLoad(*entry)) {
+            SetBrowserStatus(L"Preset load cancelled.");
+            return;
+        }
+
+        ApplyBrowserEntryToDocument(*entry);
+    }
+
+    void LoadMatchPackBrowserEntry() {
+        const BrowserEntry* entry = GetActiveBrowserEntry();
+        if (entry == nullptr || entry->kind != BrowserEntryKind::MatchPack) {
+            SetBrowserStatus(L"Select a match pack first.");
+            return;
+        }
+
+        if (!ConfirmBrowserLoad(*entry)) {
+            SetBrowserStatus(L"Match-pack load cancelled.");
+            return;
+        }
+
+        ApplyBrowserEntryToDocument(*entry);
+    }
+
+    void OpenPresetBrowserFolder() {
+        const BrowserEntry* entry = GetActiveBrowserEntry();
+        if (entry != nullptr && entry->kind == BrowserEntryKind::WeaponPreset && !entry->sourcePath.empty()) {
+            OpenResolvedFolder(std::filesystem::path(entry->sourcePath).parent_path().wstring(), L"The preset folder could not be resolved.", L"Opened preset folder");
+            return;
+        }
+
+        const std::wstring category = GetPresetBrowserCategory();
+        std::filesystem::path folder = std::filesystem::path(environment_.repoRoot) / L"configs";
+        if (category != L"all") {
+            folder /= category + L"-presets";
+        }
+        OpenResolvedFolder(folder.wstring(), L"The preset folder could not be resolved.", L"Opened preset folder");
+    }
+
+    void OpenMatchPackBrowserFolder() {
+        const BrowserEntry* entry = GetActiveBrowserEntry();
+        if (entry != nullptr && entry->kind == BrowserEntryKind::MatchPack && !entry->sourcePath.empty()) {
+            OpenResolvedFolder(std::filesystem::path(entry->sourcePath).parent_path().wstring(), L"The match-pack folder could not be resolved.", L"Opened match-pack folder");
+            return;
+        }
+
+        std::wstring folder = environment_.matchPacksRoot;
+        if (folder.empty()) {
+            folder = (std::filesystem::path(environment_.repoRoot) / L"configs" / L"match-packs").wstring();
+        }
+        OpenResolvedFolder(folder, L"The match-pack folder could not be resolved.", L"Opened match-pack folder");
+    }
+
+    void CopyBrowserApplyCommand() {
+        std::wstring command;
+        std::wstring details;
+        if (!BuildBrowserApplyCommand(command, details)) {
+            SetBrowserStatus(details);
+            MessageBoxW(hwnd_, details.c_str(), kWindowTitle, MB_ICONWARNING | MB_OK);
+            return;
+        }
+
+        if (!CopyTextToClipboard(hwnd_, command)) {
+            SetBrowserStatus(L"Unable to copy the live apply command to the clipboard.");
+            MessageBoxW(hwnd_, L"Unable to copy the live apply command to the clipboard.", kWindowTitle, MB_ICONERROR | MB_OK);
+            return;
+        }
+
+        SetBrowserStatus(L"Copied live apply command:\r\n" + command);
+    }
+
+    void QuickExportAndCopyApplyCommand() {
+        const std::wstring liveModFolder = GetLiveModFolder();
+        if (liveModFolder.empty()) {
+            SetBrowserStatus(L"Quick export is unavailable because the live mod root is unresolved.");
+            MessageBoxW(hwnd_, L"Quick export is unavailable because the live mod root is unresolved.", kWindowTitle, MB_ICONWARNING | MB_OK);
+            return;
+        }
+
+        std::wstring commandBeforeExport;
+        std::wstring details;
+        if (!BuildBrowserApplyCommand(commandBeforeExport, details)) {
+            SetBrowserStatus(details);
+            MessageBoxW(hwnd_, details.c_str(), kWindowTitle, MB_ICONWARNING | MB_OK);
+            return;
+        }
+
+        if (!RunExportWorkflow(&liveModFolder, true)) {
+            RefreshBrowserPanels();
+            return;
+        }
+
+        std::wstring commandAfterExport;
+        if (!BuildBrowserApplyCommand(commandAfterExport, details)) {
+            SetBrowserStatus(details);
+            return;
+        }
+
+        if (!CopyTextToClipboard(hwnd_, commandAfterExport)) {
+            SetBrowserStatus(L"Quick export succeeded, but the apply command could not be copied.");
+            MessageBoxW(hwnd_, L"Quick export succeeded, but the apply command could not be copied.", kWindowTitle, MB_ICONWARNING | MB_OK);
+            return;
+        }
+
+        SetBrowserStatus(L"Quick export succeeded and copied:\r\n" + commandAfterExport);
+    }
+
     void LoadDocumentToControls() {
         loadingControls_ = true;
         lastSuggestedCfgFileName_ = BuildSuggestedCfgFileName(document_);
@@ -2157,6 +3093,7 @@ private:
         SetTextValue(IDC_EXPORT_FILE_NAME, document_.exportSettings.cfgFileName);
         RefreshResolvedExportInfo();
         RefreshMatchSummary();
+        RefreshBrowserControls();
 
         if (lastActionStatus_.empty()) {
             lastActionStatus_ = L"Ready.\n\nQuick export target:\n" + BuildQuickExportTargetPathPreview();
@@ -2602,6 +3539,12 @@ private:
     std::wstring currentProjectPath_;
     std::wstring lastSuggestedCfgFileName_;
     std::wstring lastActionStatus_;
+    std::wstring lastBrowserStatus_;
+    std::vector<BrowserEntry> presetBrowserEntries_;
+    std::vector<BrowserEntry> matchPackBrowserEntries_;
+    std::vector<std::size_t> presetBrowserVisibleIndices_;
+    BrowserEntryKind activeBrowserEntryKind_ = BrowserEntryKind::None;
+    std::size_t activeBrowserEntryIndex_ = 0;
     bool dirty_ = false;
     bool loadingControls_ = false;
 };

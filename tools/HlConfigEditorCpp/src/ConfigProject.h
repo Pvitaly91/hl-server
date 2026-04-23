@@ -1,6 +1,8 @@
 #pragma once
 
+#include <map>
 #include <string>
+#include <vector>
 
 namespace hlcfg {
 
@@ -232,11 +234,16 @@ struct ProjectDocument {
     ArmorEquipmentConfig armorEquipment;
 };
 
+using CvarMap = std::map<std::wstring, std::wstring>;
+
 ProjectDocument CreateDefaultProject();
 
 std::wstring Trimmed(const std::wstring& value);
 std::wstring EnsureProjectFileName(const std::wstring& value);
 std::wstring EnsureCfgFileName(const std::wstring& value);
+
+CvarMap BuildKnownCvarMap(const ProjectDocument& document);
+void MergeKnownCvarMap(ProjectDocument& document, const CvarMap& cvars, std::vector<std::wstring>* unknownCvars = nullptr);
 
 bool SaveProjectDocumentToFile(const ProjectDocument& document, const std::wstring& path, std::wstring& errorMessage);
 bool LoadProjectDocumentFromFile(const std::wstring& path, ProjectDocument& document, std::wstring& errorMessage);
