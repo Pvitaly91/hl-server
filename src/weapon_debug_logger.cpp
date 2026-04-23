@@ -1332,7 +1332,7 @@ void LogGlockLabDummyClear(CBaseEntity *pDummy, const char *reason)
 
     char timestamp[64];
     char originValue[64];
-    char line[1536];
+    char line[2048];
     FormatTimestamp(timestamp, sizeof(timestamp));
     FormatVector3(originValue, sizeof(originValue), pDummy != NULL && pDummy->pev != NULL ? pDummy->pev->origin : g_vecZero);
 
@@ -1443,7 +1443,7 @@ void LogAcceptedGlockPrimaryShot(CBasePlayer *pPlayer, const GlockAcceptedShotTe
         line,
         sizeof(line),
         _TRUNCATE,
-        "[weaponlog] type=accepted ts=%s map=%s player=\"%s\" entindex=%d userid=%d weapon=glock fire=primary experimental=%d tapfire=%d firstshot=%d spread=%.4f base=%.4f move_penalty=%.4f additional_spread=%.4f recovery_applied=%.4f shot_growth=%.4f next_additional_spread=%.4f pattern_mode=%d pattern_index=%d pattern_offset_x=%.4f pattern_offset_y=%.4f pattern_reset=%d total_additional_spread=%.4f movement_contribution=%.4f cadence_growth_contribution=%.4f shot_index=%d speed_ratio=%.3f speed2d=%.1f maxspeed=%.1f grounded=%d ducking=%d delta_prev=%s clip=%d",
+        "[weaponlog] type=accepted ts=%s map=%s player=\"%s\" entindex=%d userid=%d weapon=glock fire=primary experimental=%d tapfire=%d firstshot=%d spread=%.4f base=%.4f move_penalty=%.4f additional_spread=%.4f recovery_applied=%.4f shot_growth=%.4f next_additional_spread=%.4f cadence_mode=%d cadence_interval=%.4f cadence_penalty=%.4f cadence_reset=%d hold_penalty=%.4f pattern_mode=%d pattern_index=%d pattern_offset_x=%.4f pattern_offset_y=%.4f pattern_reset=%d total_additional_spread=%.4f movement_contribution=%.4f pattern_contribution=%.4f cadence_contribution=%.4f cadence_growth_contribution=%.4f shot_index=%d speed_ratio=%.3f speed2d=%.1f maxspeed=%.1f grounded=%d ducking=%d delta_prev=%s clip=%d",
         timestamp,
         SanitizeLogValue(GetSafeMapName()).c_str(),
         GetSafePlayerName(pPlayer).c_str(),
@@ -1459,6 +1459,11 @@ void LogAcceptedGlockPrimaryShot(CBasePlayer *pPlayer, const GlockAcceptedShotTe
         telemetry.recoveryApplied,
         telemetry.shotGrowth,
         telemetry.nextAdditionalSpread,
+        telemetry.cadenceModeActive ? 1 : 0,
+        telemetry.cadenceInterval,
+        telemetry.cadencePenalty,
+        telemetry.cadenceResetApplied ? 1 : 0,
+        telemetry.holdPenalty,
         telemetry.patternModeActive ? 1 : 0,
         telemetry.patternIndex,
         telemetry.patternOffsetX,
@@ -1466,6 +1471,8 @@ void LogAcceptedGlockPrimaryShot(CBasePlayer *pPlayer, const GlockAcceptedShotTe
         telemetry.patternResetApplied ? 1 : 0,
         telemetry.totalAdditionalSpread,
         telemetry.movementContribution,
+        telemetry.patternContribution,
+        telemetry.cadenceContribution,
         telemetry.cadenceGrowthContribution,
         telemetry.cadenceShotIndex,
         telemetry.speedRatio,
@@ -1553,7 +1560,7 @@ void LogAccepted357PrimaryShot(CBasePlayer *pPlayer, const Weapon357AcceptedShot
 
     char timestamp[64];
     char deltaPreviousShot[32];
-    char line[1024];
+    char line[1536];
     FormatTimestamp(timestamp, sizeof(timestamp));
 
     if (telemetry.hasPreviousAcceptedShot)
@@ -1569,7 +1576,7 @@ void LogAccepted357PrimaryShot(CBasePlayer *pPlayer, const Weapon357AcceptedShot
         line,
         sizeof(line),
         _TRUNCATE,
-        "[weaponlog] type=accepted ts=%s map=%s player=\"%s\" entindex=%d userid=%d weapon=357 fire=primary experimental=%d profile=\"%s\" firstshot=%d spread=%.4f base=%.4f move_penalty=%.4f speed2d=%.1f maxspeed=%.1f grounded=%d ducking=%d delta_prev=%s clip=%d",
+        "[weaponlog] type=accepted ts=%s map=%s player=\"%s\" entindex=%d userid=%d weapon=357 fire=primary experimental=%d profile=\"%s\" firstshot=%d spread=%.4f base=%.4f move_penalty=%.4f additional_spread=%.4f recovery_applied=%.4f cadence_mode=%d cadence_interval=%.4f cadence_penalty=%.4f cadence_reset=%d hold_penalty=%.4f total_additional_spread=%.4f movement_contribution=%.4f pattern_contribution=%.4f cadence_contribution=%.4f speed2d=%.1f maxspeed=%.1f grounded=%d ducking=%d delta_prev=%s shot_index=%d clip=%d",
         timestamp,
         SanitizeLogValue(GetSafeMapName()).c_str(),
         GetSafePlayerName(pPlayer).c_str(),
@@ -1581,11 +1588,23 @@ void LogAccepted357PrimaryShot(CBasePlayer *pPlayer, const Weapon357AcceptedShot
         telemetry.spread,
         telemetry.baseSpread,
         telemetry.movementPenalty,
+        telemetry.additionalSpread,
+        telemetry.recoveryApplied,
+        telemetry.cadenceModeActive ? 1 : 0,
+        telemetry.cadenceInterval,
+        telemetry.cadencePenalty,
+        telemetry.cadenceResetApplied ? 1 : 0,
+        telemetry.holdPenalty,
+        telemetry.totalAdditionalSpread,
+        telemetry.movementContribution,
+        telemetry.patternContribution,
+        telemetry.cadenceContribution,
         telemetry.horizontalSpeed,
         telemetry.maxSpeedForNormalization,
         telemetry.grounded ? 1 : 0,
         telemetry.ducking ? 1 : 0,
         deltaPreviousShot,
+        telemetry.cadenceShotIndex,
         telemetry.clipAfterShot);
 
     WriteTelemetryLine(line);

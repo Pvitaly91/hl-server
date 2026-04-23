@@ -18,6 +18,12 @@ void ApplyGlockDefaults(ProjectDocument& document) {
     document.glock.primaryShotGrowth = L"0.0800";
     document.glock.primaryFirstShotSpeedThreshold = L"45.0";
     document.glock.primaryMaxSpread = L"0.1800";
+    document.glock.cadenceMode = false;
+    document.glock.primaryCadenceCycleTime = L"0.4200";
+    document.glock.primaryClickPenalty = L"0.0350";
+    document.glock.primaryClickPenaltyScale = L"1.4000";
+    document.glock.primaryClickResetTime = L"0.5000";
+    document.glock.primaryHoldPenaltyScale = L"0.5000";
     document.glock.patternMode = false;
     document.glock.patternScaleX = L"0.2000";
     document.glock.patternScaleY = L"0.3500";
@@ -67,6 +73,12 @@ void Apply357Defaults(ProjectDocument& document) {
     document.weapon357.primaryFirstShotSpeedThreshold = L"25.0";
     document.weapon357.primarySpreadRecovery = L"0.7500";
     document.weapon357.primaryMaxSpread = L"0.1200";
+    document.weapon357.cadenceMode = false;
+    document.weapon357.primaryCadenceCycleTime = L"1.0000";
+    document.weapon357.primaryClickPenalty = L"0.0500";
+    document.weapon357.primaryClickPenaltyScale = L"1.2500";
+    document.weapon357.primaryClickResetTime = L"1.2000";
+    document.weapon357.primaryHoldPenaltyScale = L"0.4500";
     document.weapon357.primaryDamage = L"40.0";
     document.weapon357.primaryHeadshotScale = L"2.5";
     document.weapon357.primaryHeadshotLethal = false;
@@ -183,19 +195,25 @@ void ApplyGlockPreset(ProjectDocument& document, const std::wstring& presetName)
         return;
     }
 
-    if (presetName == L"cs_like_soft" || presetName == L"glock_cs_like_soft" || presetName == L"cs_mobile" || presetName == L"glock_pattern_soft") {
+    if (presetName == L"cs_like_soft" || presetName == L"glock_cs_like_soft" || presetName == L"cs_mobile" || presetName == L"glock_pattern_soft" || presetName == L"glock_cadence_soft") {
         document.glock.tapFire = false;
         document.glock.firstShotAccuracy = true;
         document.glock.spreadRecovery = L"0.6500";
         document.glock.moveSpreadScale = L"1.0";
-        document.glock.profileName = presetName == L"glock_pattern_soft" ? L"glock_pattern_soft" : L"glock_cs_like_soft";
+        document.glock.profileName = presetName == L"glock_pattern_soft" ? L"glock_pattern_soft" : (presetName == L"glock_cadence_soft" ? L"glock_cadence_soft" : L"glock_cs_like_soft");
         document.glock.primaryBaseSpread = L"0.0105";
         document.glock.primaryGroundMovePenalty = L"0.0650";
         document.glock.primaryAirMovePenalty = L"0.1000";
         document.glock.primaryDuckPenaltyScale = L"0.55";
-        document.glock.primaryShotGrowth = L"0.0550";
+        document.glock.primaryShotGrowth = L"0.0450";
         document.glock.primaryFirstShotSpeedThreshold = L"60.0";
         document.glock.primaryMaxSpread = L"0.1750";
+        document.glock.cadenceMode = true;
+        document.glock.primaryCadenceCycleTime = L"0.4300";
+        document.glock.primaryClickPenalty = L"0.0300";
+        document.glock.primaryClickPenaltyScale = L"1.2500";
+        document.glock.primaryClickResetTime = L"0.5500";
+        document.glock.primaryHoldPenaltyScale = L"0.3500";
         document.glock.patternMode = true;
         document.glock.patternScaleX = L"0.1700";
         document.glock.patternScaleY = L"0.2800";
@@ -207,19 +225,25 @@ void ApplyGlockPreset(ProjectDocument& document, const std::wstring& presetName)
         return;
     }
 
-    if (presetName == L"cs_tight" || presetName == L"glock_cs_like_tight" || presetName == L"glock_pattern_tight") {
+    if (presetName == L"cs_tight" || presetName == L"glock_cs_like_tight" || presetName == L"glock_pattern_tight" || presetName == L"glock_cadence_tight") {
         document.glock.tapFire = false;
         document.glock.firstShotAccuracy = true;
         document.glock.spreadRecovery = L"0.8500";
         document.glock.moveSpreadScale = L"1.0";
-        document.glock.profileName = presetName == L"glock_pattern_tight" ? L"glock_pattern_tight" : L"glock_cs_like_tight";
+        document.glock.profileName = presetName == L"glock_pattern_tight" ? L"glock_pattern_tight" : (presetName == L"glock_cadence_tight" ? L"glock_cadence_tight" : L"glock_cs_like_tight");
         document.glock.primaryBaseSpread = L"0.0085";
         document.glock.primaryGroundMovePenalty = L"0.0950";
         document.glock.primaryAirMovePenalty = L"0.1450";
         document.glock.primaryDuckPenaltyScale = L"0.52";
-        document.glock.primaryShotGrowth = L"0.0900";
+        document.glock.primaryShotGrowth = L"0.0500";
         document.glock.primaryFirstShotSpeedThreshold = L"35.0";
         document.glock.primaryMaxSpread = L"0.1650";
+        document.glock.cadenceMode = true;
+        document.glock.primaryCadenceCycleTime = L"0.4700";
+        document.glock.primaryClickPenalty = L"0.0400";
+        document.glock.primaryClickPenaltyScale = L"1.6000";
+        document.glock.primaryClickResetTime = L"0.6000";
+        document.glock.primaryHoldPenaltyScale = L"0.6000";
         document.glock.patternMode = true;
         document.glock.patternScaleX = L"0.2400";
         document.glock.patternScaleY = L"0.4200";
@@ -244,6 +268,12 @@ void ApplyGlockPreset(ProjectDocument& document, const std::wstring& presetName)
         document.glock.primaryShotGrowth = L"0.0850";
         document.glock.primaryFirstShotSpeedThreshold = L"25.0";
         document.glock.primaryMaxSpread = L"0.14";
+        document.glock.cadenceMode = true;
+        document.glock.primaryCadenceCycleTime = L"0.4600";
+        document.glock.primaryClickPenalty = L"0.0380";
+        document.glock.primaryClickPenaltyScale = L"1.5000";
+        document.glock.primaryClickResetTime = L"0.5500";
+        document.glock.primaryHoldPenaltyScale = L"0.5000";
         document.glock.patternMode = true;
         document.glock.patternScaleX = L"0.2100";
         document.glock.patternScaleY = L"0.3600";
@@ -333,8 +363,8 @@ void Apply357Preset(ProjectDocument& document, const std::wstring& presetName) {
         return;
     }
 
-    if (presetName == L"precision_test") {
-        document.weapon357.profileName = L"precision_test";
+    if (presetName == L"precision_test" || presetName == L"357_precision_duel") {
+        document.weapon357.profileName = presetName == L"357_precision_duel" ? L"357_precision_duel" : L"precision_test";
         document.weapon357.primaryBaseSpread = L"0.0045";
         document.weapon357.primaryGroundMovePenalty = L"0.0150";
         document.weapon357.primaryAirMovePenalty = L"0.0600";
@@ -343,6 +373,12 @@ void Apply357Preset(ProjectDocument& document, const std::wstring& presetName) {
         document.weapon357.primaryFirstShotSpeedThreshold = L"18.0";
         document.weapon357.primarySpreadRecovery = L"0.6500";
         document.weapon357.primaryMaxSpread = L"0.0800";
+        document.weapon357.cadenceMode = true;
+        document.weapon357.primaryCadenceCycleTime = L"1.0500";
+        document.weapon357.primaryClickPenalty = L"0.0350";
+        document.weapon357.primaryClickPenaltyScale = L"1.2500";
+        document.weapon357.primaryClickResetTime = L"1.2500";
+        document.weapon357.primaryHoldPenaltyScale = L"0.3000";
         document.weapon357.primaryDamage = L"42.0";
         document.weapon357.primaryHeadshotScale = L"2.8";
         document.weapon357.primaryHeadshotLethal = false;
@@ -350,8 +386,8 @@ void Apply357Preset(ProjectDocument& document, const std::wstring& presetName) {
         return;
     }
 
-    if (presetName == L"headshot_test") {
-        document.weapon357.profileName = L"headshot_test";
+    if (presetName == L"headshot_test" || presetName == L"357_cadence_headshot") {
+        document.weapon357.profileName = presetName == L"357_cadence_headshot" ? L"357_cadence_headshot" : L"headshot_test";
         document.weapon357.primaryBaseSpread = L"0.0060";
         document.weapon357.primaryGroundMovePenalty = L"0.0180";
         document.weapon357.primaryAirMovePenalty = L"0.0700";
@@ -360,6 +396,12 @@ void Apply357Preset(ProjectDocument& document, const std::wstring& presetName) {
         document.weapon357.primaryFirstShotSpeedThreshold = L"22.0";
         document.weapon357.primarySpreadRecovery = L"0.7000";
         document.weapon357.primaryMaxSpread = L"0.0900";
+        document.weapon357.cadenceMode = true;
+        document.weapon357.primaryCadenceCycleTime = L"1.1000";
+        document.weapon357.primaryClickPenalty = L"0.0450";
+        document.weapon357.primaryClickPenaltyScale = L"1.4000";
+        document.weapon357.primaryClickResetTime = L"1.3500";
+        document.weapon357.primaryHoldPenaltyScale = L"0.4000";
         document.weapon357.primaryDamage = L"55.0";
         document.weapon357.primaryHeadshotScale = L"4.0";
         document.weapon357.primaryHeadshotLethal = true;

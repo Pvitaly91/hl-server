@@ -568,6 +568,8 @@ public:
 
 private:
 	float m_flLastAcceptedPrimaryShotTime;
+	float m_flPrimaryCadenceSpreadAccumulator;
+	int m_iPrimaryCadenceShotCount;
 	unsigned short m_usFirePython;
 };
 

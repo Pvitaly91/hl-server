@@ -71,10 +71,20 @@ For the current Glock and MP5 feel pass, the editor now uses more direct tuning 
 
 The recommended preset buttons and names for this pass are:
 
-- Glock: `glock_pattern_soft`, `glock_pattern_tight`
+- Glock: `glock_cadence_soft`, `glock_cadence_tight`
+- 357: `357_precision_duel`, `357_cadence_headshot`
 - MP5: `mp5_pattern_burst`, `mp5_pattern_mobile`
 
 The intent is to make it obvious that the editor is tuning cadence growth plus recovery, with an optional deterministic follow-up pattern layered on top, instead of forcing a hard server-only tap-fire gate as the only way to get a skillful pistol or SMG feel.
+
+For the current pistol cadence pass, the Glock and `357` tabs now also expose:
+
+- `Cadence-sensitive mode`
+- `Ideal shot cycle time`
+- `Fast-click penalty`
+- `Fast-click penalty scale`
+- `Cadence reset time`
+- `Hold/spam penalty`
 
 The same `General` page now also carries optional match-pack metadata:
 
@@ -121,6 +131,7 @@ The `Export` tab now emphasizes the simple live-mod workflow first:
 - `Copy launcher` still works when the exported cfg resolves to a live-mod-relative path.
 - Exported cfgs now include the current round, team-round, buy, armor, and helmet sections when those settings are present in the project, so one exported file can represent a full live match setup.
 - Exported Glock and MP5 cfgs now also include the deterministic pattern cvars when pattern mode is enabled.
+- Exported Glock and `357` cfgs now include the cadence cvars when cadence mode is enabled.
 
 The default cfg filename is derived from the current project/config name so the common path does not start from a generic placeholder. Example defaults include `editor_glock_simple.cfg`, `editor_mp5_simple.cfg`, `editor_357_test.cfg`, and `editor_shotgun_test.cfg`.
 

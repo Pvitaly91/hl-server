@@ -22,6 +22,7 @@ The core exposes small spread and damage profiles plus helper functions that com
 
 - normalized movement state from the firing player
 - final spread after movement, duck, first-shot, and recovery inputs
+- cadence-sensitive follow-up penalties that reward patient clicks and decay after idle time
 - optional deterministic per-shot pattern offsets with idle reset
 - shared damage and headshot handling for dummy and non-dummy traces
 
@@ -31,7 +32,7 @@ The refactor does not force fake symmetry where the weapons behave differently b
 
 - Glock still owns optional legacy tap-fire semantics and its primary-attack wrapper.
 - MP5 still owns burst growth, burst spread accumulation, and MP5-specific lab loadout behavior.
-- 357 still owns its single-shot fire wrapper, cadence, and 357-specific lab loadout behavior.
+- 357 still owns its single-shot fire wrapper and 357-specific lab loadout behavior while reusing the shared cadence and spread helpers.
 - Shotgun keeps primary-fire pellet count, per-pellet traces, and pellet-hit aggregation in the shotgun wrapper plus telemetry layer. Only the common spread and per-pellet damage profile math moved into the shared core.
 - Target dummy, cfg command, launcher, and editor workflows are unchanged.
 
@@ -49,8 +50,10 @@ The user-facing tuning surface was kept stable:
 This repository is explicitly improving stock-client-compatible HLDM gameplay, not chasing a full Counter-Strike clone.
 
 - Glock now favors accurate single shots through first-shot qualification plus cadence-grown inaccuracy that recovers over time.
+- Glock now also has an explicit cadence mode that measures time since the previous accepted shot and adds a fast-click plus hold-fire penalty instead of relying on a hard tap-fire gate as the main skill lever.
 - Glock can now optionally layer a deterministic follow-up pattern over that cadence model so second and third shots are learnable instead of feeling like a pure random cone.
 - The old hard tap-fire gate can still exist as a legacy switch, but it is no longer the recommended path for skillful pistol feel.
+- 357 now uses the same cadence model so patient clicks stay precise, rushed follow-up clicks add a visible penalty, and waiting long enough resets the cadence state.
 - MP5 now favors controlled bursts: repeated accepted shots add burst spread, waiting lets that extra spread decay, and long held fire is meant to bloom more than short bursts.
 - MP5 can now optionally layer a deterministic early-burst pattern over the same shared spread and recovery model so the opening spray shape is more learnable.
 - Movement, air state, crouch stability, and readable headshot damage remain part of the shared model.
@@ -58,15 +61,18 @@ This repository is explicitly improving stock-client-compatible HLDM gameplay, n
 
 ## Current Recommended Presets
 
-- Glock: `glock_pattern_soft` for a softer mobile pistol feel, `glock_pattern_tight` for a stricter single-shot-focused feel with a stronger learnable follow-up pattern.
+- Glock: `glock_cadence_soft` for a softer cadence-sensitive pistol feel, `glock_cadence_tight` for a stricter rhythm-focused single-shot path, and `glock_pattern_tight` when you also want a stronger learnable follow-up pattern.
+- 357: `357_precision_duel` for precise duel pacing and `357_cadence_headshot` for stronger headshot-oriented live validation.
 - MP5: `mp5_pattern_burst` for the main "short burst beats spray" path, `mp5_pattern_mobile` for a lighter movement-oriented variant.
 
 Relevant new cvars for this pass:
 
+- Glock cadence: `sv_exp_glock_primary_cadence_mode`, `sv_exp_glock_primary_cycle_time`, `sv_exp_glock_primary_click_penalty`, `sv_exp_glock_primary_click_penalty_scale`, `sv_exp_glock_primary_click_reset_time`, `sv_exp_glock_primary_hold_penalty_scale`
+- 357 cadence: `sv_exp_357_primary_cadence_mode`, `sv_exp_357_primary_cycle_time`, `sv_exp_357_primary_click_penalty`, `sv_exp_357_primary_click_penalty_scale`, `sv_exp_357_primary_click_reset_time`, `sv_exp_357_primary_hold_penalty_scale`
 - Glock: `sv_exp_glock_pattern_mode`, `sv_exp_glock_pattern_scale_x`, `sv_exp_glock_pattern_scale_y`, `sv_exp_glock_pattern_reset_time`, `sv_exp_glock_pattern_max_index`
 - MP5: `sv_exp_mp5_pattern_mode`, `sv_exp_mp5_pattern_scale_x`, `sv_exp_mp5_pattern_scale_y`, `sv_exp_mp5_pattern_reset_time`, `sv_exp_mp5_pattern_max_index`
 
-Pattern mode is still a server-side approximation. It does not add client-side recoil animation or a custom prediction model.
+Cadence mode and pattern mode are still server-side approximations. They do not add client-side recoil animation or a custom prediction model.
 
 That keeps the live-lab workflow unchanged:
 
@@ -142,6 +148,12 @@ On `2026-04-23`, deterministic pattern mode was verified in fresh client-attache
 - Glock telemetry in `weapon-debug-20260423-010332.log` showed `pattern_mode=1`, pattern indices progressing from `1` to `3` across consecutive careful follow-up shots, and later `pattern_reset=1` after an idle pause.
 - MP5 telemetry in `weapon-debug-20260423-010419.log` showed `pattern_mode=1`, a learnable early burst progressing through indices `1` to `5`, and repeated `pattern_reset=1` events after short pauses between bursts.
 - The analyzer summaries for both logs surfaced nonzero pattern evidence counts, pattern index ranges, and reset counts, so the deterministic-pattern layer is inspectable in the normal live tuning workflow.
+
+On `2026-04-23`, Glock and 357 cadence mode was verified in fresh client-attached sessions on `crossfire`:
+
+- Glock cadence telemetry showed `cadence_mode=1`, changing `cadence_interval`, nonzero `cadence_penalty`, and later `cadence_reset=1` after an idle pause under an editor-exported cadence cfg.
+- 357 cadence telemetry showed the same cadence fields progressing across consecutive accepted clicks, then resetting after a longer pause, again without client DLL changes.
+- The analyzer summary for those sessions surfaced cadence evidence counts, cadence-reset counts, and penalty ranges so the cadence layer is inspectable in the normal live workflow.
 
 Shotgun integration is present in the same shared-core path, including editor export, cfg apply, lab loadout wiring, telemetry, and analyzer support. On `2026-04-21`, the remaining blocker was not the server-side shotgun code path itself but unstable live client launches around Steam initialization. The strongest live shotgun evidence from that date was:
 

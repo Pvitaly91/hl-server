@@ -460,6 +460,12 @@ cvar_t sv_exp_glock_primary_duck_penalty_scale = {"sv_exp_glock_primary_duck_pen
 cvar_t sv_exp_glock_primary_shot_growth = {"sv_exp_glock_primary_shot_growth", "0.0800", FCVAR_SERVER};
 cvar_t sv_exp_glock_primary_first_shot_speed_threshold = {"sv_exp_glock_primary_first_shot_speed_threshold", "45.0", FCVAR_SERVER};
 cvar_t sv_exp_glock_primary_max_spread = {"sv_exp_glock_primary_max_spread", "0.1800", FCVAR_SERVER};
+cvar_t sv_exp_glock_primary_cadence_mode = {"sv_exp_glock_primary_cadence_mode", "0", FCVAR_SERVER};
+cvar_t sv_exp_glock_primary_cycle_time = {"sv_exp_glock_primary_cycle_time", "0.4200", FCVAR_SERVER};
+cvar_t sv_exp_glock_primary_click_penalty = {"sv_exp_glock_primary_click_penalty", "0.0350", FCVAR_SERVER};
+cvar_t sv_exp_glock_primary_click_penalty_scale = {"sv_exp_glock_primary_click_penalty_scale", "1.4000", FCVAR_SERVER};
+cvar_t sv_exp_glock_primary_click_reset_time = {"sv_exp_glock_primary_click_reset_time", "0.5000", FCVAR_SERVER};
+cvar_t sv_exp_glock_primary_hold_penalty_scale = {"sv_exp_glock_primary_hold_penalty_scale", "0.5000", FCVAR_SERVER};
 cvar_t sv_exp_glock_pattern_mode = {"sv_exp_glock_pattern_mode", "0", FCVAR_SERVER};
 cvar_t sv_exp_glock_pattern_scale_x = {"sv_exp_glock_pattern_scale_x", "0.2000", FCVAR_SERVER};
 cvar_t sv_exp_glock_pattern_scale_y = {"sv_exp_glock_pattern_scale_y", "0.3500", FCVAR_SERVER};
@@ -499,6 +505,12 @@ cvar_t sv_exp_357_primary_first_shot_accuracy = {"sv_exp_357_primary_first_shot_
 cvar_t sv_exp_357_primary_first_shot_speed_threshold = {"sv_exp_357_primary_first_shot_speed_threshold", "35.0", FCVAR_SERVER};
 cvar_t sv_exp_357_primary_spread_recovery = {"sv_exp_357_primary_spread_recovery", "0.6000", FCVAR_SERVER};
 cvar_t sv_exp_357_primary_max_spread = {"sv_exp_357_primary_max_spread", "0.1200", FCVAR_SERVER};
+cvar_t sv_exp_357_primary_cadence_mode = {"sv_exp_357_primary_cadence_mode", "0", FCVAR_SERVER};
+cvar_t sv_exp_357_primary_cycle_time = {"sv_exp_357_primary_cycle_time", "1.0000", FCVAR_SERVER};
+cvar_t sv_exp_357_primary_click_penalty = {"sv_exp_357_primary_click_penalty", "0.0500", FCVAR_SERVER};
+cvar_t sv_exp_357_primary_click_penalty_scale = {"sv_exp_357_primary_click_penalty_scale", "1.2500", FCVAR_SERVER};
+cvar_t sv_exp_357_primary_click_reset_time = {"sv_exp_357_primary_click_reset_time", "1.2000", FCVAR_SERVER};
+cvar_t sv_exp_357_primary_hold_penalty_scale = {"sv_exp_357_primary_hold_penalty_scale", "0.4500", FCVAR_SERVER};
 cvar_t sv_exp_357_primary_damage = {"sv_exp_357_primary_damage", "40.0", FCVAR_SERVER};
 cvar_t sv_exp_357_primary_headshot_scale = {"sv_exp_357_primary_headshot_scale", "3.0", FCVAR_SERVER};
 cvar_t sv_exp_357_primary_headshot_lethal = {"sv_exp_357_primary_headshot_lethal", "0", FCVAR_SERVER};
@@ -11803,6 +11815,12 @@ void RegisterFutureGameplayCvars()
     CVAR_REGISTER(&sv_exp_glock_primary_shot_growth);
     CVAR_REGISTER(&sv_exp_glock_primary_first_shot_speed_threshold);
     CVAR_REGISTER(&sv_exp_glock_primary_max_spread);
+    CVAR_REGISTER(&sv_exp_glock_primary_cadence_mode);
+    CVAR_REGISTER(&sv_exp_glock_primary_cycle_time);
+    CVAR_REGISTER(&sv_exp_glock_primary_click_penalty);
+    CVAR_REGISTER(&sv_exp_glock_primary_click_penalty_scale);
+    CVAR_REGISTER(&sv_exp_glock_primary_click_reset_time);
+    CVAR_REGISTER(&sv_exp_glock_primary_hold_penalty_scale);
     CVAR_REGISTER(&sv_exp_glock_pattern_mode);
     CVAR_REGISTER(&sv_exp_glock_pattern_scale_x);
     CVAR_REGISTER(&sv_exp_glock_pattern_scale_y);
@@ -11842,6 +11860,12 @@ void RegisterFutureGameplayCvars()
     CVAR_REGISTER(&sv_exp_357_primary_first_shot_speed_threshold);
     CVAR_REGISTER(&sv_exp_357_primary_spread_recovery);
     CVAR_REGISTER(&sv_exp_357_primary_max_spread);
+    CVAR_REGISTER(&sv_exp_357_primary_cadence_mode);
+    CVAR_REGISTER(&sv_exp_357_primary_cycle_time);
+    CVAR_REGISTER(&sv_exp_357_primary_click_penalty);
+    CVAR_REGISTER(&sv_exp_357_primary_click_penalty_scale);
+    CVAR_REGISTER(&sv_exp_357_primary_click_reset_time);
+    CVAR_REGISTER(&sv_exp_357_primary_hold_penalty_scale);
     CVAR_REGISTER(&sv_exp_357_primary_damage);
     CVAR_REGISTER(&sv_exp_357_primary_headshot_scale);
     CVAR_REGISTER(&sv_exp_357_primary_headshot_lethal);
@@ -12200,6 +12224,36 @@ float ExpGlockPrimaryMaxSpread()
     return GetNonNegativeCvarValue(sv_exp_glock_primary_max_spread);
 }
 
+bool ExpGlockPrimaryCadenceModeEnabled()
+{
+    return sv_exp_glock_primary_cadence_mode.value != 0.0f;
+}
+
+float ExpGlockPrimaryCadenceCycleTime()
+{
+    return GetNonNegativeCvarValue(sv_exp_glock_primary_cycle_time);
+}
+
+float ExpGlockPrimaryClickPenalty()
+{
+    return GetNonNegativeCvarValue(sv_exp_glock_primary_click_penalty);
+}
+
+float ExpGlockPrimaryClickPenaltyScale()
+{
+    return GetNonNegativeCvarValue(sv_exp_glock_primary_click_penalty_scale);
+}
+
+float ExpGlockPrimaryClickResetTime()
+{
+    return GetNonNegativeCvarValue(sv_exp_glock_primary_click_reset_time);
+}
+
+float ExpGlockPrimaryHoldPenaltyScale()
+{
+    return GetNonNegativeCvarValue(sv_exp_glock_primary_hold_penalty_scale);
+}
+
 bool ExpGlockPatternModeEnabled()
 {
     return sv_exp_glock_pattern_mode.value != 0.0f;
@@ -12253,7 +12307,7 @@ bool ExpDebugWeaponLogRejectionsEnabled()
 
 bool ExpGlockExperimentalModeEnabled()
 {
-    return ExpPistolTapFireEnabled() || ExpMoveSpreadScale() > 0.0f || ExpFirstShotAccuracyEnabled() || ExpGlockPatternModeEnabled();
+    return ExpPistolTapFireEnabled() || ExpMoveSpreadScale() > 0.0f || ExpFirstShotAccuracyEnabled() || ExpGlockPrimaryCadenceModeEnabled() || ExpGlockPatternModeEnabled();
 }
 
 bool ExpMP5ExperimentalModeEnabled()
@@ -12374,7 +12428,7 @@ bool ExpMP5LabAutoswitch()
 
 bool Exp357ExperimentalModeEnabled()
 {
-    return Exp357PrimaryEnabled();
+    return Exp357PrimaryEnabled() || Exp357PrimaryCadenceModeEnabled();
 }
 
 bool ExpShotgunExperimentalModeEnabled()
@@ -12506,6 +12560,36 @@ float Exp357PrimaryMaxSpread()
 float ExpShotgunPrimaryMaxSpread()
 {
     return GetNonNegativeCvarValue(sv_exp_shotgun_primary_max_spread);
+}
+
+bool Exp357PrimaryCadenceModeEnabled()
+{
+    return sv_exp_357_primary_cadence_mode.value != 0.0f;
+}
+
+float Exp357PrimaryCadenceCycleTime()
+{
+    return GetNonNegativeCvarValue(sv_exp_357_primary_cycle_time);
+}
+
+float Exp357PrimaryClickPenalty()
+{
+    return GetNonNegativeCvarValue(sv_exp_357_primary_click_penalty);
+}
+
+float Exp357PrimaryClickPenaltyScale()
+{
+    return GetNonNegativeCvarValue(sv_exp_357_primary_click_penalty_scale);
+}
+
+float Exp357PrimaryClickResetTime()
+{
+    return GetNonNegativeCvarValue(sv_exp_357_primary_click_reset_time);
+}
+
+float Exp357PrimaryHoldPenaltyScale()
+{
+    return GetNonNegativeCvarValue(sv_exp_357_primary_hold_penalty_scale);
 }
 
 bool Exp357LabLoadoutEnabled()

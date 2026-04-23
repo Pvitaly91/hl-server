@@ -83,6 +83,8 @@ void CPython::Spawn( )
 
 	m_iDefaultAmmo = PYTHON_DEFAULT_GIVE;
 	m_flLastAcceptedPrimaryShotTime = -1.0f;
+	m_flPrimaryCadenceSpreadAccumulator = 0.0f;
+	m_iPrimaryCadenceShotCount = 0;
 
 	FallInit();// get ready to fall down.
 }
@@ -192,6 +194,7 @@ void CPython::PrimaryAttack()
 	const BOOL fHadAmmo = (m_iClip > 0);
 	const BOOL fExperimentalPrimary = Exp357PrimaryEnabled();
 	const BOOL fHasPreviousAcceptedShot = m_flLastAcceptedPrimaryShotTime >= 0.0f;
+	const BOOL fHoldingAttack = (m_pPlayer->m_afButtonPressed & IN_ATTACK) == 0;
 	const float flTimeSincePreviousAcceptedShot = fHasPreviousAcceptedShot ? (gpGlobals->time - m_flLastAcceptedPrimaryShotTime) : 0.0f;
 
 	m_iClip--;
@@ -211,14 +214,43 @@ void CPython::PrimaryAttack()
 	if (fExperimentalPrimary)
 	{
 		const SharedWeaponSpreadProfile spreadProfile = Build357PrimarySpreadProfile();
+		const SharedWeaponCadenceProfile cadenceProfile = Build357PrimaryCadenceProfile();
+		const float flRecoveredCadenceAddedSpread = fHasPreviousAcceptedShot
+			? RecoverSharedAdditionalSpread(
+				m_flPrimaryCadenceSpreadAccumulator,
+				flTimeSincePreviousAcceptedShot,
+				spreadProfile.additionalSpreadRecoverySeconds,
+				spreadProfile.maxSpread)
+			: 0.0f;
+		const SharedWeaponCadenceResult cadenceResult = ComputeSharedWeaponCadence(
+			cadenceProfile,
+			fHasPreviousAcceptedShot != FALSE,
+			flTimeSincePreviousAcceptedShot,
+			fHoldingAttack != FALSE);
+		const float flRecoveredSpreadAfterCadenceReset = cadenceResult.resetApplied ? 0.0f : flRecoveredCadenceAddedSpread;
+		const float flCadenceRecoveryApplied = fHasPreviousAcceptedShot
+			? (m_flPrimaryCadenceSpreadAccumulator - flRecoveredCadenceAddedSpread)
+			: 0.0f;
+		const float flCadenceAdditionalSpread = min(
+			spreadProfile.maxSpread,
+			flRecoveredSpreadAfterCadenceReset + cadenceResult.cadencePenalty);
+		const int iCadenceShotIndex = (flRecoveredSpreadAfterCadenceReset > 0.0001f && m_iPrimaryCadenceShotCount > 0 && !cadenceResult.resetApplied)
+			? (m_iPrimaryCadenceShotCount + 1)
+			: 1;
 		const SharedWeaponSpreadState spreadState = BuildPlayerWeaponSpreadState(
 			m_pPlayer,
 			k357FallbackMaxSpeed,
 			fHasPreviousAcceptedShot != FALSE,
 			flTimeSincePreviousAcceptedShot,
-			0.0f);
+			flCadenceAdditionalSpread);
 		const SharedWeaponSpreadResult spreadResult = ComputeSharedWeaponSpread(spreadProfile, spreadState);
 		const float flSpread = spreadResult.spread;
+		const float flAdditionalSpread = spreadResult.additionalSpread;
+		const float flMovementPenalty = spreadResult.movementPenalty;
+		const float flNextCadenceAddedSpread = GrowSharedAdditionalSpread(
+			flCadenceAdditionalSpread,
+			0.0f,
+			spreadProfile.maxSpread);
 
 		Begin357PrimaryShotContext(m_pPlayer);
 		vecDir = m_pPlayer->FireBulletsPlayer( 1, vecSrc, vecAiming, Vector( flSpread, flSpread, flSpread ), 8192, BULLET_PLAYER_357, 0, 0, m_pPlayer->pev, m_pPlayer->random_seed );
@@ -231,16 +263,30 @@ void CPython::PrimaryAttack()
 			acceptedTelemetry.firstShotAccuracyApplied = spreadResult.firstShotAccuracyApplied ? TRUE : FALSE;
 			acceptedTelemetry.spread = flSpread;
 			acceptedTelemetry.baseSpread = spreadProfile.baseSpread;
-			acceptedTelemetry.movementPenalty = spreadResult.movementPenalty;
+			acceptedTelemetry.movementPenalty = flMovementPenalty;
+			acceptedTelemetry.additionalSpread = flAdditionalSpread;
+			acceptedTelemetry.recoveryApplied = flCadenceRecoveryApplied > 0.0f ? flCadenceRecoveryApplied : 0.0f;
+			acceptedTelemetry.cadenceModeActive = cadenceResult.enabled;
+			acceptedTelemetry.cadenceInterval = cadenceResult.intervalSeconds;
+			acceptedTelemetry.cadencePenalty = cadenceResult.cadencePenalty;
+			acceptedTelemetry.cadenceResetApplied = cadenceResult.resetApplied;
+			acceptedTelemetry.holdPenalty = cadenceResult.holdPenalty;
+			acceptedTelemetry.totalAdditionalSpread = flMovementPenalty + flAdditionalSpread;
+			acceptedTelemetry.movementContribution = flMovementPenalty;
+			acceptedTelemetry.patternContribution = 0.0f;
+			acceptedTelemetry.cadenceContribution = cadenceResult.cadencePenalty;
 			acceptedTelemetry.horizontalSpeed = spreadState.horizontalSpeed;
 			acceptedTelemetry.maxSpeedForNormalization = spreadResult.normalizedMaxSpeed;
 			acceptedTelemetry.grounded = spreadState.grounded ? TRUE : FALSE;
 			acceptedTelemetry.ducking = spreadState.ducking ? TRUE : FALSE;
 			acceptedTelemetry.hasPreviousAcceptedShot = fHasPreviousAcceptedShot != FALSE;
 			acceptedTelemetry.timeSincePreviousAcceptedShot = flTimeSincePreviousAcceptedShot;
+			acceptedTelemetry.cadenceShotIndex = iCadenceShotIndex;
 			acceptedTelemetry.clipAfterShot = m_iClip;
 
 			LogAccepted357PrimaryShot(m_pPlayer, acceptedTelemetry);
+			m_flPrimaryCadenceSpreadAccumulator = flNextCadenceAddedSpread;
+			m_iPrimaryCadenceShotCount = iCadenceShotIndex;
 			m_flLastAcceptedPrimaryShotTime = gpGlobals->time;
 		}
 	}

@@ -58,6 +58,28 @@ struct SharedWeaponPatternResult
     float randomSpread;
 };
 
+struct SharedWeaponCadenceProfile
+{
+    bool enabled;
+    float idealCycleTimeSeconds;
+    float clickPenalty;
+    float clickPenaltyScale;
+    float resetTimeSeconds;
+    float holdPenaltyScale;
+    float maxAdditionalSpread;
+};
+
+struct SharedWeaponCadenceResult
+{
+    bool enabled;
+    bool resetApplied;
+    float intervalSeconds;
+    float cadenceRatio;
+    float clickPenalty;
+    float holdPenalty;
+    float cadencePenalty;
+};
+
 struct SharedWeaponDamageProfile
 {
     float baseDamage;
@@ -87,6 +109,8 @@ SharedWeaponSpreadProfile Build357PrimarySpreadProfile();
 SharedWeaponSpreadProfile BuildShotgunPrimarySpreadProfile();
 SharedWeaponPatternProfile BuildGlockPrimaryPatternProfile();
 SharedWeaponPatternProfile BuildMp5PrimaryPatternProfile();
+SharedWeaponCadenceProfile BuildGlockPrimaryCadenceProfile();
+SharedWeaponCadenceProfile Build357PrimaryCadenceProfile();
 SharedWeaponDamageProfile BuildGlockPrimaryDamageProfile();
 SharedWeaponDamageProfile BuildMp5PrimaryDamageProfile();
 SharedWeaponDamageProfile Build357PrimaryDamageProfile();
@@ -106,6 +130,11 @@ SharedWeaponPatternResult ComputeSharedWeaponPattern(
     float speedRatio,
     float totalSpread,
     int lastPatternIndex);
+SharedWeaponCadenceResult ComputeSharedWeaponCadence(
+    const SharedWeaponCadenceProfile &profile,
+    bool hasPreviousShot,
+    float timeSincePreviousShot,
+    bool holdingAttack);
 float RecoverSharedAdditionalSpread(
     float currentSpread,
     float elapsedSeconds,

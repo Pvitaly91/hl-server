@@ -17,6 +17,11 @@ struct GlockAcceptedShotTelemetry
     float recoveryApplied;
     float shotGrowth;
     float nextAdditionalSpread;
+    bool cadenceModeActive;
+    float cadenceInterval;
+    float cadencePenalty;
+    bool cadenceResetApplied;
+    float holdPenalty;
     bool patternModeActive;
     int patternIndex;
     float patternOffsetX;
@@ -24,6 +29,8 @@ struct GlockAcceptedShotTelemetry
     bool patternResetApplied;
     float totalAdditionalSpread;
     float movementContribution;
+    float patternContribution;
+    float cadenceContribution;
     float cadenceGrowthContribution;
     float speedRatio;
     float horizontalSpeed;
@@ -80,12 +87,24 @@ struct Weapon357AcceptedShotTelemetry
     float spread;
     float baseSpread;
     float movementPenalty;
+    float additionalSpread;
+    float recoveryApplied;
+    bool cadenceModeActive;
+    float cadenceInterval;
+    float cadencePenalty;
+    bool cadenceResetApplied;
+    float holdPenalty;
+    float totalAdditionalSpread;
+    float movementContribution;
+    float patternContribution;
+    float cadenceContribution;
     float horizontalSpeed;
     float maxSpeedForNormalization;
     bool grounded;
     bool ducking;
     bool hasPreviousAcceptedShot;
     float timeSincePreviousAcceptedShot;
+    int cadenceShotIndex;
     int clipAfterShot;
 };
 

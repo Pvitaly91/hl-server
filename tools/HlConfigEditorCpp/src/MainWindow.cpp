@@ -68,6 +68,12 @@ enum ControlId : int {
     IDC_GLOCK_PRIMARY_SHOT_GROWTH,
     IDC_GLOCK_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD,
     IDC_GLOCK_PRIMARY_MAX_SPREAD,
+    IDC_GLOCK_PRIMARY_CADENCE_MODE,
+    IDC_GLOCK_PRIMARY_CYCLE_TIME,
+    IDC_GLOCK_PRIMARY_CLICK_PENALTY,
+    IDC_GLOCK_PRIMARY_CLICK_PENALTY_SCALE,
+    IDC_GLOCK_PRIMARY_CLICK_RESET_TIME,
+    IDC_GLOCK_PRIMARY_HOLD_PENALTY_SCALE,
     IDC_GLOCK_PATTERN_MODE,
     IDC_GLOCK_PATTERN_SCALE_X,
     IDC_GLOCK_PATTERN_SCALE_Y,
@@ -119,6 +125,12 @@ enum ControlId : int {
     IDC_357_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD,
     IDC_357_PRIMARY_SPREAD_RECOVERY,
     IDC_357_PRIMARY_MAX_SPREAD,
+    IDC_357_PRIMARY_CADENCE_MODE,
+    IDC_357_PRIMARY_CYCLE_TIME,
+    IDC_357_PRIMARY_CLICK_PENALTY,
+    IDC_357_PRIMARY_CLICK_PENALTY_SCALE,
+    IDC_357_PRIMARY_CLICK_RESET_TIME,
+    IDC_357_PRIMARY_HOLD_PENALTY_SCALE,
     IDC_357_PRIMARY_DAMAGE,
     IDC_357_PRIMARY_HEADSHOT_SCALE,
     IDC_357_PRIMARY_HEADSHOT_LETHAL,
@@ -705,10 +717,10 @@ private:
             ApplyPreset([&] { hlcfg::ApplyGlockPreset(document_, L"default"); });
             return 0;
         case IDC_GLOCK_PRESET_CS_LIKE_SOFT:
-            ApplyPreset([&] { hlcfg::ApplyGlockPreset(document_, L"glock_pattern_soft"); });
+            ApplyPreset([&] { hlcfg::ApplyGlockPreset(document_, L"glock_cadence_soft"); });
             return 0;
         case IDC_GLOCK_PRESET_CS_TIGHT:
-            ApplyPreset([&] { hlcfg::ApplyGlockPreset(document_, L"glock_pattern_tight"); });
+            ApplyPreset([&] { hlcfg::ApplyGlockPreset(document_, L"glock_cadence_tight"); });
             return 0;
         case IDC_GLOCK_PRESET_HEADSHOT_TEST:
             ApplyPreset([&] { hlcfg::ApplyGlockPreset(document_, L"headshot_test"); });
@@ -729,10 +741,10 @@ private:
             ApplyPreset([&] { hlcfg::Apply357Preset(document_, L"default"); });
             return 0;
         case IDC_357_PRESET_PRECISION_TEST:
-            ApplyPreset([&] { hlcfg::Apply357Preset(document_, L"precision_test"); });
+            ApplyPreset([&] { hlcfg::Apply357Preset(document_, L"357_precision_duel"); });
             return 0;
         case IDC_357_PRESET_HEADSHOT_TEST:
-            ApplyPreset([&] { hlcfg::Apply357Preset(document_, L"headshot_test"); });
+            ApplyPreset([&] { hlcfg::Apply357Preset(document_, L"357_cadence_headshot"); });
             return 0;
         case IDC_SHOTGUN_PRESET_DEFAULT:
             ApplyPreset([&] { hlcfg::ApplyShotgunPreset(document_, L"default"); });
@@ -929,8 +941,8 @@ private:
         HWND page = pages_[1];
         CreateGroupBox(page, L"Editor Templates", 20, 20, 1040, 70);
         CreateButton(page, L"Default", IDC_GLOCK_PRESET_DEFAULT, 40, 45, 120, 24);
-        CreateButton(page, L"Pattern Soft", IDC_GLOCK_PRESET_CS_LIKE_SOFT, 175, 45, 150, 24);
-        CreateButton(page, L"Pattern Tight", IDC_GLOCK_PRESET_CS_TIGHT, 340, 45, 140, 24);
+        CreateButton(page, L"Cadence Soft", IDC_GLOCK_PRESET_CS_LIKE_SOFT, 175, 45, 150, 24);
+        CreateButton(page, L"Cadence Tight", IDC_GLOCK_PRESET_CS_TIGHT, 340, 45, 140, 24);
         CreateButton(page, L"Headshot Test", IDC_GLOCK_PRESET_HEADSHOT_TEST, 475, 45, 140, 24);
 
         CreateGroupBox(page, L"General Glock Settings", 20, 110, 500, 220);
@@ -967,16 +979,29 @@ private:
         CreateEdit(page, IDC_GLOCK_PRIMARY_HEADSHOT_SCALE, 220, 415, 120, 24);
         CreateCheckBox(page, L"Lethal headshot", IDC_GLOCK_PRIMARY_HEADSHOT_LETHAL, 40, 450, 160, 20);
 
-        CreateGroupBox(page, L"Deterministic Pattern Layer", 20, 500, 500, 190);
-        CreateCheckBox(page, L"Deterministic pattern mode", IDC_GLOCK_PATTERN_MODE, 40, 535, 220, 20);
-        CreateLabel(page, L"Horizontal pattern scale", 40, 570, 170, 20);
-        CreateEdit(page, IDC_GLOCK_PATTERN_SCALE_X, 220, 565, 120, 24);
-        CreateLabel(page, L"Vertical pattern scale", 40, 605, 170, 20);
-        CreateEdit(page, IDC_GLOCK_PATTERN_SCALE_Y, 220, 600, 120, 24);
-        CreateLabel(page, L"Pattern reset time", 40, 640, 170, 20);
-        CreateEdit(page, IDC_GLOCK_PATTERN_RESET_TIME, 220, 635, 120, 24);
-        CreateLabel(page, L"Pattern max index", 40, 675, 170, 20);
-        CreateEdit(page, IDC_GLOCK_PATTERN_MAX_INDEX, 220, 670, 120, 24);
+        CreateGroupBox(page, L"Cadence Feel Layer", 20, 500, 500, 220);
+        CreateCheckBox(page, L"Cadence-sensitive mode", IDC_GLOCK_PRIMARY_CADENCE_MODE, 40, 535, 220, 20);
+        CreateLabel(page, L"Ideal shot cycle time", 40, 570, 170, 20);
+        CreateEdit(page, IDC_GLOCK_PRIMARY_CYCLE_TIME, 220, 565, 120, 24);
+        CreateLabel(page, L"Fast-click penalty", 40, 605, 170, 20);
+        CreateEdit(page, IDC_GLOCK_PRIMARY_CLICK_PENALTY, 220, 600, 120, 24);
+        CreateLabel(page, L"Fast-click penalty scale", 40, 640, 170, 20);
+        CreateEdit(page, IDC_GLOCK_PRIMARY_CLICK_PENALTY_SCALE, 220, 635, 120, 24);
+        CreateLabel(page, L"Cadence reset time", 40, 675, 170, 20);
+        CreateEdit(page, IDC_GLOCK_PRIMARY_CLICK_RESET_TIME, 220, 670, 120, 24);
+        CreateLabel(page, L"Hold / spam penalty scale", 40, 710, 170, 20);
+        CreateEdit(page, IDC_GLOCK_PRIMARY_HOLD_PENALTY_SCALE, 220, 705, 120, 24);
+
+        CreateGroupBox(page, L"Deterministic Pattern Layer", 540, 435, 520, 255);
+        CreateCheckBox(page, L"Deterministic pattern mode", IDC_GLOCK_PATTERN_MODE, 560, 470, 220, 20);
+        CreateLabel(page, L"Horizontal pattern scale", 560, 505, 170, 20);
+        CreateEdit(page, IDC_GLOCK_PATTERN_SCALE_X, 790, 500, 220, 24);
+        CreateLabel(page, L"Vertical pattern scale", 560, 540, 170, 20);
+        CreateEdit(page, IDC_GLOCK_PATTERN_SCALE_Y, 790, 535, 220, 24);
+        CreateLabel(page, L"Pattern reset time", 560, 575, 170, 20);
+        CreateEdit(page, IDC_GLOCK_PATTERN_RESET_TIME, 790, 570, 220, 24);
+        CreateLabel(page, L"Pattern max index", 560, 610, 170, 20);
+        CreateEdit(page, IDC_GLOCK_PATTERN_MAX_INDEX, 790, 605, 220, 24);
     }
 
     void CreateMp5Page() {
@@ -1040,8 +1065,8 @@ private:
         HWND page = pages_[3];
         CreateGroupBox(page, L"Editor Templates", 20, 20, 1040, 70);
         CreateButton(page, L"Default", IDC_357_PRESET_DEFAULT, 40, 45, 120, 24);
-        CreateButton(page, L"Precision Test", IDC_357_PRESET_PRECISION_TEST, 175, 45, 145, 24);
-        CreateButton(page, L"Headshot Test", IDC_357_PRESET_HEADSHOT_TEST, 335, 45, 145, 24);
+        CreateButton(page, L"Precision Duel", IDC_357_PRESET_PRECISION_TEST, 175, 45, 145, 24);
+        CreateButton(page, L"Cadence Headshot", IDC_357_PRESET_HEADSHOT_TEST, 335, 45, 160, 24);
 
         CreateGroupBox(page, L"General 357 Settings", 20, 110, 500, 235);
         CreateCheckBox(page, L"Enable experimental 357 primary", IDC_357_PRIMARY_ENABLED, 40, 145, 260, 20);
@@ -1075,6 +1100,19 @@ private:
         CreateLabel(page, L"Headshot scale", 40, 435, 120, 20);
         CreateEdit(page, IDC_357_PRIMARY_HEADSHOT_SCALE, 220, 430, 120, 24);
         CreateCheckBox(page, L"Lethal headshot", IDC_357_PRIMARY_HEADSHOT_LETHAL, 360, 430, 120, 20);
+
+        CreateGroupBox(page, L"Cadence Feel Layer", 20, 500, 500, 220);
+        CreateCheckBox(page, L"Cadence-sensitive mode", IDC_357_PRIMARY_CADENCE_MODE, 40, 535, 220, 20);
+        CreateLabel(page, L"Ideal shot cycle time", 40, 570, 170, 20);
+        CreateEdit(page, IDC_357_PRIMARY_CYCLE_TIME, 220, 565, 120, 24);
+        CreateLabel(page, L"Fast-click penalty", 40, 605, 170, 20);
+        CreateEdit(page, IDC_357_PRIMARY_CLICK_PENALTY, 220, 600, 120, 24);
+        CreateLabel(page, L"Fast-click penalty scale", 40, 640, 170, 20);
+        CreateEdit(page, IDC_357_PRIMARY_CLICK_PENALTY_SCALE, 220, 635, 120, 24);
+        CreateLabel(page, L"Cadence reset time", 40, 675, 170, 20);
+        CreateEdit(page, IDC_357_PRIMARY_CLICK_RESET_TIME, 220, 670, 120, 24);
+        CreateLabel(page, L"Hold / spam penalty scale", 40, 710, 170, 20);
+        CreateEdit(page, IDC_357_PRIMARY_HOLD_PENALTY_SCALE, 220, 705, 120, 24);
     }
 
     void CreateShotgunPage() {
@@ -1700,8 +1738,23 @@ private:
         preview.glock.firstShotAccuracy = GetCheckValue(IDC_GLOCK_FIRST_SHOT_ACCURACY);
         preview.glock.spreadRecovery = GetTextValue(IDC_GLOCK_SPREAD_RECOVERY);
         preview.glock.primaryShotGrowth = GetTextValue(IDC_GLOCK_PRIMARY_SHOT_GROWTH);
+        preview.glock.cadenceMode = GetCheckValue(IDC_GLOCK_PRIMARY_CADENCE_MODE);
+        preview.glock.primaryCadenceCycleTime = GetTextValue(IDC_GLOCK_PRIMARY_CYCLE_TIME);
+        preview.glock.primaryClickPenalty = GetTextValue(IDC_GLOCK_PRIMARY_CLICK_PENALTY);
+        preview.glock.primaryClickPenaltyScale = GetTextValue(IDC_GLOCK_PRIMARY_CLICK_PENALTY_SCALE);
+        preview.glock.primaryClickResetTime = GetTextValue(IDC_GLOCK_PRIMARY_CLICK_RESET_TIME);
+        preview.glock.primaryHoldPenaltyScale = GetTextValue(IDC_GLOCK_PRIMARY_HOLD_PENALTY_SCALE);
         preview.glock.patternMode = GetCheckValue(IDC_GLOCK_PATTERN_MODE);
         preview.glock.patternResetTime = GetTextValue(IDC_GLOCK_PATTERN_RESET_TIME);
+        preview.weapon357.primaryEnabled = GetCheckValue(IDC_357_PRIMARY_ENABLED);
+        preview.weapon357.primaryFirstShotAccuracy = GetCheckValue(IDC_357_PRIMARY_FIRST_SHOT_ACCURACY);
+        preview.weapon357.primarySpreadRecovery = GetTextValue(IDC_357_PRIMARY_SPREAD_RECOVERY);
+        preview.weapon357.primaryCadenceCycleTime = GetTextValue(IDC_357_PRIMARY_CYCLE_TIME);
+        preview.weapon357.primaryClickPenalty = GetTextValue(IDC_357_PRIMARY_CLICK_PENALTY);
+        preview.weapon357.primaryClickPenaltyScale = GetTextValue(IDC_357_PRIMARY_CLICK_PENALTY_SCALE);
+        preview.weapon357.primaryClickResetTime = GetTextValue(IDC_357_PRIMARY_CLICK_RESET_TIME);
+        preview.weapon357.primaryHoldPenaltyScale = GetTextValue(IDC_357_PRIMARY_HOLD_PENALTY_SCALE);
+        preview.weapon357.cadenceMode = GetCheckValue(IDC_357_PRIMARY_CADENCE_MODE);
         preview.mp5.primaryFirstShotAccuracy = GetCheckValue(IDC_MP5_PRIMARY_FIRST_SHOT_ACCURACY);
         preview.mp5.primaryBurstGrowth = GetTextValue(IDC_MP5_PRIMARY_BURST_GROWTH);
         preview.mp5.primarySpreadRecovery = GetTextValue(IDC_MP5_PRIMARY_SPREAD_RECOVERY);
@@ -1741,10 +1794,16 @@ private:
         if (weaponUnderTest == L"glock") {
             const double shotGrowth = ParseConfigDouble(preview.glock.primaryShotGrowth, 0.0);
             const double recoverySeconds = ParseConfigDouble(preview.glock.spreadRecovery, 0.0);
+            const double cadenceCycleSeconds = ParseConfigDouble(preview.glock.primaryCadenceCycleTime, 0.0);
+            const double cadencePenalty = ParseConfigDouble(preview.glock.primaryClickPenalty, 0.0);
+            const double holdPenaltyScale = ParseConfigDouble(preview.glock.primaryHoldPenaltyScale, 0.0);
             const double patternResetSeconds = ParseConfigDouble(preview.glock.patternResetTime, 0.0);
             weaponFeel = preview.glock.tapFire
                              ? L"legacy tap-fire gated"
                              : (preview.glock.firstShotAccuracy ? L"single-shot favored" : L"first-shot neutral");
+            if (preview.glock.cadenceMode) {
+                weaponFeel += L", cadence-sensitive";
+            }
             if (preview.glock.patternMode) {
                 weaponFeel += L", learnable follow-up pattern";
             }
@@ -1753,6 +1812,15 @@ private:
             } else if (shotGrowth >= 0.012) {
                 weaponFeel += L", soft cadence growth";
             }
+            if (preview.glock.cadenceMode && cadenceCycleSeconds >= 0.400) {
+                weaponFeel += L", patient clicks rewarded";
+            }
+            if (preview.glock.cadenceMode && cadencePenalty >= 0.035) {
+                weaponFeel += L", fast spam punished";
+            }
+            if (preview.glock.cadenceMode && holdPenaltyScale >= 0.450) {
+                weaponFeel += L", hold-fire weakened";
+            }
             if (recoverySeconds > 0.0 && recoverySeconds <= 0.360) {
                 weaponFeel += L", quick settle";
             } else if (recoverySeconds >= 0.500) {
@@ -1760,6 +1828,27 @@ private:
             }
             if (preview.glock.patternMode && patternResetSeconds > 0.0 && patternResetSeconds <= 0.400) {
                 weaponFeel += L", pattern resets quickly after a pause";
+            }
+        } else if (weaponUnderTest == L"357") {
+            const double recoverySeconds = ParseConfigDouble(preview.weapon357.primarySpreadRecovery, 0.0);
+            const double cadenceCycleSeconds = ParseConfigDouble(preview.weapon357.primaryCadenceCycleTime, 0.0);
+            const double cadencePenalty = ParseConfigDouble(preview.weapon357.primaryClickPenalty, 0.0);
+            const double holdPenaltyScale = ParseConfigDouble(preview.weapon357.primaryHoldPenaltyScale, 0.0);
+            weaponFeel = preview.weapon357.primaryFirstShotAccuracy ? L"precision favored" : L"first-shot neutral";
+            if (preview.weapon357.cadenceMode) {
+                weaponFeel += L", cadence-sensitive";
+            }
+            if (preview.weapon357.cadenceMode && cadenceCycleSeconds >= 1.000) {
+                weaponFeel += L", deliberate clicks rewarded";
+            }
+            if (preview.weapon357.cadenceMode && cadencePenalty >= 0.040) {
+                weaponFeel += L", rapid clicks punished";
+            }
+            if (preview.weapon357.cadenceMode && holdPenaltyScale >= 0.350) {
+                weaponFeel += L", hold-fire softened";
+            }
+            if (recoverySeconds > 0.0 && recoverySeconds >= 0.650) {
+                weaponFeel += L", recovery requires patience";
             }
         } else if (weaponUnderTest == L"mp5") {
             const double burstGrowth = ParseConfigDouble(preview.mp5.primaryBurstGrowth, 0.0);
@@ -1845,6 +1934,12 @@ private:
         SetTextValue(IDC_GLOCK_PRIMARY_SHOT_GROWTH, document_.glock.primaryShotGrowth);
         SetTextValue(IDC_GLOCK_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD, document_.glock.primaryFirstShotSpeedThreshold);
         SetTextValue(IDC_GLOCK_PRIMARY_MAX_SPREAD, document_.glock.primaryMaxSpread);
+        Button_SetCheck(FindControl(IDC_GLOCK_PRIMARY_CADENCE_MODE), document_.glock.cadenceMode ? BST_CHECKED : BST_UNCHECKED);
+        SetTextValue(IDC_GLOCK_PRIMARY_CYCLE_TIME, document_.glock.primaryCadenceCycleTime);
+        SetTextValue(IDC_GLOCK_PRIMARY_CLICK_PENALTY, document_.glock.primaryClickPenalty);
+        SetTextValue(IDC_GLOCK_PRIMARY_CLICK_PENALTY_SCALE, document_.glock.primaryClickPenaltyScale);
+        SetTextValue(IDC_GLOCK_PRIMARY_CLICK_RESET_TIME, document_.glock.primaryClickResetTime);
+        SetTextValue(IDC_GLOCK_PRIMARY_HOLD_PENALTY_SCALE, document_.glock.primaryHoldPenaltyScale);
         Button_SetCheck(FindControl(IDC_GLOCK_PATTERN_MODE), document_.glock.patternMode ? BST_CHECKED : BST_UNCHECKED);
         SetTextValue(IDC_GLOCK_PATTERN_SCALE_X, document_.glock.patternScaleX);
         SetTextValue(IDC_GLOCK_PATTERN_SCALE_Y, document_.glock.patternScaleY);
@@ -1888,6 +1983,12 @@ private:
         SetTextValue(IDC_357_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD, document_.weapon357.primaryFirstShotSpeedThreshold);
         SetTextValue(IDC_357_PRIMARY_SPREAD_RECOVERY, document_.weapon357.primarySpreadRecovery);
         SetTextValue(IDC_357_PRIMARY_MAX_SPREAD, document_.weapon357.primaryMaxSpread);
+        Button_SetCheck(FindControl(IDC_357_PRIMARY_CADENCE_MODE), document_.weapon357.cadenceMode ? BST_CHECKED : BST_UNCHECKED);
+        SetTextValue(IDC_357_PRIMARY_CYCLE_TIME, document_.weapon357.primaryCadenceCycleTime);
+        SetTextValue(IDC_357_PRIMARY_CLICK_PENALTY, document_.weapon357.primaryClickPenalty);
+        SetTextValue(IDC_357_PRIMARY_CLICK_PENALTY_SCALE, document_.weapon357.primaryClickPenaltyScale);
+        SetTextValue(IDC_357_PRIMARY_CLICK_RESET_TIME, document_.weapon357.primaryClickResetTime);
+        SetTextValue(IDC_357_PRIMARY_HOLD_PENALTY_SCALE, document_.weapon357.primaryHoldPenaltyScale);
         SetTextValue(IDC_357_PRIMARY_DAMAGE, document_.weapon357.primaryDamage);
         SetTextValue(IDC_357_PRIMARY_HEADSHOT_SCALE, document_.weapon357.primaryHeadshotScale);
         Button_SetCheck(FindControl(IDC_357_PRIMARY_HEADSHOT_LETHAL), document_.weapon357.primaryHeadshotLethal ? BST_CHECKED : BST_UNCHECKED);
@@ -2021,6 +2122,12 @@ private:
         document_.glock.primaryShotGrowth = GetTextValue(IDC_GLOCK_PRIMARY_SHOT_GROWTH);
         document_.glock.primaryFirstShotSpeedThreshold = GetTextValue(IDC_GLOCK_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD);
         document_.glock.primaryMaxSpread = GetTextValue(IDC_GLOCK_PRIMARY_MAX_SPREAD);
+        document_.glock.cadenceMode = GetCheckValue(IDC_GLOCK_PRIMARY_CADENCE_MODE);
+        document_.glock.primaryCadenceCycleTime = GetTextValue(IDC_GLOCK_PRIMARY_CYCLE_TIME);
+        document_.glock.primaryClickPenalty = GetTextValue(IDC_GLOCK_PRIMARY_CLICK_PENALTY);
+        document_.glock.primaryClickPenaltyScale = GetTextValue(IDC_GLOCK_PRIMARY_CLICK_PENALTY_SCALE);
+        document_.glock.primaryClickResetTime = GetTextValue(IDC_GLOCK_PRIMARY_CLICK_RESET_TIME);
+        document_.glock.primaryHoldPenaltyScale = GetTextValue(IDC_GLOCK_PRIMARY_HOLD_PENALTY_SCALE);
         document_.glock.patternMode = GetCheckValue(IDC_GLOCK_PATTERN_MODE);
         document_.glock.patternScaleX = GetTextValue(IDC_GLOCK_PATTERN_SCALE_X);
         document_.glock.patternScaleY = GetTextValue(IDC_GLOCK_PATTERN_SCALE_Y);
@@ -2064,6 +2171,12 @@ private:
         document_.weapon357.primaryFirstShotSpeedThreshold = GetTextValue(IDC_357_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD);
         document_.weapon357.primarySpreadRecovery = GetTextValue(IDC_357_PRIMARY_SPREAD_RECOVERY);
         document_.weapon357.primaryMaxSpread = GetTextValue(IDC_357_PRIMARY_MAX_SPREAD);
+        document_.weapon357.cadenceMode = GetCheckValue(IDC_357_PRIMARY_CADENCE_MODE);
+        document_.weapon357.primaryCadenceCycleTime = GetTextValue(IDC_357_PRIMARY_CYCLE_TIME);
+        document_.weapon357.primaryClickPenalty = GetTextValue(IDC_357_PRIMARY_CLICK_PENALTY);
+        document_.weapon357.primaryClickPenaltyScale = GetTextValue(IDC_357_PRIMARY_CLICK_PENALTY_SCALE);
+        document_.weapon357.primaryClickResetTime = GetTextValue(IDC_357_PRIMARY_CLICK_RESET_TIME);
+        document_.weapon357.primaryHoldPenaltyScale = GetTextValue(IDC_357_PRIMARY_HOLD_PENALTY_SCALE);
         document_.weapon357.primaryDamage = GetTextValue(IDC_357_PRIMARY_DAMAGE);
         document_.weapon357.primaryHeadshotScale = GetTextValue(IDC_357_PRIMARY_HEADSHOT_SCALE);
         document_.weapon357.primaryHeadshotLethal = GetCheckValue(IDC_357_PRIMARY_HEADSHOT_LETHAL);
@@ -2457,7 +2570,7 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
     glock.general.debugWeaponLogRejections = true;
     glock.exportSettings.exportFolder = exportRoot.wstring();
     glock.exportSettings.cfgFileName = L"editor_glock_simple.cfg";
-    hlcfg::ApplyGlockPreset(glock, L"glock_pattern_tight");
+    hlcfg::ApplyGlockPreset(glock, L"glock_cadence_tight");
     glock.glock.profileName = L"editor_glock_simple";
     hlcfg::ApplyDummyPreset(glock, L"vest_headprotected");
 
@@ -2480,7 +2593,13 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
     if (!ValidateContains(glockExport.cfgText, L"sv_exp_weapon_under_test \"glock\"") ||
         !ValidateContains(glockExport.cfgText, L"sv_exp_session_tag \"editor_cfg_test\"") ||
         !ValidateContains(glockExport.cfgText, L"sv_exp_glock_profile_name \"editor_glock_simple\"") ||
-        !ValidateContains(glockExport.cfgText, L"sv_exp_glock_primary_shot_growth 0.09") ||
+        !ValidateContains(glockExport.cfgText, L"sv_exp_glock_primary_shot_growth 0.05") ||
+        !ValidateContains(glockExport.cfgText, L"sv_exp_glock_primary_cadence_mode 1") ||
+        !ValidateContains(glockExport.cfgText, L"sv_exp_glock_primary_cycle_time 0.47") ||
+        !ValidateContains(glockExport.cfgText, L"sv_exp_glock_primary_click_penalty 0.04") ||
+        !ValidateContains(glockExport.cfgText, L"sv_exp_glock_primary_click_penalty_scale 1.6") ||
+        !ValidateContains(glockExport.cfgText, L"sv_exp_glock_primary_click_reset_time 0.6") ||
+        !ValidateContains(glockExport.cfgText, L"sv_exp_glock_primary_hold_penalty_scale 0.6") ||
         !ValidateContains(glockExport.cfgText, L"sv_exp_glock_pattern_mode 1") ||
         !ValidateContains(glockExport.cfgText, L"sv_exp_glock_pattern_scale_y 0.42") ||
         !ValidateContains(glockExport.cfgText, L"sv_exp_glock_pattern_reset_time 0.32") ||
@@ -2542,7 +2661,7 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
     weapon357.general.sessionTag = L"editor_cfg_test";
     weapon357.exportSettings.exportFolder = exportRoot.wstring();
     weapon357.exportSettings.cfgFileName = L"editor_357_test.cfg";
-    hlcfg::Apply357Preset(weapon357, L"headshot_test");
+    hlcfg::Apply357Preset(weapon357, L"357_cadence_headshot");
     weapon357.weapon357.profileName = L"editor_357_test";
     hlcfg::ApplyDummyPreset(weapon357, L"vest_headprotected");
 
@@ -2565,6 +2684,12 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
         !ValidateContains(weapon357Export.cfgText, L"sv_exp_session_tag \"editor_cfg_test\"") ||
         !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_primary_enabled 1") ||
         !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_profile_name \"editor_357_test\"") ||
+        !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_primary_cadence_mode 1") ||
+        !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_primary_cycle_time 1.1") ||
+        !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_primary_click_penalty 0.045") ||
+        !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_primary_click_penalty_scale 1.4") ||
+        !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_primary_click_reset_time 1.35") ||
+        !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_primary_hold_penalty_scale 0.4") ||
         !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_lab_loadout 1") ||
         !ValidateContains(weapon357Export.cfgText, L"sv_exp_glock_lab_target_profile_name \"vest_headprotected\"") ||
         weapon357Export.execCommand != L"exec editor_357_test.cfg" ||

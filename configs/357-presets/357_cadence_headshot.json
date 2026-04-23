@@ -1,9 +1,9 @@
 {
-  "name": "headshot_test",
-  "description": "Lab-oriented 357 profile for strong dummy hit and kill confirmation, especially on armored and head-protected target setups.",
+  "name": "357_cadence_headshot",
+  "description": "Experimental 357 cadence preset for strong headshot validation, rewarding patient pacing and punishing rushed follow-up clicks.",
   "cvars": {
     "sv_exp_357_primary_enabled": "1",
-    "sv_exp_357_profile_name": "headshot_test",
+    "sv_exp_357_profile_name": "357_cadence_headshot",
     "sv_exp_357_primary_base_spread": "0.0060",
     "sv_exp_357_primary_ground_move_penalty": "0.0180",
     "sv_exp_357_primary_air_move_penalty": "0.0700",

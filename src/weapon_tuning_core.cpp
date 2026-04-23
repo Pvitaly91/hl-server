@@ -87,6 +87,16 @@ float ResolvePatternControlScale(const SharedWeaponSpreadState &state, float spe
     return controlScale;
 }
 
+float ResolveCadenceRatio(float idealCycleTimeSeconds, float timeSincePreviousShot)
+{
+    if (idealCycleTimeSeconds <= 0.0f || timeSincePreviousShot >= idealCycleTimeSeconds)
+    {
+        return 0.0f;
+    }
+
+    return ClampSharedValue((idealCycleTimeSeconds - timeSincePreviousShot) / idealCycleTimeSeconds, 0.0f, 1.0f);
+}
+
 const Vector2D kDeterministicPatternPoints[] =
 {
     Vector2D(0.00f, 0.00f),
@@ -456,6 +466,32 @@ SharedWeaponPatternProfile BuildMp5PrimaryPatternProfile()
     return profile;
 }
 
+SharedWeaponCadenceProfile BuildGlockPrimaryCadenceProfile()
+{
+    SharedWeaponCadenceProfile profile = {};
+    profile.enabled = ExpGlockPrimaryCadenceModeEnabled();
+    profile.idealCycleTimeSeconds = ExpGlockPrimaryCadenceCycleTime();
+    profile.clickPenalty = ExpGlockPrimaryClickPenalty();
+    profile.clickPenaltyScale = ExpGlockPrimaryClickPenaltyScale();
+    profile.resetTimeSeconds = ExpGlockPrimaryClickResetTime();
+    profile.holdPenaltyScale = ExpGlockPrimaryHoldPenaltyScale();
+    profile.maxAdditionalSpread = ExpGlockPrimaryMaxSpread();
+    return profile;
+}
+
+SharedWeaponCadenceProfile Build357PrimaryCadenceProfile()
+{
+    SharedWeaponCadenceProfile profile = {};
+    profile.enabled = Exp357PrimaryCadenceModeEnabled();
+    profile.idealCycleTimeSeconds = Exp357PrimaryCadenceCycleTime();
+    profile.clickPenalty = Exp357PrimaryClickPenalty();
+    profile.clickPenaltyScale = Exp357PrimaryClickPenaltyScale();
+    profile.resetTimeSeconds = Exp357PrimaryClickResetTime();
+    profile.holdPenaltyScale = Exp357PrimaryHoldPenaltyScale();
+    profile.maxAdditionalSpread = Exp357PrimaryMaxSpread();
+    return profile;
+}
+
 SharedWeaponDamageProfile BuildGlockPrimaryDamageProfile()
 {
     SharedWeaponDamageProfile profile = {};
@@ -610,6 +646,47 @@ SharedWeaponPatternResult ComputeSharedWeaponPattern(
     const float offsetRatio = ClampSharedValue(offsetMagnitude / clampedTotalSpread, 0.0f, 0.75f);
     const float residualScale = ClampSharedValue(0.70f - (offsetRatio * 0.30f), 0.35f, 0.70f);
     result.randomSpread = clampedTotalSpread * residualScale;
+    return result;
+}
+
+SharedWeaponCadenceResult ComputeSharedWeaponCadence(
+    const SharedWeaponCadenceProfile &profile,
+    bool hasPreviousShot,
+    float timeSincePreviousShot,
+    bool holdingAttack)
+{
+    SharedWeaponCadenceResult result = {};
+    result.enabled = profile.enabled;
+    result.intervalSeconds = hasPreviousShot ? timeSincePreviousShot : 0.0f;
+
+    if (!profile.enabled || !hasPreviousShot)
+    {
+        return result;
+    }
+
+    if (profile.resetTimeSeconds > 0.0f && timeSincePreviousShot >= profile.resetTimeSeconds)
+    {
+        result.resetApplied = true;
+        return result;
+    }
+
+    result.cadenceRatio = ResolveCadenceRatio(profile.idealCycleTimeSeconds, timeSincePreviousShot);
+    if (result.cadenceRatio <= 0.0f || profile.clickPenalty <= 0.0f)
+    {
+        return result;
+    }
+
+    const float penaltyScale = profile.clickPenaltyScale > 0.0f ? profile.clickPenaltyScale : 1.0f;
+    result.clickPenalty = profile.clickPenalty * result.cadenceRatio * penaltyScale;
+    if (holdingAttack && profile.holdPenaltyScale > 0.0f)
+    {
+        result.holdPenalty = result.clickPenalty * profile.holdPenaltyScale;
+    }
+
+    result.cadencePenalty = ClampSharedValue(
+        result.clickPenalty + result.holdPenalty,
+        0.0f,
+        profile.maxAdditionalSpread > 0.0f ? profile.maxAdditionalSpread : (result.clickPenalty + result.holdPenalty));
     return result;
 }
 

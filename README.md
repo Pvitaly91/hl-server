@@ -27,8 +27,10 @@ The current gameplay direction is intentionally narrower than "make full Counter
 
 - The goal is to improve stock-client-compatible HLDM weapon feel on the server side.
 - Glock should reward careful single shots and punish rapid spam through cadence growth plus timed recovery, not by depending on a hard server-only tap-fire gate.
+- 357 should reward patient precision and punish rushed follow-up clicks through the same server-side cadence model.
 - MP5 should reward controlled bursts, let long sprays bloom, and recover accuracy when the player pauses.
 - Glock and MP5 can now also layer an optional deterministic follow-up pattern over the shared spread model so second and third shots feel more learnable and less like a pure random cone.
+- Glock and 357 can now also layer cadence-sensitive penalties over their first-shot and movement logic so click timing matters more than simply holding attack.
 - Movement, air state, crouch stability, and readable headshot damage are part of the tuning target.
 - Stock client compatibility is preserved, but client-side recoil and prediction are still only approximated because this repository does not ship a custom client DLL.
 
@@ -136,6 +138,10 @@ For the current Glock and MP5 feel pass, the most important editor fields are no
 
 The recommended preset names for this pass are:
 
+- `glock_cadence_soft`
+- `glock_cadence_tight`
+- `357_precision_duel`
+- `357_cadence_headshot`
 - `glock_pattern_soft`
 - `glock_pattern_tight`
 - `mp5_pattern_burst`

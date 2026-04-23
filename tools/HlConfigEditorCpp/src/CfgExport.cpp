@@ -678,6 +678,27 @@ bool BuildCfgLines(const ProjectDocument& document, std::vector<std::wstring>& l
             return false;
         }
         AddLine(lines, L"sv_exp_glock_primary_max_spread", normalized);
+        AddLine(lines, L"sv_exp_glock_primary_cadence_mode", document.glock.cadenceMode ? L"1" : L"0");
+        if (!NormalizeFloatValue(document.glock.primaryCadenceCycleTime, normalized, errorMessage, L"Glock ideal cadence cycle time")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_glock_primary_cycle_time", normalized);
+        if (!NormalizeFloatValue(document.glock.primaryClickPenalty, normalized, errorMessage, L"Glock fast-click penalty")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_glock_primary_click_penalty", normalized);
+        if (!NormalizeFloatValue(document.glock.primaryClickPenaltyScale, normalized, errorMessage, L"Glock fast-click penalty scale")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_glock_primary_click_penalty_scale", normalized);
+        if (!NormalizeFloatValue(document.glock.primaryClickResetTime, normalized, errorMessage, L"Glock cadence reset time")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_glock_primary_click_reset_time", normalized);
+        if (!NormalizeFloatValue(document.glock.primaryHoldPenaltyScale, normalized, errorMessage, L"Glock hold penalty scale")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_glock_primary_hold_penalty_scale", normalized);
         AddLine(lines, L"sv_exp_glock_pattern_mode", document.glock.patternMode ? L"1" : L"0");
         if (!NormalizeFloatValue(document.glock.patternScaleX, normalized, errorMessage, L"Glock pattern scale X")) {
             return false;
@@ -814,6 +835,27 @@ bool BuildCfgLines(const ProjectDocument& document, std::vector<std::wstring>& l
             return false;
         }
         AddLine(lines, L"sv_exp_357_primary_max_spread", normalized);
+        AddLine(lines, L"sv_exp_357_primary_cadence_mode", document.weapon357.cadenceMode ? L"1" : L"0");
+        if (!NormalizeFloatValue(document.weapon357.primaryCadenceCycleTime, normalized, errorMessage, L"357 ideal cadence cycle time")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_357_primary_cycle_time", normalized);
+        if (!NormalizeFloatValue(document.weapon357.primaryClickPenalty, normalized, errorMessage, L"357 fast-click penalty")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_357_primary_click_penalty", normalized);
+        if (!NormalizeFloatValue(document.weapon357.primaryClickPenaltyScale, normalized, errorMessage, L"357 fast-click penalty scale")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_357_primary_click_penalty_scale", normalized);
+        if (!NormalizeFloatValue(document.weapon357.primaryClickResetTime, normalized, errorMessage, L"357 cadence reset time")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_357_primary_click_reset_time", normalized);
+        if (!NormalizeFloatValue(document.weapon357.primaryHoldPenaltyScale, normalized, errorMessage, L"357 hold penalty scale")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_357_primary_hold_penalty_scale", normalized);
         if (!NormalizeFloatValue(document.weapon357.primaryDamage, normalized, errorMessage, L"357 damage")) {
             return false;
         }

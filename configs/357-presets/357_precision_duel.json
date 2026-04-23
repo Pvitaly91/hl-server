@@ -1,9 +1,9 @@
 {
-  "name": "precision_test",
-  "description": "Lab-oriented 357 profile that emphasizes first-shot precision and tighter standing spread for controlled dummy validation.",
+  "name": "357_precision_duel",
+  "description": "Experimental 357 cadence preset for deliberate duel pacing, rewarding patient clicks and stable follow-up timing without client-side recoil changes.",
   "cvars": {
     "sv_exp_357_primary_enabled": "1",
-    "sv_exp_357_profile_name": "precision_test",
+    "sv_exp_357_profile_name": "357_precision_duel",
     "sv_exp_357_primary_base_spread": "0.0045",
     "sv_exp_357_primary_ground_move_penalty": "0.0150",
     "sv_exp_357_primary_air_move_penalty": "0.0600",
