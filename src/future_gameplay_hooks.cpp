@@ -3590,13 +3590,15 @@ void PrintArmorStatusForPlayer(CBasePlayer *pPlayer)
 
     ExpBuyPlayerState *state = GetBuyPlayerState(pPlayer);
     PrintLabDummyConsoleLine(
-        "armor status: name=%s entindex=%d userid=%d team=%s health=%.1f armor=%.1f helmet=%s head_protected=%s money=%d bought_items=\"weapon=%s armor=%s helmet=%s handgrenade=%d\"",
+        "armor status: name=%s entindex=%d userid=%d fake=%s team=%s health=%.1f armor=%.1f body_armor=%s helmet=%s head_protected=%s money=%d bought_items=\"weapon=%s armor=%s helmet=%s handgrenade=%d\"",
         GetSafePlayerName(pPlayer),
         GetPlayerEntityIndex(pPlayer),
         GetPlayerUserId(pPlayer),
+        FutureGameplayIsFakeVerificationPlayer(pPlayer) ? "yes" : "no",
         GetBuyTeamNameForPlayer(pPlayer),
         pPlayer->pev->health,
         pPlayer->pev->armorvalue,
+        pPlayer->pev->armorvalue > 0.0f ? "yes" : "no",
         GetEffectiveHelmetStateForPlayer(pPlayer) ? "yes" : "no",
         FutureGameplayPlayerHeadProtectionActive(pPlayer) ? "yes" : "no",
         state != NULL ? state->money : 0,
@@ -4646,7 +4648,7 @@ void PrintRoundStatus()
     PrintLabDummyConsoleLine("match commands: exp_match_start | exp_match_stop | exp_match_restart | exp_match_status | exp_match_swap");
     PrintLabDummyConsoleLine("team commands: exp_team_join <player> <team> | exp_team_autoassign | exp_team_status | exp_team_fake_add <team> [name] | exp_team_fake_clear");
     PrintLabDummyConsoleLine("team spawn commands: exp_team_spawn_mark <team> [name] | exp_team_spawn_unmark <team> <name> | exp_team_spawn_list | exp_team_spawn_use <team> <name> | exp_team_spawn_status");
-    PrintLabDummyConsoleLine("buy commands: exp_buy_list | exp_buy_status | exp_buy <item> [player] | exp_buy_clear [player] | exp_buy_grant [player] | exp_buy_setmoney <player> <amount> | exp_armor_status [player]");
+    PrintLabDummyConsoleLine("buy commands: exp_buy_list | exp_buy_status | exp_buy <item> [player] | exp_buy_clear [player] | exp_buy_grant [player] | exp_buy_setmoney <player> <amount> | exp_armor_status [player] | exp_armor_set <player> <armor> | exp_helmet_set <player> <0|1> | exp_player_hit_test <attacker> <victim> <weapon> <hitgroup>");
 }
 
 void ExpBuyListCommand()
@@ -4702,6 +4704,367 @@ void ExpArmorStatusCommand()
     {
         PrintLabDummyConsoleLine("armor status: no managed players");
     }
+}
+
+bool TryParseCommandBooleanValue(const char *value, bool *result)
+{
+    if (value == NULL || result == NULL)
+    {
+        return false;
+    }
+
+    if (StringEqualsIgnoreCase(value, "1") ||
+        StringEqualsIgnoreCase(value, "true") ||
+        StringEqualsIgnoreCase(value, "yes") ||
+        StringEqualsIgnoreCase(value, "on"))
+    {
+        *result = true;
+        return true;
+    }
+
+    if (StringEqualsIgnoreCase(value, "0") ||
+        StringEqualsIgnoreCase(value, "false") ||
+        StringEqualsIgnoreCase(value, "no") ||
+        StringEqualsIgnoreCase(value, "off"))
+    {
+        *result = false;
+        return true;
+    }
+
+    return false;
+}
+
+void ExpArmorSetCommand()
+{
+    if (CMD_ARGC() < 3)
+    {
+        PrintLabDummyConsoleLine("usage: exp_armor_set <player> <armor>");
+        return;
+    }
+
+    CBasePlayer *pPlayer = NULL;
+    char failureReason[256];
+    if (!TryResolveRoundPlayerToken(CMD_ARGV(1), &pPlayer, failureReason, sizeof(failureReason)))
+    {
+        PrintLabDummyConsoleLine("armor set failed: %s", failureReason);
+        return;
+    }
+
+    if (pPlayer == NULL || pPlayer->pev == NULL)
+    {
+        PrintLabDummyConsoleLine("armor set failed: player entity is unavailable.");
+        return;
+    }
+
+    const float maxArmor = ArmorModeConfigured()
+        ? ClampFloat(sv_exp_armor_max_value.value, 0.0f, 999999.0f)
+        : 999999.0f;
+    pPlayer->pev->armorvalue = ClampFloat((float)atof(CMD_ARGV(2)), 0.0f, maxArmor);
+
+    PrintLabDummyConsoleLine(
+        "armor set: %s armor now %.1f.",
+        GetSafePlayerName(pPlayer),
+        pPlayer->pev->armorvalue);
+    PrintArmorStatusForPlayer(pPlayer);
+}
+
+void ExpHelmetSetCommand()
+{
+    if (CMD_ARGC() < 3)
+    {
+        PrintLabDummyConsoleLine("usage: exp_helmet_set <player> <0|1>");
+        return;
+    }
+
+    CBasePlayer *pPlayer = NULL;
+    char failureReason[256];
+    if (!TryResolveRoundPlayerToken(CMD_ARGV(1), &pPlayer, failureReason, sizeof(failureReason)))
+    {
+        PrintLabDummyConsoleLine("helmet set failed: %s", failureReason);
+        return;
+    }
+
+    bool enabled = false;
+    if (!TryParseCommandBooleanValue(CMD_ARGV(2), &enabled))
+    {
+        PrintLabDummyConsoleLine("helmet set failed: use 0/1, off/on, or no/yes.");
+        return;
+    }
+
+    SetHelmetStateForPlayer(pPlayer, enabled);
+    PrintLabDummyConsoleLine(
+        "helmet set: %s helmet now %s.",
+        GetSafePlayerName(pPlayer),
+        enabled ? "on" : "off");
+    PrintArmorStatusForPlayer(pPlayer);
+}
+
+const char *GetPlayerHitTestHitgroupName(int hitgroup)
+{
+    switch (hitgroup)
+    {
+    case HITGROUP_HEAD:
+        return "head";
+    case HITGROUP_CHEST:
+        return "chest";
+    case HITGROUP_STOMACH:
+        return "stomach";
+    case HITGROUP_LEFTARM:
+        return "leftarm";
+    case HITGROUP_RIGHTARM:
+        return "rightarm";
+    case HITGROUP_LEFTLEG:
+        return "leftleg";
+    case HITGROUP_RIGHTLEG:
+        return "rightleg";
+    case HITGROUP_GENERIC:
+    default:
+        return "generic";
+    }
+}
+
+bool TryResolvePlayerHitTestHitgroup(const char *token, int *pHitgroup)
+{
+    if (pHitgroup == NULL || token == NULL || token[0] == '\0')
+    {
+        return false;
+    }
+
+    if (StringEqualsIgnoreCase(token, "head"))
+    {
+        *pHitgroup = HITGROUP_HEAD;
+        return true;
+    }
+
+    if (StringEqualsIgnoreCase(token, "body") ||
+        StringEqualsIgnoreCase(token, "chest") ||
+        StringEqualsIgnoreCase(token, "torso"))
+    {
+        *pHitgroup = HITGROUP_CHEST;
+        return true;
+    }
+
+    if (StringEqualsIgnoreCase(token, "stomach") || StringEqualsIgnoreCase(token, "gut"))
+    {
+        *pHitgroup = HITGROUP_STOMACH;
+        return true;
+    }
+
+    if (StringEqualsIgnoreCase(token, "leftarm"))
+    {
+        *pHitgroup = HITGROUP_LEFTARM;
+        return true;
+    }
+
+    if (StringEqualsIgnoreCase(token, "rightarm"))
+    {
+        *pHitgroup = HITGROUP_RIGHTARM;
+        return true;
+    }
+
+    if (StringEqualsIgnoreCase(token, "leftleg") || StringEqualsIgnoreCase(token, "leg"))
+    {
+        *pHitgroup = HITGROUP_LEFTLEG;
+        return true;
+    }
+
+    if (StringEqualsIgnoreCase(token, "rightleg"))
+    {
+        *pHitgroup = HITGROUP_RIGHTLEG;
+        return true;
+    }
+
+    if (StringEqualsIgnoreCase(token, "generic"))
+    {
+        *pHitgroup = HITGROUP_GENERIC;
+        return true;
+    }
+
+    return false;
+}
+
+bool ApplyPlayerHitTestForWeapon(CBasePlayer *pAttacker, CBasePlayer *pVictim, const char *weaponToken, int hitgroup, char *failureReason, size_t failureReasonSize)
+{
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    if (pAttacker == NULL || pAttacker->pev == NULL || pVictim == NULL || pVictim->pev == NULL)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "attacker or victim entity is unavailable");
+        }
+        return false;
+    }
+
+    if (!pAttacker->IsAlive())
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "attacker must be alive");
+        }
+        return false;
+    }
+
+    if (!pVictim->IsAlive())
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "victim must be alive");
+        }
+        return false;
+    }
+
+    float damage = 0.0f;
+
+    if (StringEqualsIgnoreCase(weaponToken, "glock"))
+    {
+        BeginGlockPrimaryShotContext(pAttacker, true);
+        damage = GetActiveGlockPrimaryBaseDamage(pAttacker->pev, ExpGlockPrimaryDamage());
+        const bool applied = ApplyActiveGlockPrimaryTraceDamage(pVictim, pAttacker->pev, hitgroup, &damage);
+        if (applied)
+        {
+            pVictim->TakeDamage(pAttacker->pev, pAttacker->pev, damage, DMG_BULLET);
+            FinalizeActiveGlockPrimaryHitTelemetry();
+        }
+        EndGlockPrimaryShotContext();
+
+        if (!applied && failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "failed to apply Glock verification hit");
+        }
+
+        return applied;
+    }
+
+    if (StringEqualsIgnoreCase(weaponToken, "mp5"))
+    {
+        BeginMp5PrimaryShotContext(pAttacker, true);
+        damage = GetActiveMp5PrimaryBaseDamage(pAttacker->pev, ExpMP5PrimaryDamage());
+        const bool applied = ApplyActiveMp5PrimaryTraceDamage(pVictim, pAttacker->pev, hitgroup, &damage);
+        if (applied)
+        {
+            pVictim->TakeDamage(pAttacker->pev, pAttacker->pev, damage, DMG_BULLET);
+            FinalizeActiveMp5PrimaryHitTelemetry();
+        }
+        EndMp5PrimaryShotContext();
+
+        if (!applied && failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "failed to apply MP5 verification hit");
+        }
+
+        return applied;
+    }
+
+    if (StringEqualsIgnoreCase(weaponToken, "357"))
+    {
+        Begin357PrimaryShotContext(pAttacker, true);
+        damage = GetActive357PrimaryBaseDamage(pAttacker->pev, Exp357PrimaryDamage());
+        const bool applied = ApplyActive357PrimaryTraceDamage(pVictim, pAttacker->pev, hitgroup, &damage);
+        if (applied)
+        {
+            pVictim->TakeDamage(pAttacker->pev, pAttacker->pev, damage, DMG_BULLET);
+            FinalizeActive357PrimaryHitTelemetry();
+        }
+        End357PrimaryShotContext();
+
+        if (!applied && failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "failed to apply 357 verification hit");
+        }
+
+        return applied;
+    }
+
+    if (StringEqualsIgnoreCase(weaponToken, "shotgun"))
+    {
+        BeginShotgunPrimaryShotContext(pAttacker, 1, true);
+        damage = GetActiveShotgunPrimaryBaseDamage(pAttacker->pev, ExpShotgunPrimaryDamagePerPellet());
+        const bool applied = ApplyActiveShotgunPrimaryTraceDamage(pVictim, pAttacker->pev, hitgroup, &damage);
+        if (applied)
+        {
+            pVictim->TakeDamage(pAttacker->pev, pAttacker->pev, damage, DMG_BULLET);
+            FinalizeActiveShotgunPrimaryHitTelemetry();
+        }
+        EndShotgunPrimaryShotContext();
+
+        if (!applied && failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "failed to apply shotgun verification hit");
+        }
+
+        return applied;
+    }
+
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        _snprintf_s(
+            failureReason,
+            failureReasonSize,
+            _TRUNCATE,
+            "unknown weapon \"%s\". Use glock, mp5, 357, or shotgun.",
+            weaponToken != NULL ? weaponToken : "");
+    }
+
+    return false;
+}
+
+void ExpPlayerHitTestCommand()
+{
+    if (CMD_ARGC() < 5)
+    {
+        PrintLabDummyConsoleLine("usage: exp_player_hit_test <attacker> <victim> <weapon> <hitgroup>");
+        PrintLabDummyConsoleLine("weapons: glock | mp5 | 357 | shotgun");
+        PrintLabDummyConsoleLine("hitgroups: head | body | chest | stomach | leftarm | rightarm | leftleg | rightleg");
+        return;
+    }
+
+    CBasePlayer *pAttacker = NULL;
+    CBasePlayer *pVictim = NULL;
+    char failureReason[256];
+
+    if (!TryResolveRoundPlayerToken(CMD_ARGV(1), &pAttacker, failureReason, sizeof(failureReason)))
+    {
+        PrintLabDummyConsoleLine("player hit test failed: attacker %s", failureReason);
+        return;
+    }
+
+    if (!TryResolveRoundPlayerToken(CMD_ARGV(2), &pVictim, failureReason, sizeof(failureReason)))
+    {
+        PrintLabDummyConsoleLine("player hit test failed: victim %s", failureReason);
+        return;
+    }
+
+    int hitgroup = HITGROUP_GENERIC;
+    if (!TryResolvePlayerHitTestHitgroup(CMD_ARGV(4), &hitgroup))
+    {
+        PrintLabDummyConsoleLine("player hit test failed: unknown hitgroup \"%s\".", CMD_ARGV(4));
+        return;
+    }
+
+    const float victimHealthBefore = pVictim->pev != NULL ? pVictim->pev->health : 0.0f;
+    const float victimArmorBefore = pVictim->pev != NULL ? pVictim->pev->armorvalue : 0.0f;
+
+    if (!ApplyPlayerHitTestForWeapon(pAttacker, pVictim, CMD_ARGV(3), hitgroup, failureReason, sizeof(failureReason)))
+    {
+        PrintLabDummyConsoleLine("player hit test failed: %s", failureReason[0] != '\0' ? failureReason : "unknown error");
+        return;
+    }
+
+    PrintLabDummyConsoleLine(
+        "player hit test: attacker=%s victim=%s weapon=%s hitgroup=%s health %.1f->%.1f armor %.1f->%.1f",
+        GetSafePlayerName(pAttacker),
+        GetSafePlayerName(pVictim),
+        CMD_ARGV(3),
+        GetPlayerHitTestHitgroupName(hitgroup),
+        victimHealthBefore,
+        pVictim->pev != NULL ? pVictim->pev->health : 0.0f,
+        victimArmorBefore,
+        pVictim->pev != NULL ? pVictim->pev->armorvalue : 0.0f);
+    PrintArmorStatusForPlayer(pVictim);
 }
 
 void ExpBuyCommand()
@@ -11664,6 +12027,9 @@ void RegisterFutureGameplayCommands()
     g_engfuncs.pfnAddServerCommand((char *)"exp_buy_list", ExpBuyListCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_buy_status", ExpBuyStatusCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_armor_status", ExpArmorStatusCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_armor_set", ExpArmorSetCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_helmet_set", ExpHelmetSetCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_player_hit_test", ExpPlayerHitTestCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_buy", ExpBuyCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_buy_clear", ExpBuyClearCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_buy_grant", ExpBuyGrantCommand);
@@ -12980,6 +13346,11 @@ bool FutureGameplayPlayerHasHelmet(CBasePlayer *pPlayer)
     }
 
     return GetEffectiveHelmetStateForPlayer(pPlayer);
+}
+
+bool FutureGameplayIsFakeVerificationPlayer(CBasePlayer *pPlayer)
+{
+    return IsRoundFakeClient(pPlayer);
 }
 
 bool FutureGameplayPlayerHeadProtectionActive(CBasePlayer *pPlayer)

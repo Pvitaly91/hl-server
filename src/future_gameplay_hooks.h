@@ -182,6 +182,7 @@ bool ExpHelmetModeEnabled();
 bool ExpHelmetStartEnabled();
 bool ExpHelmetHeadshotProtectionEnabled();
 bool FutureGameplayPlayerHasHelmet(CBasePlayer *pPlayer);
+bool FutureGameplayIsFakeVerificationPlayer(CBasePlayer *pPlayer);
 bool FutureGameplayPlayerHeadProtectionActive(CBasePlayer *pPlayer);
 void FutureGameplayMarkPlayerBulletArmorHandled(CBasePlayer *pPlayer);
 bool FutureGameplayConsumePlayerBulletArmorHandled(CBasePlayer *pPlayer, int bitsDamageType);

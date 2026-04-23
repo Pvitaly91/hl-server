@@ -142,10 +142,10 @@ void LogGlockLabDummyMark(const char *action, CBasePlayer *pAnchorPlayer, const 
 void LogGlockLabDummyReposition(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, const Vector &origin, const Vector &angles, const char *reason, const char *source, const char *candidate, const char *spotName, const char *spotStorage);
 void LogGlockLabDummyClear(CBaseEntity *pDummy, const char *reason);
 void LogTeamSpawnEvent(const char *event, CBasePlayer *pPlayer, int teamId, const char *teamName, const Vector &origin, const Vector &angles, const char *source, const char *candidate, const char *spotName, const char *spotStorage, const char *reason);
-void BeginGlockPrimaryShotContext(CBasePlayer *pPlayer);
-void BeginMp5PrimaryShotContext(CBasePlayer *pPlayer);
-void Begin357PrimaryShotContext(CBasePlayer *pPlayer);
-void BeginShotgunPrimaryShotContext(CBasePlayer *pPlayer, int pelletCount);
+void BeginGlockPrimaryShotContext(CBasePlayer *pPlayer, bool verificationMode = false);
+void BeginMp5PrimaryShotContext(CBasePlayer *pPlayer, bool verificationMode = false);
+void Begin357PrimaryShotContext(CBasePlayer *pPlayer, bool verificationMode = false);
+void BeginShotgunPrimaryShotContext(CBasePlayer *pPlayer, int pelletCount, bool verificationMode = false);
 void EndGlockPrimaryShotContext();
 void EndMp5PrimaryShotContext();
 void End357PrimaryShotContext();

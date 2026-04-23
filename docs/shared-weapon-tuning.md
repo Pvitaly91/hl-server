@@ -74,6 +74,59 @@ Relevant new cvars for this pass:
 
 Cadence mode and pattern mode are still server-side approximations. They do not add client-side recoil animation or a custom prediction model.
 
+## Real-Player Headshot And Armor Telemetry
+
+The current gameplay layer now exposes the real-player and fake-verification-client armor/head-protection path directly in the weapon log instead of forcing later inference from status snapshots.
+
+Important model notes:
+
+- This is still a deterministic server-side approximation, not a claim of exact Counter-Strike armor parity.
+- Real players and fake verification clients use the same experimental armor/head-protection logic when `sv_exp_armor_mode` and `sv_exp_helmet_mode` are enabled.
+- Body armor and helmet/head protection are surfaced separately in logs and status output even though they still share the same underlying `armorvalue` pool on the player entity.
+- `armor_model=player_custom` means the experimental player armor path produced the logged result.
+- `armor_model=player_stock` is reserved for cases where stock player armor behavior is still what the trace observed.
+
+Direct per-hit player telemetry now logs:
+
+- attacker / victim identity
+- `victim_is_player`
+- `victim_is_fake`
+- `helmet_equipped`
+- `head_protection_active`
+- `armor_hit_protected`
+- `armor_model`
+- `health_before` / `health_after`
+- `armor_before` / `armor_after`
+- `damage_raw`
+- `damage_to_health`
+- `damage_absorbed`
+- `armor_drain`
+- `verification`
+
+That makes these verification paths practical without client DLL changes:
+
+```text
+exp_team_fake_add team1 verify_alpha
+exp_team_fake_add team2 verify_bravo
+exp_armor_set verify_bravo 100
+exp_helmet_set verify_bravo 1
+exp_player_hit_test verify_alpha verify_bravo glock body
+exp_player_hit_test verify_alpha verify_bravo glock head
+exp_helmet_set verify_bravo 0
+exp_player_hit_test verify_alpha verify_bravo 357 head
+```
+
+The analyzer now distinguishes direct player/fake-player evidence from inferred evidence and summarizes:
+
+- player hit count
+- real-player hit count
+- fake-player hit count
+- player headshot hit/kill count
+- helmet-protected headshot count
+- unprotected headshot count
+- direct player armor evidence count
+- total armor absorbed / armor drain on player hits
+
 That keeps the live-lab workflow unchanged:
 
 ```text

@@ -13,6 +13,7 @@ function I([string]$v){if([string]::IsNullOrWhiteSpace($v)-or $v -eq 'na'){retur
 function N([string]$v){if([string]::IsNullOrWhiteSpace($v)-or $v -eq 'na'){return $null};[double]::Parse($v,[Globalization.CultureInfo]::InvariantCulture)}
 function B([string]$v){if([string]::IsNullOrWhiteSpace($v)-or $v -eq 'na'){return $null};switch($v.ToLowerInvariant()){'1'{$true}'0'{$false}'true'{$true}'false'{$false}default{[bool]::Parse($v)}}}
 function S([object[]]$v){$f=@($v|?{$_ -ne $null});if($f.Count -eq 0){return $null};$m=$f|measure -Minimum -Maximum -Average;[pscustomobject]@{Count=[int]$m.Count;Min=[double]$m.Minimum;Average=[double]$m.Average;Max=[double]$m.Maximum}}
+function T([object[]]$v){$f=@($v|?{$_ -ne $null});if($f.Count -eq 0){return $null};[double](($f|measure -Sum).Sum)}
 function M($e){
  if($Weapon -eq 'all'){return $true}
  if(-not $e){return $false}
@@ -95,18 +96,42 @@ function P([string]$l,[int]$n){
   Grounded=B(F $h 'grounded')
   Ducking=B(F $h 'ducking')
   AppliedDamage=N(F $h 'applied_damage')
+  ArmorBefore=N(F $h 'armor_before')
+  ArmorAfter=N(F $h 'armor_after')
+  ArmorDamage=N(F $h 'armor_damage')
+  DamageRaw=N(F $h 'damage_raw')
+  DamageToHealth=N(F $h 'damage_to_health')
+  DamageAbsorbed=N(F $h 'damage_absorbed')
+  ArmorDrain=N(F $h 'armor_drain')
   Headshot=B(F $h 'headshot')
   HeadshotLethalApplied=B(F $h 'headshot_lethal_applied')
   VictimKind=FF $h @('victim_kind','victimKind')
   VictimClass=FF $h @('victim_class','victimClass')
+  VictimIsPlayer=B(FF $h @('victim_is_player','victimIsPlayer'))
+  VictimIsFake=B(FF $h @('victim_is_fake','victimIsFake'))
   ArmorApplied=B(FF $h @('armor_applied','armorApplied'))
-  HeadProtected=B(FF $h @('head_protected','headProtected'))
+  HelmetEquipped=B(FF $h @('helmet_equipped','helmetEquipped'))
+  HeadProtectionActive=B(FF $h @('head_protection_active','head_protection','headProtected','head_protected'))
+  ArmorHitProtected=B(FF $h @('armor_hit_protected','armorHitProtected'))
+  ArmorModel=FF $h @('armor_model','armorModel')
+  HeadProtected=B(FF $h @('head_protected','headProtectionActive','headProtected'))
   DummyArmorBefore=N(FF $h @('dummy_armor_before','dummyArmorBefore'))
   Raw=$l
  }}
 $log=Resolve-LogFile;$events=@();$warnings=New-Object Collections.ArrayList;$obs=New-Object Collections.ArrayList;$assert=New-Object Collections.ArrayList;$i=0;foreach($line in Get-Content -LiteralPath $log.FullName){$i++;$e=P $line $i;if($e -and $e.Type -ne 'unknown'){$events+=$e}elseif($line.Trim()){[void]$warnings.Add("Skipped non-telemetry line $i because it did not match the expected single-line key=value format.")}}
 $session=@($events|?{$_.Type -eq 'session'}|select -first 1);$session=if($session.Count){$session[0]}else{$null};$effectiveWeapon=if($Weapon -ne 'all'){$Weapon}else{$session.WeaponUnderTest}
 $accepted=@($events|?{$_.Type -eq 'accepted' -and (M $_)});$rejected=@($events|?{$_.Type -eq 'rejected' -and (M $_)});$hits=@($events|?{$_.Type -eq 'hit' -and (M $_)});$kills=@($events|?{$_.Type -eq 'kill' -and (M $_)});$dummySpawns=@($events|?{$_.Type -eq 'dummy_spawn'});$dummyRespawns=@($events|?{$_.Type -eq 'dummy_respawn'});$dummySpawnFailures=@($events|?{$_.Type -eq 'dummy_spawn_failed'});$targetMarks=@($events|?{$_.Type -eq 'target_mark'});$targetUnmarks=@($events|?{$_.Type -eq 'target_unmark'});$targetUseSaved=@($events|?{$_.Type -eq 'target_use_saved'});$dummyClears=@($events|?{$_.Type -eq 'dummy_clear'});$dummyRepositions=@($events|?{$_.Type -eq 'dummy_reposition'});$headshotHits=@($hits|?{$_.Headshot -eq $true});$headshotKills=@($kills|?{$_.Headshot -eq $true});$lethal=@($hits|?{$_.HeadshotLethalApplied -eq $true});if($lethal.Count -eq 0){$lethal=@($kills|?{$_.HeadshotLethalApplied -eq $true})};$dummyHits=@($hits|?{D $_});$dummyKills=@($kills|?{D $_});$dummyHeadshotHits=@($dummyHits|?{$_.Headshot -eq $true});$dummyHeadshotKills=@($dummyKills|?{$_.Headshot -eq $true});$dummyLethal=@($dummyHits|?{$_.HeadshotLethalApplied -eq $true});if($dummyLethal.Count -eq 0){$dummyLethal=@($dummyKills|?{$_.HeadshotLethalApplied -eq $true})};$armoredDummyHits=@($dummyHits|?{A $_});$protectedDummyHeadshotHits=@($dummyHits|?{$_.Headshot -eq $true -and $_.HeadProtected -eq $true});$protectedDummyHeadshotKills=@($dummyKills|?{$_.Headshot -eq $true -and $_.HeadProtected -eq $true});$firstShotAccepted=@($accepted|?{$_.FirstShot -eq $true});$movePenaltyAccepted=@($accepted|?{$_.MovementPenalty -gt 0});$burstGrowthAccepted=@($accepted|?{$_.AdditionalSpread -gt 0 -or $_.ShotIndex -gt 1 -or $_.RecoveryApplied -gt 0});$cadenceAccepted=@($accepted|?{$_.CadenceMode -eq $true});$cadencePenaltyAccepted=@($accepted|?{$_.CadenceMode -eq $true -and (($_.CadencePenalty -gt 0) -or ($_.CadenceReset -eq $true) -or ($_.ShotIndex -gt 1))});$cadenceResetAccepted=@($accepted|?{$_.CadenceReset -eq $true});$patternAccepted=@($accepted|?{$_.PatternMode -eq $true});$patternResetAccepted=@($accepted|?{$_.PatternReset -eq $true});$standing=@($accepted|?{$_.Grounded -eq $true -and $_.Ducking -eq $false -and $_.MovementPenalty -ne $null -and $_.HorizontalSpeed -gt 0 -and $_.MaxSpeed -gt 0}|%{$_.MovementPenalty/([Math]::Min([Math]::Max(($_.HorizontalSpeed/$_.MaxSpeed),0.0),1.0))});$crouch=@($accepted|?{$_.Grounded -eq $true -and $_.Ducking -eq $true -and $_.MovementPenalty -ne $null -and $_.HorizontalSpeed -gt 0 -and $_.MaxSpeed -gt 0}|%{$_.MovementPenalty/([Math]::Min([Math]::Max(($_.HorizontalSpeed/$_.MaxSpeed),0.0),1.0))});$crouchMoveEvidence=($standing.Count -gt 0 -and $crouch.Count -gt 0 -and ($crouch|measure -Average).Average -lt ($standing|measure -Average).Average);$recoveryReturnedFirstShot=$false;if($effectiveWeapon -ne 'mp5'){$seen=$false;foreach($a in $accepted){if($a.FirstShot -eq $false){$seen=$true;continue};if($seen -and $a.FirstShot -eq $true){$recoveryReturnedFirstShot=$true;break}}};$targetSpawnLifecycle=@($dummySpawns+$dummyRespawns);$savedSpotUsage=@($targetSpawnLifecycle|?{$_.Source -eq 'saved_spot'});$targetSpawnBySource=@($targetSpawnLifecycle|Group-Object Source|Sort-Object Name|ForEach-Object{[ordered]@{Name=$(if([string]::IsNullOrWhiteSpace($_.Name)){'unknown'}else{$_.Name});Count=$_.Count}})
+$playerHits=@($hits|?{$_.VictimKind -eq 'player' -or $_.VictimKind -eq 'fake_client'})
+$playerKills=@($kills|?{$_.VictimKind -eq 'player' -or $_.VictimKind -eq 'fake_client'})
+$fakePlayerHits=@($playerHits|?{$_.VictimKind -eq 'fake_client' -or $_.VictimIsFake -eq $true})
+$realPlayerHits=@($playerHits|?{$_.VictimKind -eq 'player' -and $_.VictimIsFake -ne $true})
+$playerHeadshotHits=@($playerHits|?{$_.Headshot -eq $true})
+$playerHeadshotKills=@($playerKills|?{$_.Headshot -eq $true})
+$helmetProtectedPlayerHeadshotHits=@($playerHeadshotHits|?{$_.HeadProtectionActive -eq $true})
+$unprotectedPlayerHeadshotHits=@($playerHeadshotHits|?{$_.HeadProtectionActive -ne $true})
+$directPlayerArmorEvidenceHits=@($playerHits|?{$_.ArmorBefore -ne $null -and $_.ArmorAfter -ne $null -and $_.DamageRaw -ne $null -and $_.DamageToHealth -ne $null})
+$playerArmorAbsorbedTotal=T($playerHits|%{$_.DamageAbsorbed})
+$playerArmorDrainTotal=T($playerHits|%{$_.ArmorDrain})
 $spreadStats=S($accepted|%{$_.Spread})
 $moveStats=S($accepted|%{$_.MovementPenalty})
 $speedStats=S($accepted|%{$_.HorizontalSpeed})
@@ -143,7 +168,28 @@ $shotgunAccepted=@($accepted|?{$_.Weapon -eq 'shotgun' -and $_.ProfileName}|sele
 $shotgunProfile=if($isShotgunSession -and $session.ShotgunProfileName){$session.ShotgunProfileName}elseif($isShotgunSession -and $session.ProfileName){$session.ProfileName}elseif($shotgunAccepted.Count){$shotgunAccepted[0].ProfileName}else{$null}
 $weaponProfile=if($effectiveWeapon -eq 'mp5'){if($mp5Profile){$mp5Profile}else{$glockProfile}}elseif($effectiveWeapon -eq 'glock'){if($glockProfile){$glockProfile}else{$mp5Profile}}elseif($effectiveWeapon -eq '357'){if($profile357){$profile357}else{$session.ProfileName}}elseif($effectiveWeapon -eq 'shotgun'){if($shotgunProfile){$shotgunProfile}else{$session.ProfileName}}elseif($shotgunProfile){$shotgunProfile}elseif($profile357){$profile357}elseif($mp5Profile){$mp5Profile}elseif($glockProfile){$glockProfile}elseif($session.ProfileName){$session.ProfileName}else{$null}
 if(-not $session){[void]$warnings.Add('No session header line was parsed. The analyzer can still summarize event telemetry, but launch metadata is missing.')} ; if($accepted.Count){[void]$obs.Add("Parsed $($accepted.Count) accepted event(s).")}else{[void]$warnings.Add('No accepted weapon telemetry matched the current filter.')}; if($hits.Count){[void]$obs.Add("Parsed $($hits.Count) hit event(s).")}else{[void]$warnings.Add('No hit telemetry matched the current filter.')}; if($movePenaltyAccepted.Count){[void]$obs.Add("Movement-penalty evidence exists ($($movePenaltyAccepted.Count)).")}else{[void]$warnings.Add('No accepted event with move_penalty > 0 matched the current filter.')}; if(($effectiveWeapon -eq 'glock' -or $effectiveWeapon -eq 'mp5') -and -not $burstGrowthAccepted.Count){[void]$warnings.Add('No cadence-growth or recovery evidence was logged for this selection.')} ; if(($effectiveWeapon -eq 'glock' -or $effectiveWeapon -eq '357') -and -not $cadencePenaltyAccepted.Count){[void]$warnings.Add('No cadence penalty or cadence reset evidence was logged for this pistol selection.')} ; if($cadenceAccepted.Count){[void]$obs.Add("Cadence telemetry was present ($($cadenceAccepted.Count)).")} ; if($dummySpawns.Count -or $dummyRespawns.Count -or $dummyClears.Count -or $dummyRepositions.Count -or $dummySpawnFailures.Count -or $targetMarks.Count -or $targetUnmarks.Count -or $targetUseSaved.Count){[void]$obs.Add("Target lifecycle telemetry was present ($($dummySpawns.Count) spawn, $($dummyRespawns.Count) respawn, $($dummySpawnFailures.Count) spawn_failed, $($dummyClears.Count) clear, $($dummyRepositions.Count) reposition, $($targetMarks.Count) mark, $($targetUnmarks.Count) unmark, $($targetUseSaved.Count) use_saved).")} ; if($dummySpawnFailures.Count){[void]$obs.Add("Target spawn failures were logged ($($dummySpawnFailures.Count)).")} ; if($savedSpotUsage.Count){[void]$obs.Add("Saved-spot spawn usage was logged ($($savedSpotUsage.Count)).")} ; if($dummyHeadshotKills.Count){[void]$obs.Add("Target headshot kill evidence exists ($($dummyHeadshotKills.Count)).")}
+if($playerHits.Count){[void]$obs.Add("Parsed $($playerHits.Count) direct player/fake-player hit event(s).")}
+if($realPlayerHits.Count){[void]$obs.Add("Real-player hit telemetry was present ($($realPlayerHits.Count)).")}
+if($fakePlayerHits.Count){[void]$obs.Add("Fake verification client hit telemetry was present ($($fakePlayerHits.Count)).")}
+if($playerHeadshotHits.Count){[void]$obs.Add("Player/fake-player headshot hit evidence exists ($($playerHeadshotHits.Count)).")}
+if($playerHeadshotKills.Count){[void]$obs.Add("Player/fake-player headshot kill evidence exists ($($playerHeadshotKills.Count)).")}
+if($helmetProtectedPlayerHeadshotHits.Count){[void]$obs.Add("Helmet-protected headshot evidence exists ($($helmetProtectedPlayerHeadshotHits.Count)).")}
+if($unprotectedPlayerHeadshotHits.Count){[void]$obs.Add("Unprotected headshot evidence exists ($($unprotectedPlayerHeadshotHits.Count)).")}
+if($directPlayerArmorEvidenceHits.Count){
+ [void]$obs.Add("Direct player armor telemetry exists ($($directPlayerArmorEvidenceHits.Count)) with absorbed total $(if($playerArmorAbsorbedTotal -ne $null){('{0:F4}' -f $playerArmorAbsorbedTotal)}else{'n/a'}).")
+}elseif($playerHits.Count){
+ [void]$warnings.Add('Player/fake-player hit telemetry exists, but no hit carried full direct armor-before/after and damage breakdown fields.')
+}
 $signals=[ordered]@{acceptedShots=($accepted.Count -gt 0);tapFireHoldRejections=($rejected.Count -gt 0);firstShotAccepted=($firstShotAccepted.Count -gt 0);movementPenaltyPositive=($movePenaltyAccepted.Count -gt 0);recoveryReturnedFirstShot=$recoveryReturnedFirstShot;crouchMovePenaltyReductionCandidate=$crouchMoveEvidence;hitsPresent=($hits.Count -gt 0);killsPresent=($kills.Count -gt 0);headshotHitsPresent=($headshotHits.Count -gt 0);headshotKillsPresent=($headshotKills.Count -gt 0);lethalHeadshotEvidencePresent=($lethal.Count -gt 0);dummySpawnsPresent=($dummySpawns.Count -gt 0);dummyRespawnsPresent=($dummyRespawns.Count -gt 0);dummyHitsPresent=($dummyHits.Count -gt 0);dummyKillsPresent=($dummyKills.Count -gt 0);dummyHeadshotHitsPresent=($dummyHeadshotHits.Count -gt 0);dummyHeadshotKillsPresent=($dummyHeadshotKills.Count -gt 0);armoredDummyHitsPresent=($armoredDummyHits.Count -gt 0);protectedDummyHeadshotHitsPresent=($protectedDummyHeadshotHits.Count -gt 0);protectedDummyHeadshotKillsPresent=($protectedDummyHeadshotKills.Count -gt 0);dummyLethalHeadshotEvidencePresent=($dummyLethal.Count -gt 0);weaponAcceptedPresent=($accepted.Count -gt 0);weaponHitsPresent=($hits.Count -gt 0);weaponKillsPresent=($kills.Count -gt 0);weaponHeadshotKillsPresent=($headshotKills.Count -gt 0);burstGrowthEvidencePresent=($burstGrowthAccepted.Count -gt 0);cadenceModeEvidencePresent=($cadenceAccepted.Count -gt 0);cadencePenaltyEvidencePresent=($cadencePenaltyAccepted.Count -gt 0);cadenceResetEvidencePresent=($cadenceResetAccepted.Count -gt 0);movementPenaltyEvidencePresent=($movePenaltyAccepted.Count -gt 0);patternEvidencePresent=($patternAccepted.Count -gt 0);patternResetEvidencePresent=($patternResetAccepted.Count -gt 0)}
+$signals.playerHitsPresent=($playerHits.Count -gt 0)
+$signals.realPlayerHitsPresent=($realPlayerHits.Count -gt 0)
+$signals.fakePlayerHitsPresent=($fakePlayerHits.Count -gt 0)
+$signals.playerKillsPresent=($playerKills.Count -gt 0)
+$signals.playerHeadshotHitsPresent=($playerHeadshotHits.Count -gt 0)
+$signals.playerHeadshotKillsPresent=($playerHeadshotKills.Count -gt 0)
+$signals.helmetProtectedPlayerHeadshotHitsPresent=($helmetProtectedPlayerHeadshotHits.Count -gt 0)
+$signals.unprotectedPlayerHeadshotHitsPresent=($unprotectedPlayerHeadshotHits.Count -gt 0)
+$signals.directPlayerArmorEvidencePresent=($directPlayerArmorEvidenceHits.Count -gt 0)
 $missing=New-Object Collections.ArrayList; if(-not $signals.movementPenaltyPositive){[void]$missing.Add('No accepted shot with move_penalty > 0 was logged for this step.')}; if(($effectiveWeapon -eq 'glock' -or $effectiveWeapon -eq 'mp5') -and -not $signals.burstGrowthEvidencePresent){[void]$missing.Add('No cadence-growth or recovery evidence was logged for this weapon step.')}; if(-not $signals.dummyHeadshotHitsPresent){[void]$missing.Add('No dummy headshot hit evidence was logged for this step.')}; if(-not $signals.armoredDummyHitsPresent){[void]$missing.Add('No armored dummy hit evidence was logged for this step.')}; if(-not $signals.protectedDummyHeadshotHitsPresent){[void]$missing.Add('No protected-head dummy headshot evidence was logged for this step.')}; if(-not ($signals.dummyLethalHeadshotEvidencePresent -or $signals.lethalHeadshotEvidencePresent)){[void]$missing.Add('No lethal-headshot evidence was logged for this step.')}
 if($RequireAccepted -and -not $signals.acceptedShots){[void]$assert.Add('Required signal missing: accepted weapon telemetry lines.')}; if($RequireRejections -and -not $signals.tapFireHoldRejections){[void]$assert.Add('Required signal missing: rejection telemetry lines.')}; if($RequireFirstShot -and -not $signals.firstShotAccepted){[void]$assert.Add('Required signal missing: accepted events with firstshot=1.')}; if(($RequireMovePenalty -or $RequireMovementPenaltyEvidence) -and -not $signals.movementPenaltyPositive){[void]$assert.Add('Required signal missing: accepted events with move_penalty > 0.')}; if($RequireCrouchMoveEvidence -and -not $signals.crouchMovePenaltyReductionCandidate){[void]$assert.Add('Required signal missing: crouch-moving accepted shots suggesting lower normalized movement penalty than standing movement.')}; if(($RequireHits -or $RequireWeaponHits) -and -not $signals.hitsPresent){[void]$assert.Add('Required signal missing: weapon hit telemetry lines.')}; if(($RequireKills -or $RequireWeaponKills) -and -not $signals.killsPresent){[void]$assert.Add('Required signal missing: weapon kill telemetry lines.')}; if(($RequireHeadshotKills -or $RequireWeaponHeadshotKills) -and -not $signals.headshotKillsPresent){[void]$assert.Add('Required signal missing: weapon headshot kill telemetry lines.')}; if($RequireLethalHeadshotEvidence -and -not $signals.lethalHeadshotEvidencePresent){[void]$assert.Add('Required signal missing: explicit lethal-headshot evidence via headshot_lethal_applied=1.')}; if($RequireDummySpawns -and -not $signals.dummySpawnsPresent){[void]$assert.Add('Required signal missing: lab dummy spawn lifecycle lines.')}; if($RequireDummyHits -and -not $signals.dummyHitsPresent){[void]$assert.Add('Required signal missing: hit telemetry against the lab dummy.')}; if($RequireDummyHeadshotHits -and -not $signals.dummyHeadshotHitsPresent){[void]$assert.Add('Required signal missing: dummy headshot hit telemetry.')}; if($RequireDummyHeadshotKills -and -not $signals.dummyHeadshotKillsPresent){[void]$assert.Add('Required signal missing: dummy headshot kill telemetry.')}; if($RequireArmoredDummyHits -and -not $signals.armoredDummyHitsPresent){[void]$assert.Add('Required signal missing: armored dummy hit telemetry.')}; if($RequireProtectedDummyHeadshotHits -and -not $signals.protectedDummyHeadshotHitsPresent){[void]$assert.Add('Required signal missing: protected-head dummy headshot hit telemetry.')}; if($RequireProtectedDummyHeadshotKills -and -not $signals.protectedDummyHeadshotKillsPresent){[void]$assert.Add('Required signal missing: protected-head dummy headshot kill telemetry.')}; if($RequireDummyLethalHeadshotEvidence -and -not $signals.dummyLethalHeadshotEvidencePresent){[void]$assert.Add('Required signal missing: explicit lethal-headshot evidence against the dummy via headshot_lethal_applied=1.')}; if($RequireWeaponAccepted -and -not $signals.weaponAcceptedPresent){[void]$assert.Add('Required signal missing: accepted telemetry for the selected weapon filter.')}; if($RequireBurstGrowthEvidence -and -not $signals.burstGrowthEvidencePresent){[void]$assert.Add('Required signal missing: cadence-growth or recovery evidence for the selected weapon filter.')}
 $meta=[ordered]@{
@@ -197,6 +243,18 @@ $summary=[ordered]@{
  targetKillCount=$dummyKills.Count
  targetHeadshotHitCount=$dummyHeadshotHits.Count
  targetHeadshotKillCount=$dummyHeadshotKills.Count
+ playerHitCount=$playerHits.Count
+ realPlayerHitCount=$realPlayerHits.Count
+ fakePlayerHitCount=$fakePlayerHits.Count
+ playerKillCount=$playerKills.Count
+ playerHeadshotHitCount=$playerHeadshotHits.Count
+ playerHeadshotKillCount=$playerHeadshotKills.Count
+ helmetProtectedPlayerHeadshotHitCount=$helmetProtectedPlayerHeadshotHits.Count
+ unprotectedPlayerHeadshotHitCount=$unprotectedPlayerHeadshotHits.Count
+ directPlayerArmorEvidenceCount=$directPlayerArmorEvidenceHits.Count
+ inferredPlayerArmorEvidenceCount=([Math]::Max($playerHits.Count - $directPlayerArmorEvidenceHits.Count,0))
+ playerArmorAbsorbedDamageTotal=$playerArmorAbsorbedTotal
+ playerArmorDrainTotal=$playerArmorDrainTotal
  dummyHitCount=$dummyHits.Count
  dummyKillCount=$dummyKills.Count
  dummyHeadshotHitCount=$dummyHeadshotHits.Count
@@ -314,6 +372,13 @@ $summary=[ordered]@{
   protectedHeadDummyEvidence=$signals.protectedDummyHeadshotHitsPresent
   lethalHeadshotPath=($signals.dummyLethalHeadshotEvidencePresent -or $signals.lethalHeadshotEvidencePresent)
   lethalHeadshotEvidence=($signals.dummyLethalHeadshotEvidencePresent -or $signals.lethalHeadshotEvidencePresent)
+  directPlayerHitTelemetry=$signals.playerHitsPresent
+  directPlayerHitTelemetryEvidence=$signals.playerHitsPresent
+  fakePlayerHitTelemetry=$signals.fakePlayerHitsPresent
+  fakePlayerHitTelemetryEvidence=$signals.fakePlayerHitsPresent
+  helmetProtectedPlayerHeadshotEvidence=$signals.helmetProtectedPlayerHeadshotHitsPresent
+  unprotectedPlayerHeadshotEvidence=$signals.unprotectedPlayerHeadshotHitsPresent
+  directPlayerArmorEvidence=$signals.directPlayerArmorEvidencePresent
  }
  missingSignalNotes=@($missing)
 }
@@ -355,11 +420,20 @@ $report=[ordered]@{
   targetRespawns=$dummyRespawns.Count
   targetSavedSpotUsage=$savedSpotUsage.Count
   targetClears=$dummyClears.Count
-  targetRepositions=$dummyRepositions.Count
-  targetHits=$dummyHits.Count
-  targetKills=$dummyKills.Count
-  targetHeadshotHits=$dummyHeadshotHits.Count
-  targetHeadshotKills=$dummyHeadshotKills.Count
+ targetRepositions=$dummyRepositions.Count
+ targetHits=$dummyHits.Count
+ targetKills=$dummyKills.Count
+ targetHeadshotHits=$dummyHeadshotHits.Count
+ targetHeadshotKills=$dummyHeadshotKills.Count
+  playerHits=$playerHits.Count
+  realPlayerHits=$realPlayerHits.Count
+  fakePlayerHits=$fakePlayerHits.Count
+  playerKills=$playerKills.Count
+  playerHeadshotHits=$playerHeadshotHits.Count
+  playerHeadshotKills=$playerHeadshotKills.Count
+  helmetProtectedPlayerHeadshotHits=$helmetProtectedPlayerHeadshotHits.Count
+  unprotectedPlayerHeadshotHits=$unprotectedPlayerHeadshotHits.Count
+  directPlayerArmorEvidenceHits=$directPlayerArmorEvidenceHits.Count
   dummySpawns=$dummySpawns.Count
   dummyRespawns=$dummyRespawns.Count
   dummyClears=$dummyClears.Count
@@ -402,9 +476,13 @@ $report=[ordered]@{
   pelletsPlanned=$pelletPlanStats
   pelletsHit=$pelletHitStats
   headshotPellets=$headshotPelletStats
+  playerArmorAbsorbedTotal=$playerArmorAbsorbedTotal
+  playerArmorDrainTotal=$playerArmorDrainTotal
   targetSpawnBySource=@($targetSpawnBySource)
   hitgroupCounts=(($hits|group HitGroup|?{$_.Name}|sort Name|%{[ordered]@{Name=$_.Name;Count=$_.Count}}))
   dummyHitgroupCounts=(($dummyHits|group HitGroup|?{$_.Name}|sort Name|%{[ordered]@{Name=$_.Name;Count=$_.Count}}))
+  playerHitgroupCounts=(($playerHits|group HitGroup|?{$_.Name}|sort Name|%{[ordered]@{Name=$_.Name;Count=$_.Count}}))
+  fakePlayerHitgroupCounts=(($fakePlayerHits|group HitGroup|?{$_.Name}|sort Name|%{[ordered]@{Name=$_.Name;Count=$_.Count}}))
  }
  signals=$signals
  comparisonSummary=$summary
@@ -451,6 +529,18 @@ Write-Host "  armored target hits      : $($armoredDummyHits.Count)"
 Write-Host "  protected hs hits        : $($protectedDummyHeadshotHits.Count)"
 Write-Host "  protected hs kills       : $($protectedDummyHeadshotKills.Count)"
 Write-Host "  target lethal hs evid.   : $($dummyLethal.Count)"
+Write-Host "  player hits              : $($playerHits.Count)"
+Write-Host "  real-player hits         : $($realPlayerHits.Count)"
+Write-Host "  fake-player hits         : $($fakePlayerHits.Count)"
+Write-Host "  player kills             : $($playerKills.Count)"
+Write-Host "  player hs hits           : $($playerHeadshotHits.Count)"
+Write-Host "  player hs kills          : $($playerHeadshotKills.Count)"
+Write-Host "  helmeted hs hits         : $($helmetProtectedPlayerHeadshotHits.Count)"
+Write-Host "  unprotected hs hits      : $($unprotectedPlayerHeadshotHits.Count)"
+Write-Host "  direct player armor evid.: $($directPlayerArmorEvidenceHits.Count)"
+Write-Host "  inferred player armor    : $([Math]::Max($playerHits.Count - $directPlayerArmorEvidenceHits.Count,0))"
+Write-Host "  player armor absorbed    : $(if($playerArmorAbsorbedTotal -ne $null){('{0:F4}' -f $playerArmorAbsorbedTotal)}else{'n/a'})"
+Write-Host "  player armor drain total : $(if($playerArmorDrainTotal -ne $null){('{0:F4}' -f $playerArmorDrainTotal)}else{'n/a'})"
 Write-Host "  accepted move_penalty>0  : $($movePenaltyAccepted.Count)"
 if($effectiveWeapon -eq 'glock' -or $effectiveWeapon -eq 'mp5' -or $Weapon -eq 'glock' -or $Weapon -eq 'mp5'){Write-Host "  cadence growth evidence  : $($burstGrowthAccepted.Count)"}
 if($effectiveWeapon -eq 'glock' -or $effectiveWeapon -eq '357' -or $Weapon -eq 'glock' -or $Weapon -eq '357'){Write-Host "  cadence evidence         : $($cadencePenaltyAccepted.Count)"}
@@ -460,6 +550,8 @@ if($effectiveWeapon -eq 'glock' -or $effectiveWeapon -eq 'mp5' -or $Weapon -eq '
 if($effectiveWeapon -ne 'mp5'){Write-Host "  first-shot accepted      : $($firstShotAccepted.Count)"}
 Write-Host "  applied dmg min/avg/max  : $(if($appliedStats){('{0:F4} / {1:F4} / {2:F4}' -f $appliedStats.Min,$appliedStats.Average,$appliedStats.Max)}else{'n/a / n/a / n/a'})"
 Write-Host "  hitgroups                : $(FHitgroups $report.stats.hitgroupCounts)"
+if($playerHits.Count -gt 0){Write-Host "  player hitgroups         : $(FHitgroups $report.stats.playerHitgroupCounts)"}
+if($fakePlayerHits.Count -gt 0){Write-Host "  fake-player hitgroups    : $(FHitgroups $report.stats.fakePlayerHitgroupCounts)"}
 Write-Host "  spread min/avg/max       : $(if($spreadStats){('{0:F4} / {1:F4} / {2:F4}' -f $spreadStats.Min,$spreadStats.Average,$spreadStats.Max)}else{'n/a / n/a / n/a'})"
 Write-Host "  move penalty min/avg/max : $(if($moveStats){('{0:F4} / {1:F4} / {2:F4}' -f $moveStats.Min,$moveStats.Average,$moveStats.Max)}else{'n/a / n/a / n/a'})"
 if($effectiveWeapon -eq 'glock' -or $effectiveWeapon -eq 'mp5' -or $Weapon -eq 'glock' -or $Weapon -eq 'mp5'){Write-Host "  extra spread min/avg/max : $(if($additionalStats){('{0:F4} / {1:F4} / {2:F4}' -f $additionalStats.Min,$additionalStats.Average,$additionalStats.Max)}else{'n/a / n/a / n/a'})"}

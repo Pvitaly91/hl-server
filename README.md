@@ -32,7 +32,46 @@ The current gameplay direction is intentionally narrower than "make full Counter
 - Glock and MP5 can now also layer an optional deterministic follow-up pattern over the shared spread model so second and third shots feel more learnable and less like a pure random cone.
 - Glock and 357 can now also layer cadence-sensitive penalties over their first-shot and movement logic so click timing matters more than simply holding attack.
 - Movement, air state, crouch stability, and readable headshot damage are part of the tuning target.
+- Real-player and fake-verification-client hit telemetry now logs armor before/after, health before/after, damage absorbed by armor, helmet/head-protection state, and direct headshot evidence on the hit line itself.
 - Stock client compatibility is preserved, but client-side recoil and prediction are still only approximated because this repository does not ship a custom client DLL.
+
+## Headshot / Armor Verification
+
+The current armor and helmet model is intentionally server-side and tuning-oriented, not a claim of exact Counter-Strike parity.
+
+- Real players and fake verification clients both use the same custom bullet armor/head-protection path when the experimental armor system is enabled.
+- Body armor and head protection are surfaced separately in telemetry even though they still share the player's underlying `armorvalue`.
+- A direct `type=hit` or `type=kill` weapon-log line now carries the fields needed for headshot tuning:
+  - `victim_is_player`
+  - `victim_is_fake`
+  - `helmet_equipped`
+  - `head_protection_active`
+  - `armor_hit_protected`
+  - `armor_model`
+  - `health_before` / `health_after`
+  - `armor_before` / `armor_after`
+  - `damage_raw`
+  - `damage_to_health`
+  - `damage_absorbed`
+  - `armor_drain`
+  - `verification`
+
+Focused live verification commands:
+
+- `exp_armor_status [player]`
+- `exp_armor_set <player> <armor>`
+- `exp_helmet_set <player> <0|1>`
+- `exp_player_hit_test <attacker> <victim> <weapon> <hitgroup>`
+
+Recommended live verification loop:
+
+1. Launch a cfg-driven live session with armor and helmet enabled.
+2. Create fake verification clients with `exp_team_fake_add team1 verify_alpha` and `exp_team_fake_add team2 verify_bravo`.
+3. Use `exp_armor_set` and `exp_helmet_set` to build a helmeted or unhelmeted target state.
+4. Trigger direct body or head hits with `exp_player_hit_test`.
+5. Inspect the resulting `type=hit` and `type=kill` lines in the current weapon log, or run the analyzer to summarize direct player/fake-player evidence.
+
+For the fuller model notes and the exact live verification example, see [docs/headshot-armor-model.md](docs/headshot-armor-model.md).
 
 ## Prerequisites
 
