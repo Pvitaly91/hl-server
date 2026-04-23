@@ -24,6 +24,7 @@
 #include "future_gameplay_hooks.h"
 #include "weapon_tuning_core.h"
 #include "weapon_debug_logger.h"
+#include <math.h>
 
 namespace
 {
@@ -85,6 +86,7 @@ void CPython::Spawn( )
 	m_flLastAcceptedPrimaryShotTime = -1.0f;
 	m_flPrimaryCadenceSpreadAccumulator = 0.0f;
 	m_iPrimaryCadenceShotCount = 0;
+	m_iPrimaryPatternIndex = -1;
 
 	FallInit();// get ready to fall down.
 }
@@ -192,7 +194,7 @@ void CPython::PrimaryAttack()
 	m_pPlayer->m_iWeaponVolume = LOUD_GUN_VOLUME;
 	m_pPlayer->m_iWeaponFlash = BRIGHT_GUN_FLASH;
 	const BOOL fHadAmmo = (m_iClip > 0);
-	const BOOL fExperimentalPrimary = Exp357PrimaryEnabled();
+	const BOOL fExperimentalPrimary = Exp357ExperimentalModeEnabled() ? TRUE : FALSE;
 	const BOOL fHasPreviousAcceptedShot = m_flLastAcceptedPrimaryShotTime >= 0.0f;
 	const BOOL fHoldingAttack = (m_pPlayer->m_afButtonPressed & IN_ATTACK) == 0;
 	const float flTimeSincePreviousAcceptedShot = fHasPreviousAcceptedShot ? (gpGlobals->time - m_flLastAcceptedPrimaryShotTime) : 0.0f;
@@ -247,13 +249,27 @@ void CPython::PrimaryAttack()
 		const float flSpread = spreadResult.spread;
 		const float flAdditionalSpread = spreadResult.additionalSpread;
 		const float flMovementPenalty = spreadResult.movementPenalty;
+		const SharedWeaponPatternProfile patternProfile = Build357PrimaryPatternProfile();
+		const SharedWeaponPatternResult patternResult = ComputeSharedWeaponPattern(
+			patternProfile,
+			spreadState,
+			spreadResult.speedRatio,
+			flSpread,
+			m_iPrimaryPatternIndex);
 		const float flNextCadenceAddedSpread = GrowSharedAdditionalSpread(
 			flCadenceAdditionalSpread,
 			0.0f,
 			spreadProfile.maxSpread);
+		Vector vecPatternAiming = vecAiming;
+		float flRandomSpread = flSpread;
+		if (patternResult.enabled)
+		{
+			vecPatternAiming = (vecAiming + (gpGlobals->v_right * patternResult.offsetX) + (gpGlobals->v_up * patternResult.offsetY)).Normalize();
+			flRandomSpread = patternResult.randomSpread;
+		}
 
 		Begin357PrimaryShotContext(m_pPlayer);
-		vecDir = m_pPlayer->FireBulletsPlayer( 1, vecSrc, vecAiming, Vector( flSpread, flSpread, flSpread ), 8192, BULLET_PLAYER_357, 0, 0, m_pPlayer->pev, m_pPlayer->random_seed );
+		vecDir = m_pPlayer->FireBulletsPlayer( 1, vecSrc, vecPatternAiming, Vector( flRandomSpread, flRandomSpread, flRandomSpread ), 8192, BULLET_PLAYER_357, 0, 0, m_pPlayer->pev, m_pPlayer->random_seed );
 		End357PrimaryShotContext();
 
 		if (fHadAmmo)
@@ -271,9 +287,15 @@ void CPython::PrimaryAttack()
 			acceptedTelemetry.cadencePenalty = cadenceResult.cadencePenalty;
 			acceptedTelemetry.cadenceResetApplied = cadenceResult.resetApplied;
 			acceptedTelemetry.holdPenalty = cadenceResult.holdPenalty;
+			acceptedTelemetry.nextAdditionalSpread = flNextCadenceAddedSpread;
+			acceptedTelemetry.patternModeActive = patternResult.enabled;
+			acceptedTelemetry.patternIndex = patternResult.enabled ? patternResult.patternIndex : -1;
+			acceptedTelemetry.patternOffsetX = patternResult.offsetX;
+			acceptedTelemetry.patternOffsetY = patternResult.offsetY;
+			acceptedTelemetry.patternResetApplied = patternResult.resetApplied;
 			acceptedTelemetry.totalAdditionalSpread = flMovementPenalty + flAdditionalSpread;
 			acceptedTelemetry.movementContribution = flMovementPenalty;
-			acceptedTelemetry.patternContribution = 0.0f;
+			acceptedTelemetry.patternContribution = patternResult.enabled ? sqrtf((patternResult.offsetX * patternResult.offsetX) + (patternResult.offsetY * patternResult.offsetY)) : 0.0f;
 			acceptedTelemetry.cadenceContribution = cadenceResult.cadencePenalty;
 			acceptedTelemetry.horizontalSpeed = spreadState.horizontalSpeed;
 			acceptedTelemetry.maxSpeedForNormalization = spreadResult.normalizedMaxSpeed;
@@ -287,6 +309,7 @@ void CPython::PrimaryAttack()
 			LogAccepted357PrimaryShot(m_pPlayer, acceptedTelemetry);
 			m_flPrimaryCadenceSpreadAccumulator = flNextCadenceAddedSpread;
 			m_iPrimaryCadenceShotCount = iCadenceShotIndex;
+			m_iPrimaryPatternIndex = patternResult.enabled ? patternResult.patternIndex : -1;
 			m_flLastAcceptedPrimaryShotTime = gpGlobals->time;
 		}
 	}

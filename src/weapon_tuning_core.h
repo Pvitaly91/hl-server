@@ -109,6 +109,7 @@ SharedWeaponSpreadProfile Build357PrimarySpreadProfile();
 SharedWeaponSpreadProfile BuildShotgunPrimarySpreadProfile();
 SharedWeaponPatternProfile BuildGlockPrimaryPatternProfile();
 SharedWeaponPatternProfile BuildMp5PrimaryPatternProfile();
+SharedWeaponPatternProfile Build357PrimaryPatternProfile();
 SharedWeaponPatternProfile BuildShotgunPrimaryPatternProfile();
 SharedWeaponCadenceProfile BuildGlockPrimaryCadenceProfile();
 SharedWeaponCadenceProfile Build357PrimaryCadenceProfile();

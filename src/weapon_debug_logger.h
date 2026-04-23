@@ -98,6 +98,12 @@ struct Weapon357AcceptedShotTelemetry
     float cadencePenalty;
     bool cadenceResetApplied;
     float holdPenalty;
+    float nextAdditionalSpread;
+    bool patternModeActive;
+    int patternIndex;
+    float patternOffsetX;
+    float patternOffsetY;
+    bool patternResetApplied;
     float totalAdditionalSpread;
     float movementContribution;
     float patternContribution;

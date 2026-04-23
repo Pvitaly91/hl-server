@@ -31,6 +31,7 @@ The current gameplay direction is intentionally narrower than "make full Counter
 - MP5 should reward controlled bursts, let long sprays bloom, and recover accuracy when the player pauses.
 - Glock and MP5 can now also layer an optional deterministic follow-up pattern over the shared spread model so second and third shots feel more learnable and less like a pure random cone.
 - Glock and 357 can now also layer cadence-sensitive penalties over their first-shot and movement logic so click timing matters more than simply holding attack.
+- 357 can now also layer an optional deterministic follow-up pattern over that precision model so careful second and third clicks feel more learnable and less like a pure random cone.
 - Shotgun primary fire can now also layer a deterministic pellet layout over its existing spread scale so repeated shots feel less like a pure random cone and more like a learnable server-side pattern.
 - Movement, air state, crouch stability, and readable headshot damage are part of the tuning target.
 - Real-player and fake-verification-client hit telemetry now logs armor before/after, health before/after, damage absorbed by armor, helmet/head-protection state, and direct headshot evidence on the hit line itself.
@@ -193,6 +194,8 @@ The recommended preset names for this pass are:
 - `glock_cadence_tight`
 - `357_precision_duel`
 - `357_cadence_headshot`
+- `357_pattern_soft`
+- `357_pattern_tight`
 - `glock_pattern_soft`
 - `glock_pattern_tight`
 - `mp5_pattern_burst`
@@ -673,6 +676,17 @@ Key 357 cvars:
 - `sv_exp_357_primary_first_shot_speed_threshold`
 - `sv_exp_357_primary_spread_recovery`
 - `sv_exp_357_primary_max_spread`
+- `sv_exp_357_primary_cadence_mode`
+- `sv_exp_357_primary_cycle_time`
+- `sv_exp_357_primary_click_penalty`
+- `sv_exp_357_primary_click_penalty_scale`
+- `sv_exp_357_primary_click_reset_time`
+- `sv_exp_357_primary_hold_penalty_scale`
+- `sv_exp_357_pattern_mode`
+- `sv_exp_357_pattern_scale_x`
+- `sv_exp_357_pattern_scale_y`
+- `sv_exp_357_pattern_reset_time`
+- `sv_exp_357_pattern_max_index`
 - `sv_exp_357_primary_damage`
 - `sv_exp_357_primary_headshot_scale`
 - `sv_exp_357_primary_headshot_lethal`
@@ -685,6 +699,10 @@ Checked-in 357 preset JSON files live under `configs/357-presets/`:
 - `default.json`
 - `precision_test.json`
 - `headshot_test.json`
+- `357_precision_duel.json`
+- `357_cadence_headshot.json`
+- `357_pattern_soft.json`
+- `357_pattern_tight.json`
 
 Recommended 357 loop:
 
@@ -694,8 +712,9 @@ Recommended 357 loop:
 4. Run `exp_cfg_apply editor_357_test.cfg`.
 5. If this is the first setup on the map, run `exp_target_mark default`.
 6. Run `exp_target_use_saved default` and `exp_target_respawn`.
-7. Use `exp_target_profile unarmored` when you want deterministic 357 dummy kill checks.
-8. Review the weapon log with `.\scripts\analyze-weapon-log.ps1 -Latest -Weapon 357`.
+7. Use `exp_target_profile unarmored` when you want clean reset and precision checks, or `exp_target_profile vest_headprotected` when you want armored/headshot confirmation.
+8. Fire a few deliberate clicks, then a quicker follow-up string, then wait long enough for the cadence and pattern state to reset before firing again.
+9. Review the weapon log with `.\scripts\analyze-weapon-log.ps1 -Latest -Weapon 357`.
 
 The editor, launcher, and cfg command path stay unchanged. 357 is simply another shared-core weapon that can be exported to cfg, applied live, and exercised against the same target dummy workflow.
 

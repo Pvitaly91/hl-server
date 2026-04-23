@@ -429,6 +429,17 @@ bool Is357Relevant(const ProjectDocument& document) {
            !EqualTrimmed(document.weapon357.primaryFirstShotSpeedThreshold, defaults.weapon357.primaryFirstShotSpeedThreshold) ||
            !EqualTrimmed(document.weapon357.primarySpreadRecovery, defaults.weapon357.primarySpreadRecovery) ||
            !EqualTrimmed(document.weapon357.primaryMaxSpread, defaults.weapon357.primaryMaxSpread) ||
+           document.weapon357.cadenceMode != defaults.weapon357.cadenceMode ||
+           !EqualTrimmed(document.weapon357.primaryCadenceCycleTime, defaults.weapon357.primaryCadenceCycleTime) ||
+           !EqualTrimmed(document.weapon357.primaryClickPenalty, defaults.weapon357.primaryClickPenalty) ||
+           !EqualTrimmed(document.weapon357.primaryClickPenaltyScale, defaults.weapon357.primaryClickPenaltyScale) ||
+           !EqualTrimmed(document.weapon357.primaryClickResetTime, defaults.weapon357.primaryClickResetTime) ||
+           !EqualTrimmed(document.weapon357.primaryHoldPenaltyScale, defaults.weapon357.primaryHoldPenaltyScale) ||
+           document.weapon357.patternMode != defaults.weapon357.patternMode ||
+           !EqualTrimmed(document.weapon357.patternScaleX, defaults.weapon357.patternScaleX) ||
+           !EqualTrimmed(document.weapon357.patternScaleY, defaults.weapon357.patternScaleY) ||
+           !EqualTrimmed(document.weapon357.patternResetTime, defaults.weapon357.patternResetTime) ||
+           !EqualTrimmed(document.weapon357.patternMaxIndex, defaults.weapon357.patternMaxIndex) ||
            !EqualTrimmed(document.weapon357.primaryDamage, defaults.weapon357.primaryDamage) ||
            !EqualTrimmed(document.weapon357.primaryHeadshotScale, defaults.weapon357.primaryHeadshotScale) ||
            document.weapon357.primaryHeadshotLethal != defaults.weapon357.primaryHeadshotLethal ||
@@ -873,6 +884,23 @@ bool BuildCfgLines(const ProjectDocument& document, std::vector<std::wstring>& l
             return false;
         }
         AddLine(lines, L"sv_exp_357_primary_hold_penalty_scale", normalized);
+        AddLine(lines, L"sv_exp_357_pattern_mode", document.weapon357.patternMode ? L"1" : L"0");
+        if (!NormalizeFloatValue(document.weapon357.patternScaleX, normalized, errorMessage, L"357 horizontal pattern scale")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_357_pattern_scale_x", normalized);
+        if (!NormalizeFloatValue(document.weapon357.patternScaleY, normalized, errorMessage, L"357 vertical pattern scale")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_357_pattern_scale_y", normalized);
+        if (!NormalizeFloatValue(document.weapon357.patternResetTime, normalized, errorMessage, L"357 pattern reset time")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_357_pattern_reset_time", normalized);
+        if (!NormalizeIntegerValue(document.weapon357.patternMaxIndex, normalized, errorMessage, L"357 pattern max index")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_357_pattern_max_index", normalized);
         if (!NormalizeFloatValue(document.weapon357.primaryDamage, normalized, errorMessage, L"357 damage")) {
             return false;
         }

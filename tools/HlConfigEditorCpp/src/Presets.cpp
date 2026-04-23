@@ -81,6 +81,11 @@ void Apply357Defaults(ProjectDocument& document) {
     document.weapon357.primaryClickPenaltyScale = L"1.2500";
     document.weapon357.primaryClickResetTime = L"1.2000";
     document.weapon357.primaryHoldPenaltyScale = L"0.4500";
+    document.weapon357.patternMode = false;
+    document.weapon357.patternScaleX = L"0.2200";
+    document.weapon357.patternScaleY = L"0.3400";
+    document.weapon357.patternResetTime = L"1.1000";
+    document.weapon357.patternMaxIndex = L"4";
     document.weapon357.primaryDamage = L"40.0";
     document.weapon357.primaryHeadshotScale = L"2.5";
     document.weapon357.primaryHeadshotLethal = false;
@@ -386,22 +391,27 @@ void Apply357Preset(ProjectDocument& document, const std::wstring& presetName) {
 
     if (presetName == L"precision_test" || presetName == L"357_precision_duel") {
         document.weapon357.profileName = presetName == L"357_precision_duel" ? L"357_precision_duel" : L"precision_test";
-        document.weapon357.primaryBaseSpread = L"0.0045";
-        document.weapon357.primaryGroundMovePenalty = L"0.0150";
-        document.weapon357.primaryAirMovePenalty = L"0.0600";
-        document.weapon357.primaryDuckPenaltyScale = L"0.6000";
+        document.weapon357.primaryBaseSpread = L"0.0042";
+        document.weapon357.primaryGroundMovePenalty = L"0.0140";
+        document.weapon357.primaryAirMovePenalty = L"0.0550";
+        document.weapon357.primaryDuckPenaltyScale = L"0.5800";
         document.weapon357.primaryFirstShotAccuracy = true;
         document.weapon357.primaryFirstShotSpeedThreshold = L"18.0";
-        document.weapon357.primarySpreadRecovery = L"0.6500";
-        document.weapon357.primaryMaxSpread = L"0.0800";
+        document.weapon357.primarySpreadRecovery = L"0.7000";
+        document.weapon357.primaryMaxSpread = L"0.0750";
         document.weapon357.cadenceMode = true;
         document.weapon357.primaryCadenceCycleTime = L"1.0500";
-        document.weapon357.primaryClickPenalty = L"0.0350";
-        document.weapon357.primaryClickPenaltyScale = L"1.2500";
+        document.weapon357.primaryClickPenalty = L"0.0320";
+        document.weapon357.primaryClickPenaltyScale = L"1.2000";
         document.weapon357.primaryClickResetTime = L"1.2500";
-        document.weapon357.primaryHoldPenaltyScale = L"0.3000";
+        document.weapon357.primaryHoldPenaltyScale = L"0.2500";
+        document.weapon357.patternMode = true;
+        document.weapon357.patternScaleX = L"0.1600";
+        document.weapon357.patternScaleY = L"0.2600";
+        document.weapon357.patternResetTime = L"1.2500";
+        document.weapon357.patternMaxIndex = L"3";
         document.weapon357.primaryDamage = L"42.0";
-        document.weapon357.primaryHeadshotScale = L"2.8";
+        document.weapon357.primaryHeadshotScale = L"2.9";
         document.weapon357.primaryHeadshotLethal = false;
         document.weapon357.labAmmo = L"48";
         return;
@@ -409,22 +419,83 @@ void Apply357Preset(ProjectDocument& document, const std::wstring& presetName) {
 
     if (presetName == L"headshot_test" || presetName == L"357_cadence_headshot") {
         document.weapon357.profileName = presetName == L"357_cadence_headshot" ? L"357_cadence_headshot" : L"headshot_test";
-        document.weapon357.primaryBaseSpread = L"0.0060";
-        document.weapon357.primaryGroundMovePenalty = L"0.0180";
-        document.weapon357.primaryAirMovePenalty = L"0.0700";
-        document.weapon357.primaryDuckPenaltyScale = L"0.6500";
+        document.weapon357.primaryBaseSpread = L"0.0055";
+        document.weapon357.primaryGroundMovePenalty = L"0.0170";
+        document.weapon357.primaryAirMovePenalty = L"0.0680";
+        document.weapon357.primaryDuckPenaltyScale = L"0.6200";
         document.weapon357.primaryFirstShotAccuracy = true;
         document.weapon357.primaryFirstShotSpeedThreshold = L"22.0";
-        document.weapon357.primarySpreadRecovery = L"0.7000";
-        document.weapon357.primaryMaxSpread = L"0.0900";
+        document.weapon357.primarySpreadRecovery = L"0.7600";
+        document.weapon357.primaryMaxSpread = L"0.0850";
         document.weapon357.cadenceMode = true;
         document.weapon357.primaryCadenceCycleTime = L"1.1000";
-        document.weapon357.primaryClickPenalty = L"0.0450";
+        document.weapon357.primaryClickPenalty = L"0.0420";
         document.weapon357.primaryClickPenaltyScale = L"1.4000";
         document.weapon357.primaryClickResetTime = L"1.3500";
         document.weapon357.primaryHoldPenaltyScale = L"0.4000";
+        document.weapon357.patternMode = true;
+        document.weapon357.patternScaleX = L"0.2100";
+        document.weapon357.patternScaleY = L"0.3400";
+        document.weapon357.patternResetTime = L"1.1500";
+        document.weapon357.patternMaxIndex = L"4";
         document.weapon357.primaryDamage = L"55.0";
         document.weapon357.primaryHeadshotScale = L"4.0";
+        document.weapon357.primaryHeadshotLethal = true;
+        document.weapon357.labAmmo = L"48";
+        return;
+    }
+
+    if (presetName == L"357_pattern_soft") {
+        document.weapon357.profileName = L"357_pattern_soft";
+        document.weapon357.primaryBaseSpread = L"0.0050";
+        document.weapon357.primaryGroundMovePenalty = L"0.0160";
+        document.weapon357.primaryAirMovePenalty = L"0.0620";
+        document.weapon357.primaryDuckPenaltyScale = L"0.6000";
+        document.weapon357.primaryFirstShotAccuracy = true;
+        document.weapon357.primaryFirstShotSpeedThreshold = L"20.0";
+        document.weapon357.primarySpreadRecovery = L"0.7200";
+        document.weapon357.primaryMaxSpread = L"0.0820";
+        document.weapon357.cadenceMode = true;
+        document.weapon357.primaryCadenceCycleTime = L"1.0000";
+        document.weapon357.primaryClickPenalty = L"0.0340";
+        document.weapon357.primaryClickPenaltyScale = L"1.1800";
+        document.weapon357.primaryClickResetTime = L"1.1500";
+        document.weapon357.primaryHoldPenaltyScale = L"0.2600";
+        document.weapon357.patternMode = true;
+        document.weapon357.patternScaleX = L"0.1500";
+        document.weapon357.patternScaleY = L"0.2400";
+        document.weapon357.patternResetTime = L"1.2000";
+        document.weapon357.patternMaxIndex = L"3";
+        document.weapon357.primaryDamage = L"43.0";
+        document.weapon357.primaryHeadshotScale = L"3.0";
+        document.weapon357.primaryHeadshotLethal = false;
+        document.weapon357.labAmmo = L"48";
+        return;
+    }
+
+    if (presetName == L"357_pattern_tight") {
+        document.weapon357.profileName = L"357_pattern_tight";
+        document.weapon357.primaryBaseSpread = L"0.0038";
+        document.weapon357.primaryGroundMovePenalty = L"0.0130";
+        document.weapon357.primaryAirMovePenalty = L"0.0550";
+        document.weapon357.primaryDuckPenaltyScale = L"0.5600";
+        document.weapon357.primaryFirstShotAccuracy = true;
+        document.weapon357.primaryFirstShotSpeedThreshold = L"16.0";
+        document.weapon357.primarySpreadRecovery = L"0.7800";
+        document.weapon357.primaryMaxSpread = L"0.0720";
+        document.weapon357.cadenceMode = true;
+        document.weapon357.primaryCadenceCycleTime = L"1.0800";
+        document.weapon357.primaryClickPenalty = L"0.0400";
+        document.weapon357.primaryClickPenaltyScale = L"1.3500";
+        document.weapon357.primaryClickResetTime = L"1.2500";
+        document.weapon357.primaryHoldPenaltyScale = L"0.3200";
+        document.weapon357.patternMode = true;
+        document.weapon357.patternScaleX = L"0.2300";
+        document.weapon357.patternScaleY = L"0.3800";
+        document.weapon357.patternResetTime = L"1.0500";
+        document.weapon357.patternMaxIndex = L"4";
+        document.weapon357.primaryDamage = L"46.0";
+        document.weapon357.primaryHeadshotScale = L"3.5";
         document.weapon357.primaryHeadshotLethal = true;
         document.weapon357.labAmmo = L"48";
     }

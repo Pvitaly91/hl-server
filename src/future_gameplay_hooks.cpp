@@ -515,12 +515,19 @@ cvar_t sv_exp_357_primary_click_penalty = {"sv_exp_357_primary_click_penalty", "
 cvar_t sv_exp_357_primary_click_penalty_scale = {"sv_exp_357_primary_click_penalty_scale", "1.2500", FCVAR_SERVER};
 cvar_t sv_exp_357_primary_click_reset_time = {"sv_exp_357_primary_click_reset_time", "1.2000", FCVAR_SERVER};
 cvar_t sv_exp_357_primary_hold_penalty_scale = {"sv_exp_357_primary_hold_penalty_scale", "0.4500", FCVAR_SERVER};
+cvar_t sv_exp_357_pattern_mode = {"sv_exp_357_pattern_mode", "0", FCVAR_SERVER};
+cvar_t sv_exp_357_pattern_scale_x = {"sv_exp_357_pattern_scale_x", "0.2200", FCVAR_SERVER};
+cvar_t sv_exp_357_pattern_scale_y = {"sv_exp_357_pattern_scale_y", "0.3400", FCVAR_SERVER};
+cvar_t sv_exp_357_pattern_reset_time = {"sv_exp_357_pattern_reset_time", "1.1000", FCVAR_SERVER};
+cvar_t sv_exp_357_pattern_max_index = {"sv_exp_357_pattern_max_index", "4", FCVAR_SERVER};
 cvar_t sv_exp_357_primary_damage = {"sv_exp_357_primary_damage", "40.0", FCVAR_SERVER};
 cvar_t sv_exp_357_primary_headshot_scale = {"sv_exp_357_primary_headshot_scale", "3.0", FCVAR_SERVER};
 cvar_t sv_exp_357_primary_headshot_lethal = {"sv_exp_357_primary_headshot_lethal", "0", FCVAR_SERVER};
 cvar_t sv_exp_357_lab_loadout = {"sv_exp_357_lab_loadout", "0", FCVAR_SERVER};
 cvar_t sv_exp_357_lab_ammo = {"sv_exp_357_lab_ammo", "24", FCVAR_SERVER};
 cvar_t sv_exp_357_lab_autoswitch = {"sv_exp_357_lab_autoswitch", "1", FCVAR_SERVER};
+cvar_t sv_exp_357_verify_autofire = {"sv_exp_357_verify_autofire", "0", FCVAR_SERVER};
+cvar_t sv_exp_357_verify_autofire_count = {"sv_exp_357_verify_autofire_count", "5", FCVAR_SERVER};
 cvar_t sv_exp_shotgun_primary_enabled = {"sv_exp_shotgun_primary_enabled", "0", FCVAR_SERVER};
 cvar_t sv_exp_shotgun_primary_base_spread = {"sv_exp_shotgun_primary_base_spread", "0.0600", FCVAR_SERVER};
 cvar_t sv_exp_shotgun_primary_ground_move_penalty = {"sv_exp_shotgun_primary_ground_move_penalty", "0.0300", FCVAR_SERVER};
@@ -659,6 +666,9 @@ int g_expBuyLastRewardedRound = 0;
 int g_expMp5VerifyAutofireShotsFired = 0;
 int g_expMp5VerifyAutofirePlayerUserId = 0;
 float g_expMp5VerifyAutofireNextShotTime = 0.0f;
+int g_exp357VerifyAutofireShotsFired = 0;
+int g_exp357VerifyAutofirePlayerUserId = 0;
+float g_exp357VerifyAutofireNextShotTime = 0.0f;
 int g_expShotgunVerifyAutofireShotsFired = 0;
 int g_expShotgunVerifyAutofirePlayerUserId = 0;
 float g_expShotgunVerifyAutofireNextShotTime = 0.0f;
@@ -741,6 +751,7 @@ bool TryBuildLabDummySpawnTransformFromAnchor(CBasePlayer *pPlayer, LabDummySpaw
 void MoveGlockLabDummyToSelection(CBaseEntity *pDummy, CBasePlayer *pAnchorPlayer, const LabDummySpawnSelection &selection, const char *reason);
 CBaseEntity *SpawnGlockLabDummy(const LabDummySpawnSelection &selection, bool logAsRespawn);
 void LogLabDummySpawnFailure(const LabDummyFailureInfo &failure, CBasePlayer *pAnchorPlayer);
+void Maintain357VerificationAutofire();
 void MaintainMp5VerificationAutofire();
 void MaintainShotgunVerificationAutofire();
 
@@ -5230,6 +5241,74 @@ bool TryFireMp5VerificationShot(CBasePlayer *pPlayer, char *failureReason, size_
     return true;
 }
 
+bool TryFire357VerificationShot(CBasePlayer *pPlayer, char *failureReason, size_t failureReasonSize)
+{
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        failureReason[0] = '\0';
+    }
+
+    if (pPlayer == NULL || pPlayer->pev == NULL)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "player entity is unavailable");
+        }
+        return false;
+    }
+
+    if (!pPlayer->IsAlive() || pPlayer->pev->deadflag != DEAD_NO)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "player must be alive");
+        }
+        return false;
+    }
+
+    if (pPlayer->HasPlayerItemFromID(WEAPON_PYTHON) == FALSE)
+    {
+        pPlayer->GiveNamedItem("weapon_357");
+    }
+
+    const int ammoIndex = CBasePlayer::GetAmmoIndex("357");
+    if (ammoIndex >= 0 && pPlayer->AmmoInventory(ammoIndex) <= 0)
+    {
+        pPlayer->GiveAmmo(1, "357", _357_MAX_CARRY);
+    }
+
+    pPlayer->SelectItem("weapon_357");
+
+    CBasePlayerItem *pActiveItem = pPlayer->m_pActiveItem;
+    CBasePlayerWeapon *pWeapon = pActiveItem != NULL ? (CBasePlayerWeapon *)pActiveItem->GetWeaponPtr() : NULL;
+    if (pWeapon == NULL || pWeapon->m_iId != WEAPON_PYTHON)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            strcpy_s(failureReason, failureReasonSize, "weapon_357 is not active for the player");
+        }
+        return false;
+    }
+
+    const float currentTime = UTIL_WeaponTimeBase();
+    if (pWeapon->m_flNextPrimaryAttack > currentTime)
+    {
+        if (failureReason != NULL && failureReasonSize > 0)
+        {
+            _snprintf_s(
+                failureReason,
+                failureReasonSize,
+                _TRUNCATE,
+                "357 is cooling down for %.2fs",
+                pWeapon->m_flNextPrimaryAttack - currentTime);
+        }
+        return false;
+    }
+
+    pWeapon->PrimaryAttack();
+    return true;
+}
+
 bool TryPrepareShotgunVerificationTarget(CBasePlayer *pPlayer, char *failureReason, size_t failureReasonSize)
 {
     if (failureReason != NULL && failureReasonSize > 0)
@@ -5298,9 +5377,21 @@ int GetShotgunVerificationAutofireCount()
     return max(0, (int)sv_exp_shotgun_verify_autofire_count.value);
 }
 
+int Get357VerificationAutofireCount()
+{
+    return max(0, (int)sv_exp_357_verify_autofire_count.value);
+}
+
 int GetMp5VerificationAutofireCount()
 {
     return max(0, (int)sv_exp_mp5_verify_autofire_count.value);
+}
+
+void Reset357VerificationAutofireState()
+{
+    g_exp357VerifyAutofireShotsFired = 0;
+    g_exp357VerifyAutofirePlayerUserId = 0;
+    g_exp357VerifyAutofireNextShotTime = 0.0f;
 }
 
 void ResetMp5VerificationAutofireState()
@@ -5308,6 +5399,68 @@ void ResetMp5VerificationAutofireState()
     g_expMp5VerifyAutofireShotsFired = 0;
     g_expMp5VerifyAutofirePlayerUserId = 0;
     g_expMp5VerifyAutofireNextShotTime = 0.0f;
+}
+
+void Maintain357VerificationAutofire()
+{
+    if (gpGlobals == NULL || sv_exp_357_verify_autofire.value == 0.0f || Get357VerificationAutofireCount() <= 0)
+    {
+        Reset357VerificationAutofireState();
+        return;
+    }
+
+    CBasePlayer *pPlayer = NULL;
+    char failureReason[256];
+    if (!TryResolveDefaultBuyPlayer(&pPlayer, failureReason, sizeof(failureReason)))
+    {
+        return;
+    }
+
+    const int playerUserId = GetPlayerUserId(pPlayer);
+    if (playerUserId <= 0)
+    {
+        return;
+    }
+
+    if (g_exp357VerifyAutofirePlayerUserId != playerUserId)
+    {
+        Reset357VerificationAutofireState();
+        g_exp357VerifyAutofirePlayerUserId = playerUserId;
+        g_exp357VerifyAutofireNextShotTime = gpGlobals->time + 0.75f;
+    }
+
+    if (g_exp357VerifyAutofireShotsFired >= Get357VerificationAutofireCount() ||
+        gpGlobals->time < g_exp357VerifyAutofireNextShotTime)
+    {
+        return;
+    }
+
+    RefreshFutureHooksMapState();
+    SetLabDummyEnabled(true);
+
+    if (!TryPrepareShotgunVerificationTarget(pPlayer, failureReason, sizeof(failureReason)))
+    {
+        g_exp357VerifyAutofireNextShotTime = gpGlobals->time + 0.25f;
+        return;
+    }
+
+    if (!TryFire357VerificationShot(pPlayer, failureReason, sizeof(failureReason)))
+    {
+        if (failureReason[0] != '\0' && strstr(failureReason, "cooling down") == NULL)
+        {
+            PrintLabDummyConsoleLine("357 verify autofire failed: %s", failureReason);
+        }
+        g_exp357VerifyAutofireNextShotTime = gpGlobals->time + 0.05f;
+        return;
+    }
+
+    ++g_exp357VerifyAutofireShotsFired;
+    g_exp357VerifyAutofireNextShotTime = gpGlobals->time + (g_exp357VerifyAutofireShotsFired == 3 ? 1.55f : 0.82f);
+    PrintLabDummyConsoleLine(
+        "357 verify autofire: shot %d/%d from %s.",
+        g_exp357VerifyAutofireShotsFired,
+        Get357VerificationAutofireCount(),
+        GetSafePlayerName(pPlayer));
 }
 
 void MaintainMp5VerificationAutofire()
@@ -12645,18 +12798,25 @@ void RegisterFutureGameplayCvars()
     CVAR_REGISTER(&sv_exp_357_primary_spread_recovery);
     CVAR_REGISTER(&sv_exp_357_primary_max_spread);
     CVAR_REGISTER(&sv_exp_357_primary_cadence_mode);
-    CVAR_REGISTER(&sv_exp_357_primary_cycle_time);
-    CVAR_REGISTER(&sv_exp_357_primary_click_penalty);
-    CVAR_REGISTER(&sv_exp_357_primary_click_penalty_scale);
-    CVAR_REGISTER(&sv_exp_357_primary_click_reset_time);
-    CVAR_REGISTER(&sv_exp_357_primary_hold_penalty_scale);
-    CVAR_REGISTER(&sv_exp_357_primary_damage);
-    CVAR_REGISTER(&sv_exp_357_primary_headshot_scale);
-    CVAR_REGISTER(&sv_exp_357_primary_headshot_lethal);
-    CVAR_REGISTER(&sv_exp_357_lab_loadout);
-    CVAR_REGISTER(&sv_exp_357_lab_ammo);
-    CVAR_REGISTER(&sv_exp_357_lab_autoswitch);
-    CVAR_REGISTER(&sv_exp_shotgun_primary_enabled);
+CVAR_REGISTER(&sv_exp_357_primary_cycle_time);
+CVAR_REGISTER(&sv_exp_357_primary_click_penalty);
+CVAR_REGISTER(&sv_exp_357_primary_click_penalty_scale);
+CVAR_REGISTER(&sv_exp_357_primary_click_reset_time);
+CVAR_REGISTER(&sv_exp_357_primary_hold_penalty_scale);
+CVAR_REGISTER(&sv_exp_357_pattern_mode);
+CVAR_REGISTER(&sv_exp_357_pattern_scale_x);
+CVAR_REGISTER(&sv_exp_357_pattern_scale_y);
+CVAR_REGISTER(&sv_exp_357_pattern_reset_time);
+CVAR_REGISTER(&sv_exp_357_pattern_max_index);
+CVAR_REGISTER(&sv_exp_357_primary_damage);
+CVAR_REGISTER(&sv_exp_357_primary_headshot_scale);
+CVAR_REGISTER(&sv_exp_357_primary_headshot_lethal);
+CVAR_REGISTER(&sv_exp_357_lab_loadout);
+CVAR_REGISTER(&sv_exp_357_lab_ammo);
+CVAR_REGISTER(&sv_exp_357_lab_autoswitch);
+CVAR_REGISTER(&sv_exp_357_verify_autofire);
+CVAR_REGISTER(&sv_exp_357_verify_autofire_count);
+CVAR_REGISTER(&sv_exp_shotgun_primary_enabled);
     CVAR_REGISTER(&sv_exp_shotgun_primary_base_spread);
     CVAR_REGISTER(&sv_exp_shotgun_primary_ground_move_penalty);
     CVAR_REGISTER(&sv_exp_shotgun_primary_air_move_penalty);
@@ -12771,6 +12931,7 @@ void UpdateFutureGameplayHooksFrame()
     Maintain357LabLoadout();
     MaintainShotgunLabLoadout();
     MaintainGlockLabDummy();
+    Maintain357VerificationAutofire();
     MaintainMp5VerificationAutofire();
     MaintainShotgunVerificationAutofire();
 }
@@ -13233,7 +13394,7 @@ bool ExpMP5LabAutoswitch()
 
 bool Exp357ExperimentalModeEnabled()
 {
-    return Exp357PrimaryEnabled() || Exp357PrimaryCadenceModeEnabled();
+    return Exp357PrimaryEnabled() || Exp357PrimaryCadenceModeEnabled() || Exp357PatternModeEnabled();
 }
 
 bool ExpShotgunExperimentalModeEnabled()
@@ -13432,6 +13593,32 @@ float Exp357PrimaryClickResetTime()
 float Exp357PrimaryHoldPenaltyScale()
 {
     return GetNonNegativeCvarValue(sv_exp_357_primary_hold_penalty_scale);
+}
+
+bool Exp357PatternModeEnabled()
+{
+    return sv_exp_357_pattern_mode.value != 0.0f;
+}
+
+float Exp357PatternScaleX()
+{
+    return GetNonNegativeCvarValue(sv_exp_357_pattern_scale_x);
+}
+
+float Exp357PatternScaleY()
+{
+    return GetNonNegativeCvarValue(sv_exp_357_pattern_scale_y);
+}
+
+float Exp357PatternResetTime()
+{
+    return GetNonNegativeCvarValue(sv_exp_357_pattern_reset_time);
+}
+
+int Exp357PatternMaxIndex()
+{
+    const float maxIndex = GetNonNegativeCvarValue(sv_exp_357_pattern_max_index);
+    return maxIndex >= 1.0f ? (int)(maxIndex + 0.5f) : 1;
 }
 
 bool Exp357LabLoadoutEnabled()

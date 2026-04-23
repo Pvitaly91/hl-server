@@ -32,7 +32,7 @@ The refactor does not force fake symmetry where the weapons behave differently b
 
 - Glock still owns optional legacy tap-fire semantics and its primary-attack wrapper.
 - MP5 still owns burst growth, burst spread accumulation, and MP5-specific lab loadout behavior.
-- 357 still owns its single-shot fire wrapper and 357-specific lab loadout behavior while reusing the shared cadence and spread helpers.
+- 357 still owns its single-shot fire wrapper and 357-specific lab loadout behavior while reusing the shared cadence, spread, and deterministic pattern helpers.
 - Shotgun keeps primary-fire pellet count, per-pellet traces, and pellet-hit aggregation in the shotgun wrapper plus telemetry layer. Only the common spread and per-pellet damage profile math moved into the shared core.
 - Target dummy, cfg command, launcher, and editor workflows are unchanged.
 
@@ -54,6 +54,7 @@ This repository is explicitly improving stock-client-compatible HLDM gameplay, n
 - Glock can now optionally layer a deterministic follow-up pattern over that cadence model so second and third shots are learnable instead of feeling like a pure random cone.
 - The old hard tap-fire gate can still exist as a legacy switch, but it is no longer the recommended path for skillful pistol feel.
 - 357 now uses the same cadence model so patient clicks stay precise, rushed follow-up clicks add a visible penalty, and waiting long enough resets the cadence state.
+- 357 can now also layer a deterministic follow-up pattern over that cadence model so the second and third accepted shots stay readable instead of feeling like random luck.
 - MP5 now favors controlled bursts: repeated accepted shots add burst spread, waiting lets that extra spread decay, and long held fire is meant to bloom more than short bursts.
 - MP5 now also has an explicit burst reset window and sustained-spray hold penalty so short 2-5 shot strings recover cleanly while deeper spray stacks more aggressively.
 - MP5 can now optionally layer a deterministic early-burst pattern over the same shared spread and recovery model so the opening spray shape is more learnable.
@@ -84,7 +85,7 @@ For repeatable live verification, two focused helpers are now available:
 ## Current Recommended Presets
 
 - Glock: `glock_cadence_soft` for a softer cadence-sensitive pistol feel, `glock_cadence_tight` for a stricter rhythm-focused single-shot path, and `glock_pattern_tight` when you also want a stronger learnable follow-up pattern.
-- 357: `357_precision_duel` for precise duel pacing and `357_cadence_headshot` for stronger headshot-oriented live validation.
+- 357: `357_precision_duel` for deliberate duel pacing, `357_cadence_headshot` for stronger headshot validation, `357_pattern_soft` for a gentler learnable pattern, and `357_pattern_tight` for a stricter precision path.
 - MP5: `mp5_controlled_burst` for the main "short burst beats spray" path, `mp5_mobile_soft` for a lighter movement-oriented variant, `mp5_pattern_burst` when you want stronger learnable early-burst patterning, and `mp5_spray_harsh` when you want a deliberately punishing long-spray comparison preset.
 - Shotgun: `shotgun_pattern_soft` for a gentler learnable pellet spread, `shotgun_pattern_tight` for the tighter deterministic layout, `shotgun_close_quickkill` for heavier close-range testing, and `shotgun_precision_test` for cleaner dummy validation.
 
@@ -93,6 +94,7 @@ Relevant new cvars for this pass:
 - Glock cadence: `sv_exp_glock_primary_cadence_mode`, `sv_exp_glock_primary_cycle_time`, `sv_exp_glock_primary_click_penalty`, `sv_exp_glock_primary_click_penalty_scale`, `sv_exp_glock_primary_click_reset_time`, `sv_exp_glock_primary_hold_penalty_scale`
 - 357 cadence: `sv_exp_357_primary_cadence_mode`, `sv_exp_357_primary_cycle_time`, `sv_exp_357_primary_click_penalty`, `sv_exp_357_primary_click_penalty_scale`, `sv_exp_357_primary_click_reset_time`, `sv_exp_357_primary_hold_penalty_scale`
 - Glock: `sv_exp_glock_pattern_mode`, `sv_exp_glock_pattern_scale_x`, `sv_exp_glock_pattern_scale_y`, `sv_exp_glock_pattern_reset_time`, `sv_exp_glock_pattern_max_index`
+- 357: `sv_exp_357_pattern_mode`, `sv_exp_357_pattern_scale_x`, `sv_exp_357_pattern_scale_y`, `sv_exp_357_pattern_reset_time`, `sv_exp_357_pattern_max_index`
 - MP5: `sv_exp_mp5_primary_burst_growth`, `sv_exp_mp5_primary_burst_max_additional_spread`, `sv_exp_mp5_primary_spread_recovery`, `sv_exp_mp5_primary_burst_reset_time`, `sv_exp_mp5_primary_hold_penalty_scale`, `sv_exp_mp5_pattern_mode`, `sv_exp_mp5_pattern_scale_x`, `sv_exp_mp5_pattern_scale_y`, `sv_exp_mp5_pattern_reset_time`, `sv_exp_mp5_pattern_max_index`
 - Shotgun: `sv_exp_shotgun_primary_shot_growth`, `sv_exp_shotgun_pattern_mode`, `sv_exp_shotgun_pattern_scale_x`, `sv_exp_shotgun_pattern_scale_y`, `sv_exp_shotgun_pattern_reset_time`, `sv_exp_shotgun_pattern_max_index`, `sv_exp_shotgun_primary_pellet_spread_mode`
 

@@ -202,6 +202,10 @@ ProjectDocument CreateDefaultProject() {
     document.weapon357.primaryClickPenaltyScale = L"1.2500";
     document.weapon357.primaryClickResetTime = L"1.2000";
     document.weapon357.primaryHoldPenaltyScale = L"0.4500";
+    document.weapon357.patternScaleX = L"0.2200";
+    document.weapon357.patternScaleY = L"0.3400";
+    document.weapon357.patternResetTime = L"1.1000";
+    document.weapon357.patternMaxIndex = L"4";
     document.weapon357.primaryDamage = L"40.0";
     document.weapon357.primaryHeadshotScale = L"2.5";
     document.weapon357.labAmmo = L"36";
@@ -633,6 +637,26 @@ bool ApplyKnownCvar(ProjectDocument& document, const std::wstring& name, const s
     }
     if (name == L"sv_exp_357_primary_hold_penalty_scale") {
         document.weapon357.primaryHoldPenaltyScale = value;
+        return true;
+    }
+    if (name == L"sv_exp_357_pattern_mode") {
+        document.weapon357.patternMode = ParseBoolCvarValue(value, document.weapon357.patternMode);
+        return true;
+    }
+    if (name == L"sv_exp_357_pattern_scale_x") {
+        document.weapon357.patternScaleX = value;
+        return true;
+    }
+    if (name == L"sv_exp_357_pattern_scale_y") {
+        document.weapon357.patternScaleY = value;
+        return true;
+    }
+    if (name == L"sv_exp_357_pattern_reset_time") {
+        document.weapon357.patternResetTime = value;
+        return true;
+    }
+    if (name == L"sv_exp_357_pattern_max_index") {
+        document.weapon357.patternMaxIndex = value;
         return true;
     }
     if (name == L"sv_exp_357_primary_damage") {
@@ -1091,6 +1115,11 @@ CvarMap BuildKnownCvarMap(const ProjectDocument& document) {
     SetCvarString(cvars, L"sv_exp_357_primary_click_penalty_scale", document.weapon357.primaryClickPenaltyScale);
     SetCvarString(cvars, L"sv_exp_357_primary_click_reset_time", document.weapon357.primaryClickResetTime);
     SetCvarString(cvars, L"sv_exp_357_primary_hold_penalty_scale", document.weapon357.primaryHoldPenaltyScale);
+    SetCvarBool(cvars, L"sv_exp_357_pattern_mode", document.weapon357.patternMode);
+    SetCvarString(cvars, L"sv_exp_357_pattern_scale_x", document.weapon357.patternScaleX);
+    SetCvarString(cvars, L"sv_exp_357_pattern_scale_y", document.weapon357.patternScaleY);
+    SetCvarString(cvars, L"sv_exp_357_pattern_reset_time", document.weapon357.patternResetTime);
+    SetCvarString(cvars, L"sv_exp_357_pattern_max_index", document.weapon357.patternMaxIndex);
     SetCvarString(cvars, L"sv_exp_357_primary_damage", document.weapon357.primaryDamage);
     SetCvarString(cvars, L"sv_exp_357_primary_headshot_scale", document.weapon357.primaryHeadshotScale);
     SetCvarBool(cvars, L"sv_exp_357_primary_headshot_lethal", document.weapon357.primaryHeadshotLethal);
@@ -1300,6 +1329,11 @@ bool SaveProjectDocumentToFile(const ProjectDocument& document, const std::wstri
     SetString(weapon357, L"sv_exp_357_primary_click_penalty_scale", document.weapon357.primaryClickPenaltyScale);
     SetString(weapon357, L"sv_exp_357_primary_click_reset_time", document.weapon357.primaryClickResetTime);
     SetString(weapon357, L"sv_exp_357_primary_hold_penalty_scale", document.weapon357.primaryHoldPenaltyScale);
+    SetBool(weapon357, L"sv_exp_357_pattern_mode", document.weapon357.patternMode);
+    SetString(weapon357, L"sv_exp_357_pattern_scale_x", document.weapon357.patternScaleX);
+    SetString(weapon357, L"sv_exp_357_pattern_scale_y", document.weapon357.patternScaleY);
+    SetString(weapon357, L"sv_exp_357_pattern_reset_time", document.weapon357.patternResetTime);
+    SetString(weapon357, L"sv_exp_357_pattern_max_index", document.weapon357.patternMaxIndex);
     SetString(weapon357, L"sv_exp_357_primary_damage", document.weapon357.primaryDamage);
     SetString(weapon357, L"sv_exp_357_primary_headshot_scale", document.weapon357.primaryHeadshotScale);
     SetBool(weapon357, L"sv_exp_357_primary_headshot_lethal", document.weapon357.primaryHeadshotLethal);
@@ -1517,17 +1551,22 @@ bool LoadProjectDocumentFromFile(const std::wstring& path, ProjectDocument& docu
         loaded.weapon357.primaryGroundMovePenalty = ReadStringValue(*weapon357, L"sv_exp_357_primary_ground_move_penalty", loaded.weapon357.primaryGroundMovePenalty);
         loaded.weapon357.primaryAirMovePenalty = ReadStringValue(*weapon357, L"sv_exp_357_primary_air_move_penalty", loaded.weapon357.primaryAirMovePenalty);
         loaded.weapon357.primaryDuckPenaltyScale = ReadStringValue(*weapon357, L"sv_exp_357_primary_duck_penalty_scale", loaded.weapon357.primaryDuckPenaltyScale);
-    loaded.weapon357.primaryFirstShotAccuracy = ReadBoolValue(*weapon357, L"sv_exp_357_primary_first_shot_accuracy", loaded.weapon357.primaryFirstShotAccuracy);
-    loaded.weapon357.primaryFirstShotSpeedThreshold = ReadStringValue(*weapon357, L"sv_exp_357_primary_first_shot_speed_threshold", loaded.weapon357.primaryFirstShotSpeedThreshold);
-    loaded.weapon357.primarySpreadRecovery = ReadStringValue(*weapon357, L"sv_exp_357_primary_spread_recovery", loaded.weapon357.primarySpreadRecovery);
-    loaded.weapon357.primaryMaxSpread = ReadStringValue(*weapon357, L"sv_exp_357_primary_max_spread", loaded.weapon357.primaryMaxSpread);
-    loaded.weapon357.cadenceMode = ReadBoolValue(*weapon357, L"sv_exp_357_primary_cadence_mode", loaded.weapon357.cadenceMode);
-    loaded.weapon357.primaryCadenceCycleTime = ReadStringValue(*weapon357, L"sv_exp_357_primary_cycle_time", loaded.weapon357.primaryCadenceCycleTime);
-    loaded.weapon357.primaryClickPenalty = ReadStringValue(*weapon357, L"sv_exp_357_primary_click_penalty", loaded.weapon357.primaryClickPenalty);
-    loaded.weapon357.primaryClickPenaltyScale = ReadStringValue(*weapon357, L"sv_exp_357_primary_click_penalty_scale", loaded.weapon357.primaryClickPenaltyScale);
-    loaded.weapon357.primaryClickResetTime = ReadStringValue(*weapon357, L"sv_exp_357_primary_click_reset_time", loaded.weapon357.primaryClickResetTime);
-    loaded.weapon357.primaryHoldPenaltyScale = ReadStringValue(*weapon357, L"sv_exp_357_primary_hold_penalty_scale", loaded.weapon357.primaryHoldPenaltyScale);
-    loaded.weapon357.primaryDamage = ReadStringValue(*weapon357, L"sv_exp_357_primary_damage", loaded.weapon357.primaryDamage);
+        loaded.weapon357.primaryFirstShotAccuracy = ReadBoolValue(*weapon357, L"sv_exp_357_primary_first_shot_accuracy", loaded.weapon357.primaryFirstShotAccuracy);
+        loaded.weapon357.primaryFirstShotSpeedThreshold = ReadStringValue(*weapon357, L"sv_exp_357_primary_first_shot_speed_threshold", loaded.weapon357.primaryFirstShotSpeedThreshold);
+        loaded.weapon357.primarySpreadRecovery = ReadStringValue(*weapon357, L"sv_exp_357_primary_spread_recovery", loaded.weapon357.primarySpreadRecovery);
+        loaded.weapon357.primaryMaxSpread = ReadStringValue(*weapon357, L"sv_exp_357_primary_max_spread", loaded.weapon357.primaryMaxSpread);
+        loaded.weapon357.cadenceMode = ReadBoolValue(*weapon357, L"sv_exp_357_primary_cadence_mode", loaded.weapon357.cadenceMode);
+        loaded.weapon357.primaryCadenceCycleTime = ReadStringValue(*weapon357, L"sv_exp_357_primary_cycle_time", loaded.weapon357.primaryCadenceCycleTime);
+        loaded.weapon357.primaryClickPenalty = ReadStringValue(*weapon357, L"sv_exp_357_primary_click_penalty", loaded.weapon357.primaryClickPenalty);
+        loaded.weapon357.primaryClickPenaltyScale = ReadStringValue(*weapon357, L"sv_exp_357_primary_click_penalty_scale", loaded.weapon357.primaryClickPenaltyScale);
+        loaded.weapon357.primaryClickResetTime = ReadStringValue(*weapon357, L"sv_exp_357_primary_click_reset_time", loaded.weapon357.primaryClickResetTime);
+        loaded.weapon357.primaryHoldPenaltyScale = ReadStringValue(*weapon357, L"sv_exp_357_primary_hold_penalty_scale", loaded.weapon357.primaryHoldPenaltyScale);
+        loaded.weapon357.patternMode = ReadBoolValue(*weapon357, L"sv_exp_357_pattern_mode", loaded.weapon357.patternMode);
+        loaded.weapon357.patternScaleX = ReadStringValue(*weapon357, L"sv_exp_357_pattern_scale_x", loaded.weapon357.patternScaleX);
+        loaded.weapon357.patternScaleY = ReadStringValue(*weapon357, L"sv_exp_357_pattern_scale_y", loaded.weapon357.patternScaleY);
+        loaded.weapon357.patternResetTime = ReadStringValue(*weapon357, L"sv_exp_357_pattern_reset_time", loaded.weapon357.patternResetTime);
+        loaded.weapon357.patternMaxIndex = ReadStringValue(*weapon357, L"sv_exp_357_pattern_max_index", loaded.weapon357.patternMaxIndex);
+        loaded.weapon357.primaryDamage = ReadStringValue(*weapon357, L"sv_exp_357_primary_damage", loaded.weapon357.primaryDamage);
         loaded.weapon357.primaryHeadshotScale = ReadStringValue(*weapon357, L"sv_exp_357_primary_headshot_scale", loaded.weapon357.primaryHeadshotScale);
         loaded.weapon357.primaryHeadshotLethal = ReadBoolValue(*weapon357, L"sv_exp_357_primary_headshot_lethal", loaded.weapon357.primaryHeadshotLethal);
         loaded.weapon357.labLoadout = ReadBoolValue(*weapon357, L"sv_exp_357_lab_loadout", loaded.weapon357.labLoadout);

@@ -135,6 +135,11 @@ enum ControlId : int {
     IDC_357_PRIMARY_CLICK_PENALTY_SCALE,
     IDC_357_PRIMARY_CLICK_RESET_TIME,
     IDC_357_PRIMARY_HOLD_PENALTY_SCALE,
+    IDC_357_PATTERN_MODE,
+    IDC_357_PATTERN_SCALE_X,
+    IDC_357_PATTERN_SCALE_Y,
+    IDC_357_PATTERN_RESET_TIME,
+    IDC_357_PATTERN_MAX_INDEX,
     IDC_357_PRIMARY_DAMAGE,
     IDC_357_PRIMARY_HEADSHOT_SCALE,
     IDC_357_PRIMARY_HEADSHOT_LETHAL,
@@ -144,6 +149,8 @@ enum ControlId : int {
     IDC_357_PRESET_DEFAULT,
     IDC_357_PRESET_PRECISION_TEST,
     IDC_357_PRESET_HEADSHOT_TEST,
+    IDC_357_PRESET_PATTERN_SOFT,
+    IDC_357_PRESET_PATTERN_TIGHT,
 
     IDC_SHOTGUN_PRIMARY_ENABLED = 1280,
     IDC_SHOTGUN_PROFILE_NAME,
@@ -1026,9 +1033,15 @@ private:
         case IDC_357_PRESET_PRECISION_TEST:
             ApplyPreset([&] { hlcfg::Apply357Preset(document_, L"357_precision_duel"); });
             return 0;
-        case IDC_357_PRESET_HEADSHOT_TEST:
-            ApplyPreset([&] { hlcfg::Apply357Preset(document_, L"357_cadence_headshot"); });
-            return 0;
+            case IDC_357_PRESET_HEADSHOT_TEST:
+                ApplyPreset([&] { hlcfg::Apply357Preset(document_, L"357_cadence_headshot"); });
+                return 0;
+            case IDC_357_PRESET_PATTERN_SOFT:
+                ApplyPreset([&] { hlcfg::Apply357Preset(document_, L"357_pattern_soft"); });
+                return 0;
+            case IDC_357_PRESET_PATTERN_TIGHT:
+                ApplyPreset([&] { hlcfg::Apply357Preset(document_, L"357_pattern_tight"); });
+                return 0;
         case IDC_SHOTGUN_PRESET_DEFAULT:
             ApplyPreset([&] { hlcfg::ApplyShotgunPreset(document_, L"default"); });
             return 0;
@@ -1406,6 +1419,8 @@ private:
         CreateButton(page, L"Default", IDC_357_PRESET_DEFAULT, 40, 45, 120, 24);
         CreateButton(page, L"Precision Duel", IDC_357_PRESET_PRECISION_TEST, 175, 45, 145, 24);
         CreateButton(page, L"Cadence Headshot", IDC_357_PRESET_HEADSHOT_TEST, 335, 45, 160, 24);
+        CreateButton(page, L"Pattern Soft", IDC_357_PRESET_PATTERN_SOFT, 510, 45, 140, 24);
+        CreateButton(page, L"Pattern Tight", IDC_357_PRESET_PATTERN_TIGHT, 665, 45, 140, 24);
 
         CreateGroupBox(page, L"General 357 Settings", 20, 110, 500, 235);
         CreateCheckBox(page, L"Enable experimental 357 primary", IDC_357_PRIMARY_ENABLED, 40, 145, 260, 20);
@@ -1440,7 +1455,7 @@ private:
         CreateEdit(page, IDC_357_PRIMARY_HEADSHOT_SCALE, 220, 430, 120, 24);
         CreateCheckBox(page, L"Lethal headshot", IDC_357_PRIMARY_HEADSHOT_LETHAL, 360, 430, 120, 20);
 
-        CreateGroupBox(page, L"Cadence Feel Layer", 20, 500, 500, 220);
+        CreateGroupBox(page, L"Cadence And Pattern Layer", 20, 500, 1040, 220);
         CreateCheckBox(page, L"Cadence-sensitive mode", IDC_357_PRIMARY_CADENCE_MODE, 40, 535, 220, 20);
         CreateLabel(page, L"Ideal shot cycle time", 40, 570, 170, 20);
         CreateEdit(page, IDC_357_PRIMARY_CYCLE_TIME, 220, 565, 120, 24);
@@ -1452,6 +1467,15 @@ private:
         CreateEdit(page, IDC_357_PRIMARY_CLICK_RESET_TIME, 220, 670, 120, 24);
         CreateLabel(page, L"Hold / spam penalty scale", 40, 710, 170, 20);
         CreateEdit(page, IDC_357_PRIMARY_HOLD_PENALTY_SCALE, 220, 705, 120, 24);
+        CreateCheckBox(page, L"Deterministic pattern mode", IDC_357_PATTERN_MODE, 560, 535, 230, 20);
+        CreateLabel(page, L"Horizontal pattern scale", 560, 570, 190, 20);
+        CreateEdit(page, IDC_357_PATTERN_SCALE_X, 790, 565, 120, 24);
+        CreateLabel(page, L"Vertical pattern scale", 560, 605, 190, 20);
+        CreateEdit(page, IDC_357_PATTERN_SCALE_Y, 790, 600, 120, 24);
+        CreateLabel(page, L"Pattern reset time", 560, 640, 190, 20);
+        CreateEdit(page, IDC_357_PATTERN_RESET_TIME, 790, 635, 120, 24);
+        CreateLabel(page, L"Pattern max index", 560, 675, 190, 20);
+        CreateEdit(page, IDC_357_PATTERN_MAX_INDEX, 790, 670, 120, 24);
     }
 
     void CreateShotgunPage() {
@@ -2158,6 +2182,8 @@ private:
         preview.weapon357.primaryClickResetTime = GetTextValue(IDC_357_PRIMARY_CLICK_RESET_TIME);
         preview.weapon357.primaryHoldPenaltyScale = GetTextValue(IDC_357_PRIMARY_HOLD_PENALTY_SCALE);
         preview.weapon357.cadenceMode = GetCheckValue(IDC_357_PRIMARY_CADENCE_MODE);
+        preview.weapon357.patternMode = GetCheckValue(IDC_357_PATTERN_MODE);
+        preview.weapon357.patternResetTime = GetTextValue(IDC_357_PATTERN_RESET_TIME);
         preview.mp5.primaryFirstShotAccuracy = GetCheckValue(IDC_MP5_PRIMARY_FIRST_SHOT_ACCURACY);
         preview.mp5.primaryBurstGrowth = GetTextValue(IDC_MP5_PRIMARY_BURST_GROWTH);
         preview.mp5.primarySpreadRecovery = GetTextValue(IDC_MP5_PRIMARY_SPREAD_RECOVERY);
@@ -2243,9 +2269,13 @@ private:
             const double cadenceCycleSeconds = ParseConfigDouble(preview.weapon357.primaryCadenceCycleTime, 0.0);
             const double cadencePenalty = ParseConfigDouble(preview.weapon357.primaryClickPenalty, 0.0);
             const double holdPenaltyScale = ParseConfigDouble(preview.weapon357.primaryHoldPenaltyScale, 0.0);
+            const double patternResetSeconds = ParseConfigDouble(preview.weapon357.patternResetTime, 0.0);
             weaponFeel = preview.weapon357.primaryFirstShotAccuracy ? L"precision favored" : L"first-shot neutral";
             if (preview.weapon357.cadenceMode) {
                 weaponFeel += L", cadence-sensitive";
+            }
+            if (preview.weapon357.patternMode) {
+                weaponFeel += L", deterministic follow-ups";
             }
             if (preview.weapon357.cadenceMode && cadenceCycleSeconds >= 1.000) {
                 weaponFeel += L", deliberate clicks rewarded";
@@ -2255,6 +2285,9 @@ private:
             }
             if (preview.weapon357.cadenceMode && holdPenaltyScale >= 0.350) {
                 weaponFeel += L", hold-fire softened";
+            }
+            if (preview.weapon357.patternMode && patternResetSeconds > 0.0 && patternResetSeconds <= 1.100) {
+                weaponFeel += L", pattern resets after a patient pause";
             }
             if (recoverySeconds > 0.0 && recoverySeconds >= 0.650) {
                 weaponFeel += L", recovery requires patience";
@@ -3007,6 +3040,11 @@ private:
         SetTextValue(IDC_357_PRIMARY_CLICK_PENALTY_SCALE, document_.weapon357.primaryClickPenaltyScale);
         SetTextValue(IDC_357_PRIMARY_CLICK_RESET_TIME, document_.weapon357.primaryClickResetTime);
         SetTextValue(IDC_357_PRIMARY_HOLD_PENALTY_SCALE, document_.weapon357.primaryHoldPenaltyScale);
+        Button_SetCheck(FindControl(IDC_357_PATTERN_MODE), document_.weapon357.patternMode ? BST_CHECKED : BST_UNCHECKED);
+        SetTextValue(IDC_357_PATTERN_SCALE_X, document_.weapon357.patternScaleX);
+        SetTextValue(IDC_357_PATTERN_SCALE_Y, document_.weapon357.patternScaleY);
+        SetTextValue(IDC_357_PATTERN_RESET_TIME, document_.weapon357.patternResetTime);
+        SetTextValue(IDC_357_PATTERN_MAX_INDEX, document_.weapon357.patternMaxIndex);
         SetTextValue(IDC_357_PRIMARY_DAMAGE, document_.weapon357.primaryDamage);
         SetTextValue(IDC_357_PRIMARY_HEADSHOT_SCALE, document_.weapon357.primaryHeadshotScale);
         Button_SetCheck(FindControl(IDC_357_PRIMARY_HEADSHOT_LETHAL), document_.weapon357.primaryHeadshotLethal ? BST_CHECKED : BST_UNCHECKED);
@@ -3205,6 +3243,11 @@ private:
         document_.weapon357.primaryClickPenaltyScale = GetTextValue(IDC_357_PRIMARY_CLICK_PENALTY_SCALE);
         document_.weapon357.primaryClickResetTime = GetTextValue(IDC_357_PRIMARY_CLICK_RESET_TIME);
         document_.weapon357.primaryHoldPenaltyScale = GetTextValue(IDC_357_PRIMARY_HOLD_PENALTY_SCALE);
+        document_.weapon357.patternMode = GetCheckValue(IDC_357_PATTERN_MODE);
+        document_.weapon357.patternScaleX = GetTextValue(IDC_357_PATTERN_SCALE_X);
+        document_.weapon357.patternScaleY = GetTextValue(IDC_357_PATTERN_SCALE_Y);
+        document_.weapon357.patternResetTime = GetTextValue(IDC_357_PATTERN_RESET_TIME);
+        document_.weapon357.patternMaxIndex = GetTextValue(IDC_357_PATTERN_MAX_INDEX);
         document_.weapon357.primaryDamage = GetTextValue(IDC_357_PRIMARY_DAMAGE);
         document_.weapon357.primaryHeadshotScale = GetTextValue(IDC_357_PRIMARY_HEADSHOT_SCALE);
         document_.weapon357.primaryHeadshotLethal = GetCheckValue(IDC_357_PRIMARY_HEADSHOT_LETHAL);
@@ -3730,14 +3773,19 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
         !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_primary_enabled 1") ||
         !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_profile_name \"editor_357_test\"") ||
         !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_primary_cadence_mode 1") ||
-        !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_primary_cycle_time 1.1") ||
-        !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_primary_click_penalty 0.045") ||
-        !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_primary_click_penalty_scale 1.4") ||
-        !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_primary_click_reset_time 1.35") ||
-        !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_primary_hold_penalty_scale 0.4") ||
-        !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_lab_loadout 1") ||
-        !ValidateContains(weapon357Export.cfgText, L"sv_exp_glock_lab_target_profile_name \"vest_headprotected\"") ||
-        weapon357Export.execCommand != L"exec editor_357_test.cfg" ||
+            !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_primary_cycle_time 1.1") ||
+            !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_primary_click_penalty 0.042") ||
+            !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_primary_click_penalty_scale 1.4") ||
+            !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_primary_click_reset_time 1.35") ||
+            !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_primary_hold_penalty_scale 0.4") ||
+            !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_pattern_mode 1") ||
+            !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_pattern_scale_x 0.21") ||
+            !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_pattern_scale_y 0.34") ||
+            !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_pattern_reset_time 1.15") ||
+            !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_pattern_max_index 4") ||
+            !ValidateContains(weapon357Export.cfgText, L"sv_exp_357_lab_loadout 1") ||
+            !ValidateContains(weapon357Export.cfgText, L"sv_exp_glock_lab_target_profile_name \"vest_headprotected\"") ||
+            weapon357Export.execCommand != L"exec editor_357_test.cfg" ||
         weapon357Export.launcherCommand != L"scripts\\play-hlserver-testbed-direct.bat -CfgProfile \"editor_357_test.cfg\"") {
         return 1;
     }

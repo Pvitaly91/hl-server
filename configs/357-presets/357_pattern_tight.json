@@ -1,0 +1,33 @@
+{
+  "name": "357_pattern_tight",
+  "description": "Experimental 357 preset with a tighter deterministic follow-up pattern, stronger first-shot precision, and harsher punishment for rushed clicks.",
+  "cvars": {
+    "sv_exp_357_primary_enabled": "1",
+    "sv_exp_357_profile_name": "357_pattern_tight",
+    "sv_exp_357_primary_base_spread": "0.0038",
+    "sv_exp_357_primary_ground_move_penalty": "0.0130",
+    "sv_exp_357_primary_air_move_penalty": "0.0550",
+    "sv_exp_357_primary_duck_penalty_scale": "0.5600",
+    "sv_exp_357_primary_first_shot_accuracy": "1",
+    "sv_exp_357_primary_first_shot_speed_threshold": "16.0",
+    "sv_exp_357_primary_spread_recovery": "0.7800",
+    "sv_exp_357_primary_max_spread": "0.0720",
+    "sv_exp_357_primary_cadence_mode": "1",
+    "sv_exp_357_primary_cycle_time": "1.0800",
+    "sv_exp_357_primary_click_penalty": "0.0400",
+    "sv_exp_357_primary_click_penalty_scale": "1.3500",
+    "sv_exp_357_primary_click_reset_time": "1.2500",
+    "sv_exp_357_primary_hold_penalty_scale": "0.3200",
+    "sv_exp_357_pattern_mode": "1",
+    "sv_exp_357_pattern_scale_x": "0.2300",
+    "sv_exp_357_pattern_scale_y": "0.3800",
+    "sv_exp_357_pattern_reset_time": "1.0500",
+    "sv_exp_357_pattern_max_index": "4",
+    "sv_exp_357_primary_damage": "46.0",
+    "sv_exp_357_primary_headshot_scale": "3.5",
+    "sv_exp_357_primary_headshot_lethal": "1",
+    "sv_exp_357_lab_loadout": "1",
+    "sv_exp_357_lab_ammo": "48",
+    "sv_exp_357_lab_autoswitch": "1"
+  }
+}

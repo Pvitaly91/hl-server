@@ -74,7 +74,7 @@ For the current Glock and MP5 feel pass, the editor now uses more direct tuning 
 The recommended preset buttons and names for this pass are:
 
 - Glock: `glock_cadence_soft`, `glock_cadence_tight`
-- 357: `357_precision_duel`, `357_cadence_headshot`
+- 357: `357_precision_duel`, `357_cadence_headshot`, `357_pattern_soft`, `357_pattern_tight`
 - MP5: `mp5_controlled_burst`, `mp5_mobile_soft`, `mp5_pattern_burst`, `mp5_spray_harsh`
 - Shotgun: `shotgun_pattern_soft`, `shotgun_pattern_tight`, `shotgun_close_quickkill`, `shotgun_precision_test`
 
@@ -87,7 +87,7 @@ For the MP5 specifically, the current tab wording is meant to separate "good bur
 - `Spray hold penalty scale` controls how much extra punishment long held fire adds on top of normal burst growth
 - `Pattern scale` and `Pattern reset time` control how learnable the early burst remains before the spray layer takes over
 
-For the current pistol cadence pass, the Glock and `357` tabs now also expose:
+For the current pistol cadence and precision-pattern pass, the Glock and `357` tabs now also expose:
 
 - `Cadence-sensitive mode`
 - `Ideal shot cycle time`
@@ -95,6 +95,11 @@ For the current pistol cadence pass, the Glock and `357` tabs now also expose:
 - `Fast-click penalty scale`
 - `Cadence reset time`
 - `Hold/spam penalty`
+- `Deterministic pattern mode`
+- `Horizontal pattern scale`
+- `Vertical pattern scale`
+- `Pattern reset time`
+- `Pattern max index`
 
 The same `General` page now also carries optional match-pack metadata:
 
@@ -175,6 +180,7 @@ The `Export` tab now emphasizes the simple live-mod workflow first:
 - Exported cfgs now include the current round, team-round, buy, armor, and helmet sections when those settings are present in the project, so one exported file can represent a full live match setup.
 - Exported Glock and MP5 cfgs now also include the deterministic pattern cvars when pattern mode is enabled.
 - Exported Glock and `357` cfgs now include the cadence cvars when cadence mode is enabled.
+- Exported `357` cfgs now also include the deterministic pattern cvars when the pattern controls are enabled.
 - Exported shotgun cfgs now also include the deterministic pellet-pattern cvars when the shotgun pattern controls are enabled.
 
 The default cfg filename is derived from the current project/config name so the common path does not start from a generic placeholder. Example defaults include `editor_glock_simple.cfg`, `editor_mp5_simple.cfg`, `editor_357_test.cfg`, and `editor_shotgun_test.cfg`.

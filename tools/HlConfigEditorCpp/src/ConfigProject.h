@@ -104,6 +104,11 @@ struct Weapon357Config {
     std::wstring primaryClickPenaltyScale;
     std::wstring primaryClickResetTime;
     std::wstring primaryHoldPenaltyScale;
+    bool patternMode = false;
+    std::wstring patternScaleX;
+    std::wstring patternScaleY;
+    std::wstring patternResetTime;
+    std::wstring patternMaxIndex;
     std::wstring primaryDamage;
     std::wstring primaryHeadshotScale;
     bool primaryHeadshotLethal = false;
@@ -218,7 +223,7 @@ struct ArmorEquipmentConfig {
 };
 
 struct ProjectDocument {
-    static constexpr int kSchemaVersion = 8;
+    static constexpr int kSchemaVersion = 9;
 
     int schemaVersion = kSchemaVersion;
     ProjectMetadata metadata;

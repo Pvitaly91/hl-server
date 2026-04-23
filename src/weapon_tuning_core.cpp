@@ -477,6 +477,17 @@ SharedWeaponPatternProfile BuildMp5PrimaryPatternProfile()
     return profile;
 }
 
+SharedWeaponPatternProfile Build357PrimaryPatternProfile()
+{
+    SharedWeaponPatternProfile profile = {};
+    profile.enabled = Exp357PatternModeEnabled();
+    profile.scaleX = Exp357PatternScaleX();
+    profile.scaleY = Exp357PatternScaleY();
+    profile.resetTimeSeconds = Exp357PatternResetTime();
+    profile.maxIndex = Exp357PatternMaxIndex();
+    return profile;
+}
+
 SharedWeaponCadenceProfile BuildGlockPrimaryCadenceProfile()
 {
     SharedWeaponCadenceProfile profile = {};
