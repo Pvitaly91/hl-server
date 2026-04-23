@@ -119,6 +119,13 @@ struct ShotgunConfig {
     std::wstring primaryFirstShotSpeedThreshold;
     std::wstring primarySpreadRecovery;
     std::wstring primaryMaxSpread;
+    std::wstring primaryShotGrowth;
+    bool patternMode = false;
+    std::wstring patternScaleX;
+    std::wstring patternScaleY;
+    std::wstring patternResetTime;
+    std::wstring patternMaxIndex;
+    std::wstring primaryPelletSpreadMode;
     std::wstring primaryDamagePerPellet;
     std::wstring primaryPelletCount;
     std::wstring primaryHeadshotScale;
@@ -207,7 +214,7 @@ struct ArmorEquipmentConfig {
 };
 
 struct ProjectDocument {
-    static constexpr int kSchemaVersion = 6;
+    static constexpr int kSchemaVersion = 7;
 
     int schemaVersion = kSchemaVersion;
     ProjectMetadata metadata;

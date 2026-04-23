@@ -526,6 +526,13 @@ cvar_t sv_exp_shotgun_primary_first_shot_accuracy = {"sv_exp_shotgun_primary_fir
 cvar_t sv_exp_shotgun_primary_first_shot_speed_threshold = {"sv_exp_shotgun_primary_first_shot_speed_threshold", "35.0", FCVAR_SERVER};
 cvar_t sv_exp_shotgun_primary_spread_recovery = {"sv_exp_shotgun_primary_spread_recovery", "0.8500", FCVAR_SERVER};
 cvar_t sv_exp_shotgun_primary_max_spread = {"sv_exp_shotgun_primary_max_spread", "0.1200", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_primary_shot_growth = {"sv_exp_shotgun_primary_shot_growth", "0.0200", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_pattern_mode = {"sv_exp_shotgun_pattern_mode", "0", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_pattern_scale_x = {"sv_exp_shotgun_pattern_scale_x", "0.8500", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_pattern_scale_y = {"sv_exp_shotgun_pattern_scale_y", "0.9500", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_pattern_reset_time = {"sv_exp_shotgun_pattern_reset_time", "0.9500", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_pattern_max_index = {"sv_exp_shotgun_pattern_max_index", "5", FCVAR_SERVER};
+cvar_t sv_exp_shotgun_primary_pellet_spread_mode = {"sv_exp_shotgun_primary_pellet_spread_mode", "1", FCVAR_SERVER};
 cvar_t sv_exp_shotgun_primary_damage_per_pellet = {"sv_exp_shotgun_primary_damage_per_pellet", "5.0", FCVAR_SERVER};
 cvar_t sv_exp_shotgun_primary_pellet_count = {"sv_exp_shotgun_primary_pellet_count", "6", FCVAR_SERVER};
 cvar_t sv_exp_shotgun_primary_headshot_scale = {"sv_exp_shotgun_primary_headshot_scale", "1.5", FCVAR_SERVER};
@@ -12247,6 +12254,13 @@ void RegisterFutureGameplayCvars()
     CVAR_REGISTER(&sv_exp_shotgun_primary_first_shot_speed_threshold);
     CVAR_REGISTER(&sv_exp_shotgun_primary_spread_recovery);
     CVAR_REGISTER(&sv_exp_shotgun_primary_max_spread);
+    CVAR_REGISTER(&sv_exp_shotgun_primary_shot_growth);
+    CVAR_REGISTER(&sv_exp_shotgun_pattern_mode);
+    CVAR_REGISTER(&sv_exp_shotgun_pattern_scale_x);
+    CVAR_REGISTER(&sv_exp_shotgun_pattern_scale_y);
+    CVAR_REGISTER(&sv_exp_shotgun_pattern_reset_time);
+    CVAR_REGISTER(&sv_exp_shotgun_pattern_max_index);
+    CVAR_REGISTER(&sv_exp_shotgun_primary_pellet_spread_mode);
     CVAR_REGISTER(&sv_exp_shotgun_primary_damage_per_pellet);
     CVAR_REGISTER(&sv_exp_shotgun_primary_pellet_count);
     CVAR_REGISTER(&sv_exp_shotgun_primary_headshot_scale);
@@ -12926,6 +12940,43 @@ float Exp357PrimaryMaxSpread()
 float ExpShotgunPrimaryMaxSpread()
 {
     return GetNonNegativeCvarValue(sv_exp_shotgun_primary_max_spread);
+}
+
+float ExpShotgunPrimaryShotGrowth()
+{
+    return GetNonNegativeCvarValue(sv_exp_shotgun_primary_shot_growth);
+}
+
+bool ExpShotgunPatternModeEnabled()
+{
+    return sv_exp_shotgun_pattern_mode.value != 0.0f;
+}
+
+float ExpShotgunPatternScaleX()
+{
+    return GetNonNegativeCvarValue(sv_exp_shotgun_pattern_scale_x);
+}
+
+float ExpShotgunPatternScaleY()
+{
+    return GetNonNegativeCvarValue(sv_exp_shotgun_pattern_scale_y);
+}
+
+float ExpShotgunPatternResetTime()
+{
+    return GetNonNegativeCvarValue(sv_exp_shotgun_pattern_reset_time);
+}
+
+int ExpShotgunPatternMaxIndex()
+{
+    const float patternMaxIndex = GetNonNegativeCvarValue(sv_exp_shotgun_pattern_max_index);
+    return patternMaxIndex >= 0.0f ? (int)(patternMaxIndex + 0.5f) : 0;
+}
+
+int ExpShotgunPrimaryPelletSpreadMode()
+{
+    const float pelletSpreadMode = GetNonNegativeCvarValue(sv_exp_shotgun_primary_pellet_spread_mode);
+    return pelletSpreadMode >= 0.0f ? (int)(pelletSpreadMode + 0.5f) : 0;
 }
 
 bool Exp357PrimaryCadenceModeEnabled()

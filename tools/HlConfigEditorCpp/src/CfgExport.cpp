@@ -451,6 +451,13 @@ bool IsShotgunRelevant(const ProjectDocument& document) {
            !EqualTrimmed(document.shotgun.primaryFirstShotSpeedThreshold, defaults.shotgun.primaryFirstShotSpeedThreshold) ||
            !EqualTrimmed(document.shotgun.primarySpreadRecovery, defaults.shotgun.primarySpreadRecovery) ||
            !EqualTrimmed(document.shotgun.primaryMaxSpread, defaults.shotgun.primaryMaxSpread) ||
+           !EqualTrimmed(document.shotgun.primaryShotGrowth, defaults.shotgun.primaryShotGrowth) ||
+           document.shotgun.patternMode != defaults.shotgun.patternMode ||
+           !EqualTrimmed(document.shotgun.patternScaleX, defaults.shotgun.patternScaleX) ||
+           !EqualTrimmed(document.shotgun.patternScaleY, defaults.shotgun.patternScaleY) ||
+           !EqualTrimmed(document.shotgun.patternResetTime, defaults.shotgun.patternResetTime) ||
+           !EqualTrimmed(document.shotgun.patternMaxIndex, defaults.shotgun.patternMaxIndex) ||
+           !EqualTrimmed(document.shotgun.primaryPelletSpreadMode, defaults.shotgun.primaryPelletSpreadMode) ||
            !EqualTrimmed(document.shotgun.primaryDamagePerPellet, defaults.shotgun.primaryDamagePerPellet) ||
            !EqualTrimmed(document.shotgun.primaryPelletCount, defaults.shotgun.primaryPelletCount) ||
            !EqualTrimmed(document.shotgun.primaryHeadshotScale, defaults.shotgun.primaryHeadshotScale) ||
@@ -906,6 +913,31 @@ bool BuildCfgLines(const ProjectDocument& document, std::vector<std::wstring>& l
             return false;
         }
         AddLine(lines, L"sv_exp_shotgun_primary_max_spread", normalized);
+        if (!NormalizeFloatValue(document.shotgun.primaryShotGrowth, normalized, errorMessage, L"Shotgun shot growth")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_shotgun_primary_shot_growth", normalized);
+        AddLine(lines, L"sv_exp_shotgun_pattern_mode", document.shotgun.patternMode ? L"1" : L"0");
+        if (!NormalizeFloatValue(document.shotgun.patternScaleX, normalized, errorMessage, L"Shotgun pattern scale X")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_shotgun_pattern_scale_x", normalized);
+        if (!NormalizeFloatValue(document.shotgun.patternScaleY, normalized, errorMessage, L"Shotgun pattern scale Y")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_shotgun_pattern_scale_y", normalized);
+        if (!NormalizeFloatValue(document.shotgun.patternResetTime, normalized, errorMessage, L"Shotgun pattern reset time")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_shotgun_pattern_reset_time", normalized);
+        if (!NormalizeIntegerValue(document.shotgun.patternMaxIndex, normalized, errorMessage, L"Shotgun pattern max index")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_shotgun_pattern_max_index", normalized);
+        if (!NormalizeIntegerValue(document.shotgun.primaryPelletSpreadMode, normalized, errorMessage, L"Shotgun pellet spread mode")) {
+            return false;
+        }
+        AddLine(lines, L"sv_exp_shotgun_primary_pellet_spread_mode", normalized);
         if (!NormalizeFloatValue(document.shotgun.primaryDamagePerPellet, normalized, errorMessage, L"Shotgun damage per pellet")) {
             return false;
         }

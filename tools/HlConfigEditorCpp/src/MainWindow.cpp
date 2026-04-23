@@ -151,6 +151,13 @@ enum ControlId : int {
     IDC_SHOTGUN_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD,
     IDC_SHOTGUN_PRIMARY_SPREAD_RECOVERY,
     IDC_SHOTGUN_PRIMARY_MAX_SPREAD,
+    IDC_SHOTGUN_PRIMARY_SHOT_GROWTH,
+    IDC_SHOTGUN_PATTERN_MODE,
+    IDC_SHOTGUN_PATTERN_SCALE_X,
+    IDC_SHOTGUN_PATTERN_SCALE_Y,
+    IDC_SHOTGUN_PATTERN_RESET_TIME,
+    IDC_SHOTGUN_PATTERN_MAX_INDEX,
+    IDC_SHOTGUN_PRIMARY_PELLET_SPREAD_MODE,
     IDC_SHOTGUN_PRIMARY_DAMAGE_PER_PELLET,
     IDC_SHOTGUN_PRIMARY_PELLET_COUNT,
     IDC_SHOTGUN_PRIMARY_HEADSHOT_SCALE,
@@ -161,8 +168,10 @@ enum ControlId : int {
     IDC_SHOTGUN_PRESET_DEFAULT,
     IDC_SHOTGUN_PRESET_CLOSE_QUICKKILL,
     IDC_SHOTGUN_PRESET_PRECISION_TEST,
+    IDC_SHOTGUN_PRESET_PATTERN_SOFT,
+    IDC_SHOTGUN_PRESET_PATTERN_TIGHT,
 
-    IDC_DUMMY_ENABLED = 1300,
+    IDC_DUMMY_ENABLED = 1320,
     IDC_DUMMY_TARGET_PROFILE_NAME,
     IDC_DUMMY_HEALTH,
     IDC_DUMMY_ARMOR,
@@ -755,6 +764,12 @@ private:
         case IDC_SHOTGUN_PRESET_PRECISION_TEST:
             ApplyPreset([&] { hlcfg::ApplyShotgunPreset(document_, L"precision_test"); });
             return 0;
+        case IDC_SHOTGUN_PRESET_PATTERN_SOFT:
+            ApplyPreset([&] { hlcfg::ApplyShotgunPreset(document_, L"shotgun_pattern_soft"); });
+            return 0;
+        case IDC_SHOTGUN_PRESET_PATTERN_TIGHT:
+            ApplyPreset([&] { hlcfg::ApplyShotgunPreset(document_, L"shotgun_pattern_tight"); });
+            return 0;
         case IDC_DUMMY_PRESET_UNARMORED:
             ApplyPreset([&] { hlcfg::ApplyDummyPreset(document_, L"unarmored"); });
             return 0;
@@ -1118,9 +1133,11 @@ private:
     void CreateShotgunPage() {
         HWND page = pages_[4];
         CreateGroupBox(page, L"Editor Templates", 20, 20, 1040, 70);
-        CreateButton(page, L"Default", IDC_SHOTGUN_PRESET_DEFAULT, 40, 45, 120, 24);
-        CreateButton(page, L"Close Quickkill", IDC_SHOTGUN_PRESET_CLOSE_QUICKKILL, 175, 45, 145, 24);
-        CreateButton(page, L"Precision Test", IDC_SHOTGUN_PRESET_PRECISION_TEST, 335, 45, 145, 24);
+        CreateButton(page, L"Default", IDC_SHOTGUN_PRESET_DEFAULT, 40, 45, 110, 24);
+        CreateButton(page, L"Pattern Soft", IDC_SHOTGUN_PRESET_PATTERN_SOFT, 165, 45, 140, 24);
+        CreateButton(page, L"Pattern Tight", IDC_SHOTGUN_PRESET_PATTERN_TIGHT, 320, 45, 140, 24);
+        CreateButton(page, L"Close Quickkill", IDC_SHOTGUN_PRESET_CLOSE_QUICKKILL, 475, 45, 150, 24);
+        CreateButton(page, L"Precision Test", IDC_SHOTGUN_PRESET_PRECISION_TEST, 640, 45, 145, 24);
 
         CreateGroupBox(page, L"General Shotgun Settings", 20, 110, 500, 235);
         CreateCheckBox(page, L"Enable experimental shotgun primary", IDC_SHOTGUN_PRIMARY_ENABLED, 40, 145, 290, 20);
@@ -1147,15 +1164,32 @@ private:
         CreateEdit(page, IDC_SHOTGUN_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD, 790, 315, 220, 24);
         CreateLabel(page, L"Max spread", 560, 355, 180, 20);
         CreateEdit(page, IDC_SHOTGUN_PRIMARY_MAX_SPREAD, 790, 350, 220, 24);
+        CreateLabel(page, L"Per-shot spread growth", 560, 390, 180, 20);
+        CreateEdit(page, IDC_SHOTGUN_PRIMARY_SHOT_GROWTH, 790, 385, 220, 24);
 
-        CreateGroupBox(page, L"Pellet And Damage Model", 20, 365, 500, 145);
-        CreateLabel(page, L"Damage per pellet", 40, 400, 140, 20);
-        CreateEdit(page, IDC_SHOTGUN_PRIMARY_DAMAGE_PER_PELLET, 220, 395, 120, 24);
-        CreateLabel(page, L"Pellet count", 40, 435, 140, 20);
-        CreateEdit(page, IDC_SHOTGUN_PRIMARY_PELLET_COUNT, 220, 430, 120, 24);
-        CreateLabel(page, L"Headshot scale", 40, 470, 140, 20);
-        CreateEdit(page, IDC_SHOTGUN_PRIMARY_HEADSHOT_SCALE, 220, 465, 120, 24);
-        CreateCheckBox(page, L"Lethal headshot", IDC_SHOTGUN_PRIMARY_HEADSHOT_LETHAL, 360, 465, 120, 20);
+        CreateGroupBox(page, L"Pattern And Pellet Layout", 20, 365, 500, 250);
+        CreateCheckBox(page, L"Deterministic pellet pattern", IDC_SHOTGUN_PATTERN_MODE, 40, 400, 220, 20);
+        CreateLabel(page, L"Pellet spread mode", 40, 435, 140, 20);
+        CreateCombo(page, IDC_SHOTGUN_PRIMARY_PELLET_SPREAD_MODE, 220, 430, 140, 160);
+        ComboBox_AddString(FindControl(IDC_SHOTGUN_PRIMARY_PELLET_SPREAD_MODE), L"0");
+        ComboBox_AddString(FindControl(IDC_SHOTGUN_PRIMARY_PELLET_SPREAD_MODE), L"1");
+        CreateLabel(page, L"Pellet pattern X scale", 40, 470, 160, 20);
+        CreateEdit(page, IDC_SHOTGUN_PATTERN_SCALE_X, 220, 465, 120, 24);
+        CreateLabel(page, L"Pellet pattern Y scale", 40, 505, 160, 20);
+        CreateEdit(page, IDC_SHOTGUN_PATTERN_SCALE_Y, 220, 500, 120, 24);
+        CreateLabel(page, L"Pattern reset time", 40, 540, 160, 20);
+        CreateEdit(page, IDC_SHOTGUN_PATTERN_RESET_TIME, 220, 535, 120, 24);
+        CreateLabel(page, L"Pattern max index", 40, 575, 160, 20);
+        CreateEdit(page, IDC_SHOTGUN_PATTERN_MAX_INDEX, 220, 570, 120, 24);
+
+        CreateGroupBox(page, L"Pellet And Damage Model", 540, 430, 520, 185);
+        CreateLabel(page, L"Damage per pellet", 560, 470, 160, 20);
+        CreateEdit(page, IDC_SHOTGUN_PRIMARY_DAMAGE_PER_PELLET, 790, 465, 140, 24);
+        CreateLabel(page, L"Pellet count", 560, 505, 160, 20);
+        CreateEdit(page, IDC_SHOTGUN_PRIMARY_PELLET_COUNT, 790, 500, 140, 24);
+        CreateLabel(page, L"Headshot scale", 560, 540, 160, 20);
+        CreateEdit(page, IDC_SHOTGUN_PRIMARY_HEADSHOT_SCALE, 790, 535, 140, 24);
+        CreateCheckBox(page, L"Lethal headshot", IDC_SHOTGUN_PRIMARY_HEADSHOT_LETHAL, 560, 575, 160, 20);
     }
 
     void CreateDummyPage() {
@@ -1760,6 +1794,12 @@ private:
         preview.mp5.primarySpreadRecovery = GetTextValue(IDC_MP5_PRIMARY_SPREAD_RECOVERY);
         preview.mp5.patternMode = GetCheckValue(IDC_MP5_PATTERN_MODE);
         preview.mp5.patternResetTime = GetTextValue(IDC_MP5_PATTERN_RESET_TIME);
+        preview.shotgun.primaryFirstShotAccuracy = GetCheckValue(IDC_SHOTGUN_PRIMARY_FIRST_SHOT_ACCURACY);
+        preview.shotgun.primarySpreadRecovery = GetTextValue(IDC_SHOTGUN_PRIMARY_SPREAD_RECOVERY);
+        preview.shotgun.primaryShotGrowth = GetTextValue(IDC_SHOTGUN_PRIMARY_SHOT_GROWTH);
+        preview.shotgun.patternMode = GetCheckValue(IDC_SHOTGUN_PATTERN_MODE);
+        preview.shotgun.patternResetTime = GetTextValue(IDC_SHOTGUN_PATTERN_RESET_TIME);
+        preview.shotgun.primaryPelletSpreadMode = GetComboSelectionValue(IDC_SHOTGUN_PRIMARY_PELLET_SPREAD_MODE);
         preview.roundMode.enabled = GetCheckValue(IDC_ROUND_MODE);
         preview.roundMode.loadoutMode = GetComboSelectionValue(IDC_ROUND_LOADOUT_MODE);
         preview.roundMode.weaponProfile = GetTextValue(IDC_ROUND_WEAPON_PROFILE);
@@ -1870,6 +1910,28 @@ private:
             }
             if (preview.mp5.patternMode && patternResetSeconds > 0.0 && patternResetSeconds <= 0.320) {
                 weaponFeel += L", burst pattern resets quickly";
+            }
+        } else if (weaponUnderTest == L"shotgun") {
+            const double shotGrowth = ParseConfigDouble(preview.shotgun.primaryShotGrowth, 0.0);
+            const double recoverySeconds = ParseConfigDouble(preview.shotgun.primarySpreadRecovery, 0.0);
+            const double patternResetSeconds = ParseConfigDouble(preview.shotgun.patternResetTime, 0.0);
+            weaponFeel = preview.shotgun.primaryFirstShotAccuracy ? L"first shot centered" : L"wide default cone";
+            if (preview.shotgun.patternMode) {
+                weaponFeel += L", learnable pellet layout";
+            }
+            if (hlcfg::Trimmed(preview.shotgun.primaryPelletSpreadMode) == L"1") {
+                weaponFeel += L", deterministic pellet spread";
+            }
+            if (shotGrowth >= 0.020) {
+                weaponFeel += L", quick follow-ups widen hard";
+            } else if (shotGrowth >= 0.010) {
+                weaponFeel += L", soft repeated-shot bloom";
+            }
+            if (recoverySeconds > 0.0 && recoverySeconds <= 0.750) {
+                weaponFeel += L", settles between deliberate shots";
+            }
+            if (preview.shotgun.patternMode && patternResetSeconds > 0.0 && patternResetSeconds <= 1.000) {
+                weaponFeel += L", pattern resets after a pause";
             }
         }
 
@@ -2006,6 +2068,13 @@ private:
         SetTextValue(IDC_SHOTGUN_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD, document_.shotgun.primaryFirstShotSpeedThreshold);
         SetTextValue(IDC_SHOTGUN_PRIMARY_SPREAD_RECOVERY, document_.shotgun.primarySpreadRecovery);
         SetTextValue(IDC_SHOTGUN_PRIMARY_MAX_SPREAD, document_.shotgun.primaryMaxSpread);
+        SetTextValue(IDC_SHOTGUN_PRIMARY_SHOT_GROWTH, document_.shotgun.primaryShotGrowth);
+        Button_SetCheck(FindControl(IDC_SHOTGUN_PATTERN_MODE), document_.shotgun.patternMode ? BST_CHECKED : BST_UNCHECKED);
+        SetTextValue(IDC_SHOTGUN_PATTERN_SCALE_X, document_.shotgun.patternScaleX);
+        SetTextValue(IDC_SHOTGUN_PATTERN_SCALE_Y, document_.shotgun.patternScaleY);
+        SetTextValue(IDC_SHOTGUN_PATTERN_RESET_TIME, document_.shotgun.patternResetTime);
+        SetTextValue(IDC_SHOTGUN_PATTERN_MAX_INDEX, document_.shotgun.patternMaxIndex);
+        SetComboSelectionValue(IDC_SHOTGUN_PRIMARY_PELLET_SPREAD_MODE, document_.shotgun.primaryPelletSpreadMode);
         SetTextValue(IDC_SHOTGUN_PRIMARY_DAMAGE_PER_PELLET, document_.shotgun.primaryDamagePerPellet);
         SetTextValue(IDC_SHOTGUN_PRIMARY_PELLET_COUNT, document_.shotgun.primaryPelletCount);
         SetTextValue(IDC_SHOTGUN_PRIMARY_HEADSHOT_SCALE, document_.shotgun.primaryHeadshotScale);
@@ -2194,6 +2263,13 @@ private:
         document_.shotgun.primaryFirstShotSpeedThreshold = GetTextValue(IDC_SHOTGUN_PRIMARY_FIRST_SHOT_SPEED_THRESHOLD);
         document_.shotgun.primarySpreadRecovery = GetTextValue(IDC_SHOTGUN_PRIMARY_SPREAD_RECOVERY);
         document_.shotgun.primaryMaxSpread = GetTextValue(IDC_SHOTGUN_PRIMARY_MAX_SPREAD);
+        document_.shotgun.primaryShotGrowth = GetTextValue(IDC_SHOTGUN_PRIMARY_SHOT_GROWTH);
+        document_.shotgun.patternMode = GetCheckValue(IDC_SHOTGUN_PATTERN_MODE);
+        document_.shotgun.patternScaleX = GetTextValue(IDC_SHOTGUN_PATTERN_SCALE_X);
+        document_.shotgun.patternScaleY = GetTextValue(IDC_SHOTGUN_PATTERN_SCALE_Y);
+        document_.shotgun.patternResetTime = GetTextValue(IDC_SHOTGUN_PATTERN_RESET_TIME);
+        document_.shotgun.patternMaxIndex = GetTextValue(IDC_SHOTGUN_PATTERN_MAX_INDEX);
+        document_.shotgun.primaryPelletSpreadMode = GetComboSelectionValue(IDC_SHOTGUN_PRIMARY_PELLET_SPREAD_MODE);
         document_.shotgun.primaryDamagePerPellet = GetTextValue(IDC_SHOTGUN_PRIMARY_DAMAGE_PER_PELLET);
         document_.shotgun.primaryPelletCount = GetTextValue(IDC_SHOTGUN_PRIMARY_PELLET_COUNT);
         document_.shotgun.primaryHeadshotScale = GetTextValue(IDC_SHOTGUN_PRIMARY_HEADSHOT_SCALE);
@@ -2702,7 +2778,7 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
     shotgun.general.sessionTag = L"editor_cfg_test";
     shotgun.exportSettings.exportFolder = exportRoot.wstring();
     shotgun.exportSettings.cfgFileName = L"editor_shotgun_test.cfg";
-    hlcfg::ApplyShotgunPreset(shotgun, L"precision_test");
+    hlcfg::ApplyShotgunPreset(shotgun, L"shotgun_pattern_tight");
     shotgun.shotgun.profileName = L"editor_shotgun_test";
     hlcfg::ApplyDummyPreset(shotgun, L"vest");
 
@@ -2725,6 +2801,9 @@ int RunSelfTestInternal(const std::wstring& moduleFilePath) {
         !ValidateContains(shotgunExport.cfgText, L"sv_exp_session_tag \"editor_cfg_test\"") ||
         !ValidateContains(shotgunExport.cfgText, L"sv_exp_shotgun_primary_enabled 1") ||
         !ValidateContains(shotgunExport.cfgText, L"sv_exp_shotgun_profile_name \"editor_shotgun_test\"") ||
+        !ValidateContains(shotgunExport.cfgText, L"sv_exp_shotgun_pattern_mode 1") ||
+        !ValidateContains(shotgunExport.cfgText, L"sv_exp_shotgun_primary_pellet_spread_mode 1") ||
+        !ValidateContains(shotgunExport.cfgText, L"sv_exp_shotgun_primary_shot_growth 0.01") ||
         !ValidateContains(shotgunExport.cfgText, L"sv_exp_shotgun_lab_loadout 1") ||
         !ValidateContains(shotgunExport.cfgText, L"sv_exp_shotgun_primary_pellet_count") ||
         !ValidateContains(shotgunExport.cfgText, L"sv_exp_glock_lab_target_profile_name \"vest\"") ||

@@ -1,0 +1,30 @@
+{
+  "name": "shotgun_pattern_soft",
+  "description": "Deterministic pellet layout with moderate cone width and soft repeated-shot bloom for readable close-range live testing.",
+  "cvars": {
+    "sv_exp_shotgun_primary_enabled": "1",
+    "sv_exp_shotgun_profile_name": "shotgun_pattern_soft",
+    "sv_exp_shotgun_primary_base_spread": "0.0460",
+    "sv_exp_shotgun_primary_ground_move_penalty": "0.0220",
+    "sv_exp_shotgun_primary_air_move_penalty": "0.0680",
+    "sv_exp_shotgun_primary_duck_penalty_scale": "0.7600",
+    "sv_exp_shotgun_primary_first_shot_accuracy": "1",
+    "sv_exp_shotgun_primary_first_shot_speed_threshold": "20.0",
+    "sv_exp_shotgun_primary_spread_recovery": "0.7200",
+    "sv_exp_shotgun_primary_max_spread": "0.0920",
+    "sv_exp_shotgun_primary_shot_growth": "0.0160",
+    "sv_exp_shotgun_pattern_mode": "1",
+    "sv_exp_shotgun_pattern_scale_x": "0.7200",
+    "sv_exp_shotgun_pattern_scale_y": "0.8600",
+    "sv_exp_shotgun_pattern_reset_time": "0.8800",
+    "sv_exp_shotgun_pattern_max_index": "5",
+    "sv_exp_shotgun_primary_pellet_spread_mode": "1",
+    "sv_exp_shotgun_primary_damage_per_pellet": "5.5",
+    "sv_exp_shotgun_primary_pellet_count": "6",
+    "sv_exp_shotgun_primary_headshot_scale": "1.6",
+    "sv_exp_shotgun_primary_headshot_lethal": "0",
+    "sv_exp_shotgun_lab_loadout": "1",
+    "sv_exp_shotgun_lab_ammo": "48",
+    "sv_exp_shotgun_lab_autoswitch": "1"
+  }
+}

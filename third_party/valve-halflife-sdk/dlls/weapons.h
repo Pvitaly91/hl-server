@@ -669,6 +669,9 @@ public:
 	int m_fInReload;
 	float m_flNextReload;
 	float m_flLastAcceptedPrimaryShotTime;
+	float m_flPrimarySpreadAccumulator;
+	int m_iPrimaryShotCount;
+	int m_iPrimaryPatternIndex;
 	int m_iShell;
 
 	virtual BOOL UseDecrement( void )

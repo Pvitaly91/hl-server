@@ -99,6 +99,13 @@ void ApplyShotgunDefaults(ProjectDocument& document) {
     document.shotgun.primaryFirstShotSpeedThreshold = L"35.0";
     document.shotgun.primarySpreadRecovery = L"0.8500";
     document.shotgun.primaryMaxSpread = L"0.1200";
+    document.shotgun.primaryShotGrowth = L"0.0200";
+    document.shotgun.patternMode = false;
+    document.shotgun.patternScaleX = L"0.8500";
+    document.shotgun.patternScaleY = L"0.9500";
+    document.shotgun.patternResetTime = L"0.9500";
+    document.shotgun.patternMaxIndex = L"5";
+    document.shotgun.primaryPelletSpreadMode = L"1";
     document.shotgun.primaryDamagePerPellet = L"5.0";
     document.shotgun.primaryPelletCount = L"6";
     document.shotgun.primaryHeadshotScale = L"1.5";
@@ -426,6 +433,12 @@ void ApplyShotgunPreset(ProjectDocument& document, const std::wstring& presetNam
         document.shotgun.primaryFirstShotSpeedThreshold = L"20.0";
         document.shotgun.primarySpreadRecovery = L"0.7000";
         document.shotgun.primaryMaxSpread = L"0.0900";
+        document.shotgun.primaryShotGrowth = L"0.0280";
+        document.shotgun.patternMode = true;
+        document.shotgun.patternScaleX = L"0.9200";
+        document.shotgun.patternScaleY = L"1.0500";
+        document.shotgun.patternResetTime = L"0.8000";
+        document.shotgun.patternMaxIndex = L"4";
         document.shotgun.primaryDamagePerPellet = L"8.0";
         document.shotgun.primaryPelletCount = L"8";
         document.shotgun.primaryHeadshotScale = L"1.7";
@@ -444,11 +457,77 @@ void ApplyShotgunPreset(ProjectDocument& document, const std::wstring& presetNam
         document.shotgun.primaryFirstShotSpeedThreshold = L"18.0";
         document.shotgun.primarySpreadRecovery = L"0.6500";
         document.shotgun.primaryMaxSpread = L"0.0600";
+        document.shotgun.primaryShotGrowth = L"0.0120";
+        document.shotgun.patternMode = true;
+        document.shotgun.patternScaleX = L"0.6200";
+        document.shotgun.patternScaleY = L"0.7600";
+        document.shotgun.patternResetTime = L"0.9000";
+        document.shotgun.patternMaxIndex = L"5";
         document.shotgun.primaryDamagePerPellet = L"6.0";
         document.shotgun.primaryPelletCount = L"4";
         document.shotgun.primaryHeadshotScale = L"1.6";
         document.shotgun.primaryHeadshotLethal = false;
         document.shotgun.labAmmo = L"48";
+        return;
+    }
+
+    if (presetName == L"shotgun_pattern_soft") {
+        document.shotgun.profileName = L"shotgun_pattern_soft";
+        document.shotgun.primaryBaseSpread = L"0.0460";
+        document.shotgun.primaryGroundMovePenalty = L"0.0220";
+        document.shotgun.primaryAirMovePenalty = L"0.0680";
+        document.shotgun.primaryDuckPenaltyScale = L"0.7600";
+        document.shotgun.primaryFirstShotAccuracy = true;
+        document.shotgun.primaryFirstShotSpeedThreshold = L"20.0";
+        document.shotgun.primarySpreadRecovery = L"0.7200";
+        document.shotgun.primaryMaxSpread = L"0.0920";
+        document.shotgun.primaryShotGrowth = L"0.0160";
+        document.shotgun.patternMode = true;
+        document.shotgun.patternScaleX = L"0.7200";
+        document.shotgun.patternScaleY = L"0.8600";
+        document.shotgun.patternResetTime = L"0.8800";
+        document.shotgun.patternMaxIndex = L"5";
+        document.shotgun.primaryDamagePerPellet = L"5.5";
+        document.shotgun.primaryPelletCount = L"6";
+        document.shotgun.primaryHeadshotScale = L"1.6";
+        document.shotgun.primaryHeadshotLethal = false;
+        document.shotgun.labAmmo = L"48";
+        return;
+    }
+
+    if (presetName == L"shotgun_pattern_tight") {
+        document.shotgun.profileName = L"shotgun_pattern_tight";
+        document.shotgun.primaryBaseSpread = L"0.0320";
+        document.shotgun.primaryGroundMovePenalty = L"0.0140";
+        document.shotgun.primaryAirMovePenalty = L"0.0440";
+        document.shotgun.primaryDuckPenaltyScale = L"0.6800";
+        document.shotgun.primaryFirstShotAccuracy = true;
+        document.shotgun.primaryFirstShotSpeedThreshold = L"16.0";
+        document.shotgun.primarySpreadRecovery = L"0.6200";
+        document.shotgun.primaryMaxSpread = L"0.0700";
+        document.shotgun.primaryShotGrowth = L"0.0100";
+        document.shotgun.patternMode = true;
+        document.shotgun.patternScaleX = L"0.5600";
+        document.shotgun.patternScaleY = L"0.6800";
+        document.shotgun.patternResetTime = L"0.9500";
+        document.shotgun.patternMaxIndex = L"5";
+        document.shotgun.primaryDamagePerPellet = L"6.0";
+        document.shotgun.primaryPelletCount = L"5";
+        document.shotgun.primaryHeadshotScale = L"1.7";
+        document.shotgun.primaryHeadshotLethal = false;
+        document.shotgun.labAmmo = L"48";
+        return;
+    }
+
+    if (presetName == L"shotgun_close_quickkill") {
+        ApplyShotgunPreset(document, L"close_quickkill");
+        document.shotgun.profileName = L"shotgun_close_quickkill";
+        return;
+    }
+
+    if (presetName == L"shotgun_precision_test") {
+        ApplyShotgunPreset(document, L"precision_test");
+        document.shotgun.profileName = L"shotgun_precision_test";
     }
 }
 

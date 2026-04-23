@@ -25,6 +25,8 @@
 #include "weapon_tuning_core.h"
 #include "weapon_debug_logger.h"
 
+#include <math.h>
+
 // special deathmatch shotgun spreads
 #define VECTOR_CONE_DM_SHOTGUN	Vector( 0.08716, 0.04362, 0.00  )// 10 degrees by 5 degrees
 #define VECTOR_CONE_DM_DOUBLESHOTGUN Vector( 0.17365, 0.04362, 0.00 ) // 20 degrees by 5 degrees
@@ -32,6 +34,107 @@
 namespace
 {
 const float kShotgunFallbackMaxSpeed = 250.0f;
+
+struct ShotgunPelletPatternPoint
+{
+	float x;
+	float y;
+};
+
+const ShotgunPelletPatternPoint kShotgunDeterministicPelletLayout[] =
+{
+	{ 0.00f,  0.00f },
+	{ -0.42f, -0.14f },
+	{ 0.42f, -0.14f },
+	{ -0.28f, 0.34f },
+	{ 0.28f,  0.34f },
+	{ 0.00f, -0.48f },
+	{ -0.70f, 0.60f },
+	{ 0.70f,  0.60f },
+	{ -0.58f, -0.62f },
+	{ 0.58f,  -0.62f },
+	{ -0.12f, 0.80f },
+	{ 0.12f,  0.80f }
+};
+
+float ClampShotgunPatternScale(float value)
+{
+	if (value < 0.0f)
+	{
+		return 0.0f;
+	}
+
+	if (value > 4.0f)
+	{
+		return 4.0f;
+	}
+
+	return value;
+}
+
+ShotgunPelletPatternPoint ResolveShotgunPelletPatternPoint(int pelletIndex, int patternIndex)
+{
+	const int pointCount = sizeof(kShotgunDeterministicPelletLayout) / sizeof(kShotgunDeterministicPelletLayout[0]);
+	if (pointCount <= 0)
+	{
+		return { 0.0f, 0.0f };
+	}
+
+	const int rotationOffset = ((patternIndex >= 0 ? patternIndex : 0) * 2) % pointCount;
+	const int wrappedIndex = (pelletIndex + rotationOffset) % pointCount;
+	return kShotgunDeterministicPelletLayout[wrappedIndex];
+}
+
+Vector FireDeterministicShotgunPellets(
+	CBasePlayer *pPlayer,
+	const Vector &vecSrc,
+	const Vector &vecAiming,
+	int pelletCount,
+	float totalSpread,
+	int patternIndex,
+	float layoutScaleX,
+	float layoutScaleY)
+{
+	TraceResult tr;
+	Vector vecRight = gpGlobals->v_right;
+	Vector vecUp = gpGlobals->v_up;
+	Vector vecLastOffset = g_vecZero;
+	const float clampedSpread = totalSpread > 0.0f ? totalSpread : 0.0f;
+	const float clampedScaleX = ClampShotgunPatternScale(layoutScaleX);
+	const float clampedScaleY = ClampShotgunPatternScale(layoutScaleY);
+	const float baseDamage = GetActiveShotgunPrimaryBaseDamage(pPlayer->pev, gSkillData.plrDmgBuckshot);
+
+	ClearMultiDamage();
+	gMultiDamage.type = DMG_BULLET | DMG_NEVERGIB;
+
+	for (int pelletIndex = 0; pelletIndex < pelletCount; ++pelletIndex)
+	{
+		const ShotgunPelletPatternPoint patternPoint = ResolveShotgunPelletPatternPoint(pelletIndex, patternIndex);
+		const float pelletOffsetX = clampedSpread * patternPoint.x * clampedScaleX;
+		const float pelletOffsetY = clampedSpread * patternPoint.y * clampedScaleY;
+		const Vector vecDir = vecAiming +
+			(pelletOffsetX * vecRight) +
+			(pelletOffsetY * vecUp);
+		const Vector vecEnd = vecSrc + vecDir * 2048.0f;
+
+		UTIL_TraceLine(vecSrc, vecEnd, dont_ignore_monsters, ENT(pPlayer->pev), &tr);
+		if (tr.flFraction != 1.0f)
+		{
+			CBaseEntity *pEntity = CBaseEntity::Instance(tr.pHit);
+			if (pEntity != NULL)
+			{
+				pEntity->TraceAttack(pPlayer->pev, baseDamage, vecDir, &tr, DMG_BULLET);
+			}
+		}
+
+		UTIL_BubbleTrail(vecSrc, tr.vecEndPos, (2048.0f * tr.flFraction) / 64.0f);
+		vecLastOffset = Vector(pelletOffsetX, pelletOffsetY, 0.0f);
+	}
+
+	ApplyMultiDamage(pPlayer->pev, pPlayer->pev);
+	FinalizeActiveShotgunPrimaryHitTelemetry();
+	return vecLastOffset;
+}
 }
 
 enum shotgun_e {
@@ -57,6 +160,9 @@ void CShotgun::Spawn( )
 
 	m_iDefaultAmmo = SHOTGUN_DEFAULT_GIVE;
 	m_flLastAcceptedPrimaryShotTime = -1.0f;
+	m_flPrimarySpreadAccumulator = 0.0f;
+	m_iPrimaryShotCount = 0;
+	m_iPrimaryPatternIndex = -1;
 
 	FallInit();// get ready to fall
 }
@@ -169,35 +275,92 @@ void CShotgun::PrimaryAttack()
 	if (fExperimentalPrimary)
 	{
 		const SharedWeaponSpreadProfile spreadProfile = BuildShotgunPrimarySpreadProfile();
+		const SharedWeaponPatternProfile patternProfile = BuildShotgunPrimaryPatternProfile();
+		const bool deterministicPelletLayout = ExpShotgunPrimaryPelletSpreadMode() == 1;
+		const float flRecoveredAdditionalSpread = fHasPreviousAcceptedShot
+			? RecoverSharedAdditionalSpread(
+				m_flPrimarySpreadAccumulator,
+				flTimeSincePreviousAcceptedShot,
+				spreadProfile.additionalSpreadRecoverySeconds,
+				spreadProfile.maxSpread)
+			: 0.0f;
 		const SharedWeaponSpreadState spreadState = BuildPlayerWeaponSpreadState(
 			m_pPlayer,
 			kShotgunFallbackMaxSpeed,
 			fHasPreviousAcceptedShot != FALSE,
 			flTimeSincePreviousAcceptedShot,
-			0.0f);
+			flRecoveredAdditionalSpread);
 		const SharedWeaponSpreadResult spreadResult = ComputeSharedWeaponSpread(spreadProfile, spreadState);
+		const SharedWeaponPatternResult patternResult = ComputeSharedWeaponPattern(
+			patternProfile,
+			spreadState,
+			spreadResult.speedRatio,
+			spreadResult.spread,
+			m_iPrimaryPatternIndex);
 		const float flSpread = spreadResult.spread;
+		const float flShotGrowth = ExpShotgunPrimaryShotGrowth();
+		const float flNextAdditionalSpread = GrowSharedAdditionalSpread(
+			spreadResult.additionalSpread,
+			flShotGrowth,
+			spreadProfile.maxSpread);
 		const int pelletCount = ExpShotgunPrimaryPelletCount();
+		const Vector vecPatternAiming = vecAiming +
+			(patternResult.offsetX * gpGlobals->v_right) +
+			(patternResult.offsetY * gpGlobals->v_up);
+		const bool resetShotChain = !fHasPreviousAcceptedShot ||
+			patternResult.resetApplied ||
+			(spreadProfile.additionalSpreadRecoverySeconds > 0.0f &&
+			 flTimeSincePreviousAcceptedShot >= spreadProfile.additionalSpreadRecoverySeconds);
 
 		BeginShotgunPrimaryShotContext(m_pPlayer, pelletCount);
-		vecDir = m_pPlayer->FireBulletsPlayer(
-			pelletCount,
-			vecSrc,
-			vecAiming,
-			Vector(flSpread, flSpread, 0.0f),
-			2048,
-			BULLET_PLAYER_BUCKSHOT,
-			0,
-			0,
-			m_pPlayer->pev,
-			m_pPlayer->random_seed);
+		if (deterministicPelletLayout)
+		{
+			vecDir = FireDeterministicShotgunPellets(
+				m_pPlayer,
+				vecSrc,
+				vecPatternAiming,
+				pelletCount,
+				flSpread,
+				patternResult.patternIndex,
+				ExpShotgunPatternScaleX(),
+				ExpShotgunPatternScaleY());
+		}
+		else
+		{
+			vecDir = m_pPlayer->FireBulletsPlayer(
+				pelletCount,
+				vecSrc,
+				vecPatternAiming,
+				Vector(patternResult.randomSpread, patternResult.randomSpread, 0.0f),
+				2048,
+				BULLET_PLAYER_BUCKSHOT,
+				0,
+				0,
+				m_pPlayer->pev,
+				m_pPlayer->random_seed);
+		}
 
 		ShotgunAcceptedShotTelemetry acceptedTelemetry = {};
 		acceptedTelemetry.experimentalModeActive = ExpShotgunExperimentalModeEnabled();
 		acceptedTelemetry.firstShotAccuracyApplied = spreadResult.firstShotAccuracyApplied;
 		acceptedTelemetry.spread = flSpread;
 		acceptedTelemetry.baseSpread = spreadProfile.baseSpread;
+		acceptedTelemetry.additionalSpread = spreadResult.additionalSpread;
+		acceptedTelemetry.recoveryApplied = spreadState.additionalSpread - spreadResult.additionalSpread;
+		acceptedTelemetry.shotGrowth = flShotGrowth;
+		acceptedTelemetry.patternModeActive = patternProfile.enabled || deterministicPelletLayout;
+		acceptedTelemetry.pelletSpreadMode = ExpShotgunPrimaryPelletSpreadMode();
+		acceptedTelemetry.patternIndex = patternResult.patternIndex;
+		acceptedTelemetry.patternResetApplied = patternResult.resetApplied;
+		acceptedTelemetry.patternOffsetX = patternResult.offsetX;
+		acceptedTelemetry.patternOffsetY = patternResult.offsetY;
+		acceptedTelemetry.patternScaleX = ExpShotgunPatternScaleX();
+		acceptedTelemetry.patternScaleY = ExpShotgunPatternScaleY();
+		acceptedTelemetry.totalAdditionalSpread = spreadResult.additionalSpread + spreadResult.movementPenalty;
 		acceptedTelemetry.movementPenalty = spreadResult.movementPenalty;
+		acceptedTelemetry.movementContribution = spreadResult.movementPenalty;
+		acceptedTelemetry.patternContribution = sqrtf((patternResult.offsetX * patternResult.offsetX) + (patternResult.offsetY * patternResult.offsetY));
+		acceptedTelemetry.cadenceGrowthContribution = flShotGrowth;
 		acceptedTelemetry.horizontalSpeed = spreadState.horizontalSpeed;
 		acceptedTelemetry.maxSpeedForNormalization = spreadState.maxSpeedForNormalization;
 		acceptedTelemetry.grounded = spreadState.grounded;
@@ -210,6 +373,9 @@ void CShotgun::PrimaryAttack()
 		LogAcceptedShotgunPrimaryShot(m_pPlayer, acceptedTelemetry);
 		EndShotgunPrimaryShotContext();
 		m_flLastAcceptedPrimaryShotTime = gpGlobals->time;
+		m_flPrimarySpreadAccumulator = flNextAdditionalSpread;
+		m_iPrimaryShotCount = resetShotChain ? 1 : (m_iPrimaryShotCount + 1);
+		m_iPrimaryPatternIndex = patternProfile.enabled ? patternResult.patternIndex : -1;
 	}
 	else
 	{

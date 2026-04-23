@@ -74,6 +74,7 @@ The recommended preset buttons and names for this pass are:
 - Glock: `glock_cadence_soft`, `glock_cadence_tight`
 - 357: `357_precision_duel`, `357_cadence_headshot`
 - MP5: `mp5_pattern_burst`, `mp5_pattern_mobile`
+- Shotgun: `shotgun_pattern_soft`, `shotgun_pattern_tight`, `shotgun_close_quickkill`, `shotgun_precision_test`
 
 The intent is to make it obvious that the editor is tuning cadence growth plus recovery, with an optional deterministic follow-up pattern layered on top, instead of forcing a hard server-only tap-fire gate as the only way to get a skillful pistol or SMG feel.
 
@@ -132,6 +133,7 @@ The `Export` tab now emphasizes the simple live-mod workflow first:
 - Exported cfgs now include the current round, team-round, buy, armor, and helmet sections when those settings are present in the project, so one exported file can represent a full live match setup.
 - Exported Glock and MP5 cfgs now also include the deterministic pattern cvars when pattern mode is enabled.
 - Exported Glock and `357` cfgs now include the cadence cvars when cadence mode is enabled.
+- Exported shotgun cfgs now also include the deterministic pellet-pattern cvars when the shotgun pattern controls are enabled.
 
 The default cfg filename is derived from the current project/config name so the common path does not start from a generic placeholder. Example defaults include `editor_glock_simple.cfg`, `editor_mp5_simple.cfg`, `editor_357_test.cfg`, and `editor_shotgun_test.cfg`.
 
@@ -212,12 +214,13 @@ For 357 specifically, the same editor path applies:
 For shotgun specifically, the same editor path applies:
 
 1. Open the `Shotgun` tab.
-2. Choose a checked-in preset such as `default`, `close_quickkill`, or `precision_test`.
+2. Choose a checked-in preset such as `shotgun_pattern_soft`, `shotgun_pattern_tight`, `shotgun_close_quickkill`, or `shotgun_precision_test`.
 3. Export `editor_shotgun_test.cfg` to the live mod root.
 4. In HLDS, run `exp_cfg_apply editor_shotgun_test.cfg`.
 5. Run `exp_target_use_saved default` and `exp_target_respawn`.
-6. Use `exp_target_profile unarmored` when you want deterministic close-range dummy checks.
-7. Review shotgun-only telemetry with `.\scripts\analyze-weapon-log.ps1 -Latest -Weapon shotgun`.
+6. Use the `Deterministic pellet pattern`, `Pellet spread mode`, `Pellet pattern X scale`, `Pellet pattern Y scale`, `Pattern reset time`, and `Per-shot spread growth` controls when you want a learnable shotgun cone instead of the older random-like spread.
+7. Use `exp_target_profile unarmored` and `exp_target_tp_front` when you want deterministic close-range dummy checks.
+8. Review shotgun-only telemetry with `.\scripts\analyze-weapon-log.ps1 -Latest -Weapon shotgun`.
 
 ## Match-rule configs
 

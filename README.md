@@ -31,6 +31,7 @@ The current gameplay direction is intentionally narrower than "make full Counter
 - MP5 should reward controlled bursts, let long sprays bloom, and recover accuracy when the player pauses.
 - Glock and MP5 can now also layer an optional deterministic follow-up pattern over the shared spread model so second and third shots feel more learnable and less like a pure random cone.
 - Glock and 357 can now also layer cadence-sensitive penalties over their first-shot and movement logic so click timing matters more than simply holding attack.
+- Shotgun primary fire can now also layer a deterministic pellet layout over its existing spread scale so repeated shots feel less like a pure random cone and more like a learnable server-side pattern.
 - Movement, air state, crouch stability, and readable headshot damage are part of the tuning target.
 - Real-player and fake-verification-client hit telemetry now logs armor before/after, health before/after, damage absorbed by armor, helmet/head-protection state, and direct headshot evidence on the hit line itself.
 - Stock client compatibility is preserved, but client-side recoil and prediction are still only approximated because this repository does not ship a custom client DLL.
@@ -695,6 +696,13 @@ Key shotgun cvars:
 - `sv_exp_shotgun_primary_first_shot_speed_threshold`
 - `sv_exp_shotgun_primary_spread_recovery`
 - `sv_exp_shotgun_primary_max_spread`
+- `sv_exp_shotgun_primary_shot_growth`
+- `sv_exp_shotgun_pattern_mode`
+- `sv_exp_shotgun_pattern_scale_x`
+- `sv_exp_shotgun_pattern_scale_y`
+- `sv_exp_shotgun_pattern_reset_time`
+- `sv_exp_shotgun_pattern_max_index`
+- `sv_exp_shotgun_primary_pellet_spread_mode`
 - `sv_exp_shotgun_primary_damage_per_pellet`
 - `sv_exp_shotgun_primary_pellet_count`
 - `sv_exp_shotgun_primary_headshot_scale`
@@ -708,17 +716,22 @@ Checked-in shotgun preset JSON files live under `configs/shotgun-presets/`:
 - `default.json`
 - `close_quickkill.json`
 - `precision_test.json`
+- `shotgun_pattern_soft.json`
+- `shotgun_pattern_tight.json`
+- `shotgun_close_quickkill.json`
+- `shotgun_precision_test.json`
 
 Recommended shotgun loop:
 
 1. Build and run the deployed editor from `<HalfLifeRoot>\hlserver_testbed\HlConfigEditorCpp.exe`.
 2. Configure the `Shotgun` tab and export `editor_shotgun_test.cfg` with `Quick Export to Live Mod`.
-3. Launch or reconnect to the live server.
-4. Run `exp_cfg_apply editor_shotgun_test.cfg`.
-5. If this is the first setup on the map, run `exp_target_mark default`.
-6. Run `exp_target_use_saved default` and `exp_target_respawn`.
-7. Use `exp_target_profile unarmored` when you want deterministic close-range dummy kill checks.
-8. Review the weapon log with `.\scripts\analyze-weapon-log.ps1 -Latest -Weapon shotgun`.
+3. Use `Deterministic pellet pattern`, `Pellet pattern X scale`, `Pellet pattern Y scale`, `Pattern reset time`, and `Per-shot spread growth` when you want a learnable close-range spread shape instead of the older random-like cone.
+4. Launch or reconnect to the live server.
+5. Run `exp_cfg_apply editor_shotgun_test.cfg`.
+6. If this is the first setup on the map, run `exp_target_mark default`.
+7. Run `exp_target_use_saved default` and `exp_target_respawn`.
+8. Use `exp_target_profile unarmored` and `exp_target_tp_front` when you want deterministic close-range dummy kill checks under the new pellet pattern.
+9. Review the weapon log with `.\scripts\analyze-weapon-log.ps1 -Latest -Weapon shotgun`.
 
 The editor, launcher, and cfg command path stay unchanged. Shotgun is another shared-core weapon that can be exported to cfg, applied live, and exercised against the same target dummy workflow.
 

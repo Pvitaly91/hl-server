@@ -1,9 +1,9 @@
 {
-  "name": "precision_test",
-  "description": "Repeatable dummy-test profile with deterministic pellet layout, tighter spread, and fewer pellets so shotgun telemetry is easier to read during live-lab verification.",
+  "name": "shotgun_precision_test",
+  "description": "Alias preset for tight deterministic shotgun testing against the target dummy with fewer pellets and easy-to-read telemetry.",
   "cvars": {
     "sv_exp_shotgun_primary_enabled": "1",
-    "sv_exp_shotgun_profile_name": "precision_test",
+    "sv_exp_shotgun_profile_name": "shotgun_precision_test",
     "sv_exp_shotgun_primary_base_spread": "0.0280",
     "sv_exp_shotgun_primary_ground_move_penalty": "0.0160",
     "sv_exp_shotgun_primary_air_move_penalty": "0.0500",

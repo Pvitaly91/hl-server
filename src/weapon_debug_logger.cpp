@@ -1719,7 +1719,7 @@ void LogAcceptedShotgunPrimaryShot(CBasePlayer *pPlayer, const ShotgunAcceptedSh
 
     char timestamp[64];
     char deltaPreviousShot[32];
-    char line[1024];
+    char line[1536];
     FormatTimestamp(timestamp, sizeof(timestamp));
 
     if (telemetry.hasPreviousAcceptedShot)
@@ -1735,7 +1735,7 @@ void LogAcceptedShotgunPrimaryShot(CBasePlayer *pPlayer, const ShotgunAcceptedSh
         line,
         sizeof(line),
         _TRUNCATE,
-        "[weaponlog] type=accepted ts=%s map=%s player=\"%s\" entindex=%d userid=%d weapon=shotgun fire=primary experimental=%d profile=\"%s\" firstshot=%d spread=%.4f base=%.4f move_penalty=%.4f speed2d=%.1f maxspeed=%.1f grounded=%d ducking=%d delta_prev=%s clip=%d pellets=%d",
+        "[weaponlog] type=accepted ts=%s map=%s player=\"%s\" entindex=%d userid=%d weapon=shotgun fire=primary experimental=%d profile=\"%s\" firstshot=%d spread=%.4f base=%.4f additional_spread=%.4f recovery_applied=%.4f shot_growth=%.4f pattern_mode=%d pellet_spread_mode=%d pattern_index=%d pattern_reset=%d pattern_offset_x=%.4f pattern_offset_y=%.4f pattern_scale_x=%.4f pattern_scale_y=%.4f total_additional_spread=%.4f move_penalty=%.4f movement_contribution=%.4f pattern_contribution=%.4f cadence_growth_contribution=%.4f speed2d=%.1f maxspeed=%.1f grounded=%d ducking=%d delta_prev=%s clip=%d pellets=%d",
         timestamp,
         SanitizeLogValue(GetSafeMapName()).c_str(),
         GetSafePlayerName(pPlayer).c_str(),
@@ -1746,7 +1746,22 @@ void LogAcceptedShotgunPrimaryShot(CBasePlayer *pPlayer, const ShotgunAcceptedSh
         telemetry.firstShotAccuracyApplied ? 1 : 0,
         telemetry.spread,
         telemetry.baseSpread,
+        telemetry.additionalSpread,
+        telemetry.recoveryApplied,
+        telemetry.shotGrowth,
+        telemetry.patternModeActive ? 1 : 0,
+        telemetry.pelletSpreadMode,
+        telemetry.patternIndex,
+        telemetry.patternResetApplied ? 1 : 0,
+        telemetry.patternOffsetX,
+        telemetry.patternOffsetY,
+        telemetry.patternScaleX,
+        telemetry.patternScaleY,
+        telemetry.totalAdditionalSpread,
         telemetry.movementPenalty,
+        telemetry.movementContribution,
+        telemetry.patternContribution,
+        telemetry.cadenceGrowthContribution,
         telemetry.horizontalSpeed,
         telemetry.maxSpeedForNormalization,
         telemetry.grounded ? 1 : 0,

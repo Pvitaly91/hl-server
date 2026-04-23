@@ -56,6 +56,7 @@ This repository is explicitly improving stock-client-compatible HLDM gameplay, n
 - 357 now uses the same cadence model so patient clicks stay precise, rushed follow-up clicks add a visible penalty, and waiting long enough resets the cadence state.
 - MP5 now favors controlled bursts: repeated accepted shots add burst spread, waiting lets that extra spread decay, and long held fire is meant to bloom more than short bursts.
 - MP5 can now optionally layer a deterministic early-burst pattern over the same shared spread and recovery model so the opening spray shape is more learnable.
+- Shotgun primary fire now uses a deterministic pellet-layout mode on top of the shared spread and recovery inputs so the cone stays recognizably shotgun-like while repeated close-range shots become more learnable than a pure random pellet cloud.
 - Movement, air state, crouch stability, and readable headshot damage remain part of the shared model.
 - Because the client DLL is still stock Half-Life, the server can improve authoritative spread and damage behavior but cannot promise exact client-side recoil or prediction parity.
 
@@ -64,6 +65,7 @@ This repository is explicitly improving stock-client-compatible HLDM gameplay, n
 - Glock: `glock_cadence_soft` for a softer cadence-sensitive pistol feel, `glock_cadence_tight` for a stricter rhythm-focused single-shot path, and `glock_pattern_tight` when you also want a stronger learnable follow-up pattern.
 - 357: `357_precision_duel` for precise duel pacing and `357_cadence_headshot` for stronger headshot-oriented live validation.
 - MP5: `mp5_pattern_burst` for the main "short burst beats spray" path, `mp5_pattern_mobile` for a lighter movement-oriented variant.
+- Shotgun: `shotgun_pattern_soft` for a gentler learnable pellet spread, `shotgun_pattern_tight` for the tighter deterministic layout, `shotgun_close_quickkill` for heavier close-range testing, and `shotgun_precision_test` for cleaner dummy validation.
 
 Relevant new cvars for this pass:
 
@@ -71,6 +73,7 @@ Relevant new cvars for this pass:
 - 357 cadence: `sv_exp_357_primary_cadence_mode`, `sv_exp_357_primary_cycle_time`, `sv_exp_357_primary_click_penalty`, `sv_exp_357_primary_click_penalty_scale`, `sv_exp_357_primary_click_reset_time`, `sv_exp_357_primary_hold_penalty_scale`
 - Glock: `sv_exp_glock_pattern_mode`, `sv_exp_glock_pattern_scale_x`, `sv_exp_glock_pattern_scale_y`, `sv_exp_glock_pattern_reset_time`, `sv_exp_glock_pattern_max_index`
 - MP5: `sv_exp_mp5_pattern_mode`, `sv_exp_mp5_pattern_scale_x`, `sv_exp_mp5_pattern_scale_y`, `sv_exp_mp5_pattern_reset_time`, `sv_exp_mp5_pattern_max_index`
+- Shotgun: `sv_exp_shotgun_primary_shot_growth`, `sv_exp_shotgun_pattern_mode`, `sv_exp_shotgun_pattern_scale_x`, `sv_exp_shotgun_pattern_scale_y`, `sv_exp_shotgun_pattern_reset_time`, `sv_exp_shotgun_pattern_max_index`, `sv_exp_shotgun_primary_pellet_spread_mode`
 
 Cadence mode and pattern mode are still server-side approximations. They do not add client-side recoil animation or a custom prediction model.
 
@@ -208,14 +211,13 @@ On `2026-04-23`, Glock and 357 cadence mode was verified in fresh client-attache
 - 357 cadence telemetry showed the same cadence fields progressing across consecutive accepted clicks, then resetting after a longer pause, again without client DLL changes.
 - The analyzer summary for those sessions surfaced cadence evidence counts, cadence-reset counts, and penalty ranges so the cadence layer is inspectable in the normal live workflow.
 
-Shotgun integration is present in the same shared-core path, including editor export, cfg apply, lab loadout wiring, telemetry, and analyzer support. On `2026-04-21`, the remaining blocker was not the server-side shotgun code path itself but unstable live client launches around Steam initialization. The strongest live shotgun evidence from that date was:
+On `2026-04-23`, shotgun deterministic pellet-pattern mode was verified in a fresh client-attached session on `crossfire` under the normal cfg-driven workflow:
 
-- `editor_shotgun_test.cfg` applied successfully through `exp_cfg_apply`
-- the target dummy workflow still rebuilt and repositioned correctly under shotgun cfg control
-- shotgun accepted-shot telemetry and real dummy deaths were captured in live logs before the shotgun hit/kill aggregation fix
-- the hit/kill aggregation lifetime bug was fixed in source by keeping the active shotgun shot context alive until after `FinalizeActiveShotgunPrimaryHitTelemetry()`
-
-That means the shotgun shared-core implementation is in place, but a fresh post-fix end-to-end live proof of shotgun hit and kill telemetry still depends on a clean client-attached run.
+- the exported `editor_shotgun_test.cfg` settings were active under `weapon_under_test="shotgun"` with `sv_exp_shotgun_pattern_mode=1`, `sv_exp_shotgun_pattern_scale_x=0.56`, `sv_exp_shotgun_pattern_scale_y=0.68`, `sv_exp_shotgun_pattern_reset_time=0.95`, and `sv_exp_shotgun_primary_pellet_spread_mode=1`
+- the target dummy still spawned from the persisted saved spot and could be repositioned with `exp_target_tp_front`, so the normal live-lab dummy workflow stayed intact
+- accepted-shot telemetry in `weapon-debug-20260423-152423.log` showed `pattern_mode=1`, pattern indices progressing from `0` to `1` across consecutive shots, and later `pattern_reset=1` after a longer idle gap
+- the same session logged direct dummy hit and kill lines under shotgun pattern mode, plus a dummy respawn afterward
+- the analyzer summary for that log surfaced `accepted shots 5`, `hit events 3`, `kill events 1`, `pattern evidence 5`, `pattern resets 1`, and pellet-hit fields, so the new shotgun pattern layer is inspectable through the normal tuning workflow
 
 357 remains experimental. The live proof shows that the shared core, editor export path, cfg commands, telemetry, and analyzer now cover a third weapon. It does not claim final gameplay balance or exact Counter-Strike parity.
 

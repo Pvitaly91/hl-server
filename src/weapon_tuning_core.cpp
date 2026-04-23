@@ -444,6 +444,17 @@ SharedWeaponSpreadProfile BuildShotgunPrimarySpreadProfile()
     return profile;
 }
 
+SharedWeaponPatternProfile BuildShotgunPrimaryPatternProfile()
+{
+    SharedWeaponPatternProfile profile = {};
+    profile.enabled = ExpShotgunPatternModeEnabled();
+    profile.scaleX = ExpShotgunPatternScaleX();
+    profile.scaleY = ExpShotgunPatternScaleY();
+    profile.resetTimeSeconds = ExpShotgunPatternResetTime();
+    profile.maxIndex = ExpShotgunPatternMaxIndex();
+    return profile;
+}
+
 SharedWeaponPatternProfile BuildGlockPrimaryPatternProfile()
 {
     SharedWeaponPatternProfile profile = {};
