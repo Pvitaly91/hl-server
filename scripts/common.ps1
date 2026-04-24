@@ -143,6 +143,29 @@ function Assert-PathWithinRoot {
     }
 }
 
+function Test-PathWithinRootOrEqual {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Root
+    )
+
+    $fullPath = Get-FullPath -Path $Path
+    $fullRoot = Get-FullPath -Path $Root
+
+    if ($fullPath.Equals($fullRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+    }
+
+    if (-not $fullRoot.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
+        $fullRoot = $fullRoot + [System.IO.Path]::DirectorySeparatorChar
+    }
+
+    return $fullPath.StartsWith($fullRoot, [System.StringComparison]::OrdinalIgnoreCase)
+}
+
 function Reset-DisposableDirectory {
     param(
         [Parameter(Mandatory = $true)]
@@ -2409,7 +2432,7 @@ function Get-TestbedRuntimeProcesses {
         }
 
         $fullProcessPath = Get-FullPath -Path $processPath
-        if ($fullProcessPath.StartsWith($fullRuntimeRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        if (Test-PathWithinRootOrEqual -Path $fullProcessPath -Root $fullRuntimeRoot) {
             $processes.Add([PSCustomObject]@{
                 Id = $process.Id
                 ProcessName = $process.ProcessName
@@ -2445,7 +2468,7 @@ function Get-TestbedLiveModProcesses {
         }
 
         $fullProcessPath = Get-FullPath -Path $processPath
-        if (($process.ProcessName -in @("hl", "hlds")) -and $fullProcessPath.StartsWith($fullClientRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        if (($process.ProcessName -in @("hl", "hlds")) -and (Test-PathWithinRootOrEqual -Path $fullProcessPath -Root $fullClientRoot)) {
             $processes.Add([PSCustomObject]@{
                 Id = $process.Id
                 ProcessName = $process.ProcessName

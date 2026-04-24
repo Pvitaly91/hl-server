@@ -21,23 +21,37 @@ The repository vendors a pinned snapshot of Valve's official Half-Life source ba
 
 It is not yet a gameplay conversion and it does not ship any proprietary game assets, Steam files, or HLDS binaries.
 
-## Recommended Stable Base
+## Start here: Improved HLDM stable workflow
 
-Use `integration/stable-improved-hldm` as the recommended base branch for future work. It integrates the current server-side weapon-feel improvements, telemetry fidelity fixes, Improved HLDM packs, weapon sandbox mode, and the native editor workflow through live apply, telemetry analysis, guided tests, and report comparison.
+Use `release/improved-hldm-stable-package` when you want the user-ready setup, launch, editor, sandbox, telemetry, and report workflow. It is based on `integration/stable-improved-hldm`, which remains the integrated runtime base for future feature work.
 
-Recommended everyday loop:
+Fast path from a clean checkout:
 
-1. Build the server DLL and native C++ editor.
-2. Launch the managed live mod under `<HalfLifeRoot>\hlserver_testbed\`.
-3. Use the editor preset browser or match-pack browser; `hldm_skill_default` is the default Improved HLDM starting point.
-4. Quick-export a cfg or apply through the Live Server RCON helper.
-5. Use sandbox reset or Guided Tests to prepare the selected weapon and target dummy profile.
-6. Shoot manually in the stock Half-Life client.
-7. Analyze the latest telemetry in the editor.
-8. Save a guided test report.
-9. Compare reports in the `Reports` tab.
+```powershell
+git checkout release/improved-hldm-stable-package
+.\scripts\setup-improved-hldm.ps1
+.\scripts\check-improved-hldm.ps1
+.\scripts\play-improved-hldm.bat
+.\scripts\open-hldm-editor.bat
+```
 
-See [docs/stable-improved-hldm-state.md](docs/stable-improved-hldm-state.md) for the source branch/commit map and the exact integrated state.
+First pack to try:
+
+```text
+exp_matchcfg_apply hldm_skill_default
+```
+
+First guided test flow:
+
+1. Open the deployed editor at `<HalfLifeRoot>\hlserver_testbed\HlConfigEditorCpp.exe`.
+2. Open `Guided Tests`.
+3. Choose `mp5` or `glock`, `hldm_skill_default`, target profile `vest_headprotected`, and spot `default`.
+4. Click `Start Test`; if RCON is not configured, paste the copied fallback commands into HLDS.
+5. Shoot manually in the stock Half-Life client.
+6. Click `Finish & Analyze`.
+7. Save a report, then compare reports in the `Reports` tab.
+
+See [docs/stable-workflow.md](docs/stable-workflow.md) for the package workflow and [docs/stable-improved-hldm-state.md](docs/stable-improved-hldm-state.md) for the source branch/commit map and exact integrated state.
 
 ## Weapon Feel Direction
 
@@ -1772,6 +1786,10 @@ Live client-attached mode creates or refreshes a managed mod folder at `Half-Lif
 - `scripts/run-weapon-comparison-matrix.ps1` dispatches mixed matrix steps to the existing Glock or MP5 session scripts, stamps normalized session metadata, exports per-step analyzer artifacts, and writes one consolidated mixed comparison report set under `testbed/logs/reports/weapon-comparison-matrices/`.
 - `scripts/compare-weapon-reports.ps1` aggregates analyzer JSON from Glock-only or mixed Glock-plus-MP5 sessions, prints a concise comparison table, and can export normalized JSON, CSV, and Markdown summaries.
 - `scripts/analyze-weapon-log.ps1` analyzes the newest or a specific `weapon-debug-*.log`, prints a concise evidence summary including session profile and target-profile metadata when present, supports `-Weapon glock`, `-Weapon mp5`, `-Weapon 357`, or `-Weapon all`, optionally exports JSON and CSV under `testbed/logs/reports/`, and can fail non-zero when required armored-dummy telemetry signals are missing.
+- `scripts/setup-improved-hldm.ps1` builds the Debug server DLL, deploys the managed `hlserver_testbed` live mod, builds/deploys the native editor, syncs Improved HLDM match packs, and verifies the stable package outputs.
+- `scripts/check-improved-hldm.ps1` prints PASS/FAIL checks for the built DLL, live DLL, deployed editor, match packs, logs, and guided-test report folders.
+- `scripts/play-improved-hldm.bat` launches the recommended stock-client-compatible Improved HLDM session using `hldm_skill_default.cfg`.
+- `scripts/open-hldm-editor.bat` opens `<HalfLifeRoot>\hlserver_testbed\HlConfigEditorCpp.exe` and tells you to run setup if it is missing.
 - `scripts/show-latest-analysis.ps1` is the shared analyzer BAT helper that loads the newest disposable `weapon-debug-*.log`, prints the log and reports locations, and reruns the existing analyzer with `all`, `glock`, or `mp5` filtering.
 - `scripts/play-glock-live.bat`, `scripts/play-mp5-live.bat`, and `scripts/play-live-test.bat` are Explorer-friendly live launchers for stock-client-attached same-root `hlserver_testbed` sessions.
 - `scripts/show-latest-log-analysis.bat`, `scripts/show-latest-glock-analysis.bat`, and `scripts/show-latest-mp5-analysis.bat` are thin BAT entry points for the latest analyzer summaries.
