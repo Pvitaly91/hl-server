@@ -21,6 +21,24 @@ The repository vendors a pinned snapshot of Valve's official Half-Life source ba
 
 It is not yet a gameplay conversion and it does not ship any proprietary game assets, Steam files, or HLDS binaries.
 
+## Recommended Stable Base
+
+Use `integration/stable-improved-hldm` as the recommended base branch for future work. It integrates the current server-side weapon-feel improvements, telemetry fidelity fixes, Improved HLDM packs, weapon sandbox mode, and the native editor workflow through live apply, telemetry analysis, guided tests, and report comparison.
+
+Recommended everyday loop:
+
+1. Build the server DLL and native C++ editor.
+2. Launch the managed live mod under `<HalfLifeRoot>\hlserver_testbed\`.
+3. Use the editor preset browser or match-pack browser; `hldm_skill_default` is the default Improved HLDM starting point.
+4. Quick-export a cfg or apply through the Live Server RCON helper.
+5. Use sandbox reset or Guided Tests to prepare the selected weapon and target dummy profile.
+6. Shoot manually in the stock Half-Life client.
+7. Analyze the latest telemetry in the editor.
+8. Save a guided test report.
+9. Compare reports in the `Reports` tab.
+
+See [docs/stable-improved-hldm-state.md](docs/stable-improved-hldm-state.md) for the source branch/commit map and the exact integrated state.
+
 ## Weapon Feel Direction
 
 The current gameplay direction is intentionally narrower than "make full Counter-Strike in Half-Life."
