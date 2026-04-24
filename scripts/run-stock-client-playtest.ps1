@@ -1,484 +1,960 @@
-[CmdletBinding()]
 param(
-    [string[]]$Weapons = @("glock", "mp5", "357", "shotgun"),
+    [ValidateSet("all", "glock", "mp5", "357", "shotgun")]
+    [string]$Weapon = "all",
+
+    # Legacy compatibility with the previous script shape.
+    [ValidateSet("glock", "mp5", "357", "shotgun")]
+    [string[]]$Weapons,
 
     [string]$MatchPack = "hldm_skill_default",
-
-    [ValidateSet("unarmored", "vest", "vest_headprotected")]
     [string]$TargetProfile = "vest_headprotected",
-
     [string]$TargetSpot = "default",
-
     [string]$HostName = "127.0.0.1",
-
     [int]$Port = 27015,
-
-    [string]$RconPassword,
-
-    [string]$HlExe,
-
-    [string]$OutputRoot,
-
+    [string]$RconPassword = "",
+    [string]$HlExe = "",
+    [string]$OutputRoot = "",
     [switch]$StartServer,
     [switch]$NoClient,
     [switch]$OpenEditor,
     [switch]$DryRun,
-    [switch]$NoPause
+    [switch]$NoPause,
+    [switch]$RequireRcon,
+    [switch]$Strict
 )
 
 $ErrorActionPreference = "Stop"
-. "$PSScriptRoot\common.ps1"
-Import-HLServerEnv
 
-function Add-ReportLine {
-    param(
-        [System.Collections.Generic.List[string]]$Lines,
-        [string]$Text
-    )
-
-    $Lines.Add($Text) | Out-Null
+$script:StartedAt = Get-Date
+$script:RepoRoot = Split-Path -Parent $PSScriptRoot
+$script:AllWeapons = @("glock", "mp5", "357", "shotgun")
+$commonScript = Join-Path $PSScriptRoot "common.ps1"
+if (Test-Path $commonScript) {
+    . $commonScript
+    if (Get-Command Import-HLServerEnv -ErrorAction SilentlyContinue) {
+        Import-HLServerEnv
+    }
 }
 
-function Write-AndRecord {
-    param(
-        [System.Collections.Generic.List[string]]$Lines,
-        [string]$Text = ""
-    )
-
-    Write-Host $Text
-    Add-ReportLine -Lines $Lines -Text $Text
+function Write-Step {
+    param([string]$Message)
+    Write-Host "[stock-client-playtest] $Message"
 }
 
 function Write-Section {
-    param(
-        [System.Collections.Generic.List[string]]$Lines,
-        [string]$Title
-    )
-
-    Write-AndRecord -Lines $Lines
-    Write-AndRecord -Lines $Lines -Text $Title
-    Write-AndRecord -Lines $Lines -Text ("".PadLeft($Title.Length, "-"))
+    param([string]$Message)
+    Write-Host ""
+    Write-Host "=== $Message ==="
 }
 
-function Wait-ForManualStep {
+function Add-ContentLine {
     param(
-        [string]$Prompt,
-        [switch]$Skip
+        [string]$Path,
+        [string]$Text
     )
+    Add-Content -Path $Path -Value $Text
+}
 
-    if ($Skip) {
-        Write-Host "$Prompt [skipped by -NoPause/-DryRun]"
-        return
+function Wait-ManualStep {
+    param([string]$Message)
+
+    Write-Host ""
+    Write-Host $Message
+    if (-not $NoPause -and -not $DryRun) {
+        Read-Host "Press Enter when done" | Out-Null
+    } else {
+        Write-Step "Skipping pause because -NoPause or -DryRun is set."
+    }
+}
+
+function Resolve-SelectedWeapons {
+    if ($PSBoundParameters.ContainsKey("Weapons") -and $Weapons -and $Weapons.Count -gt 0) {
+        return @($Weapons | Select-Object -Unique)
     }
 
-    Read-Host "$Prompt Press Enter when done" | Out-Null
+    if ($Weapon -eq "all") {
+        return @($script:AllWeapons)
+    }
+
+    return @($Weapon)
+}
+
+function Find-HalfLifeRoot {
+    if (Get-Command Resolve-TestbedClientInstall -ErrorAction SilentlyContinue) {
+        try {
+            $clientInstall = Resolve-TestbedClientInstall -ExplicitHlExe $HlExe
+            if ($clientInstall -and $clientInstall.Root) {
+                return $clientInstall.Root
+            }
+        } catch {
+            Write-Step "Shared Half-Life resolver failed; falling back to local path probes. $($_.Exception.Message)"
+        }
+    }
+
+    $candidates = @()
+
+    if ($env:HALFLIFE_ROOT) {
+        $candidates += $env:HALFLIFE_ROOT
+    }
+
+    $candidates += @(
+        (Join-Path $script:RepoRoot "Half-Life"),
+        "C:\Program Files (x86)\Steam\steamapps\common\Half-Life",
+        "C:\Program Files\Steam\steamapps\common\Half-Life",
+        "D:\Steam\steamapps\common\Half-Life",
+        "D:\SteamLibrary\steamapps\common\Half-Life",
+        "D:\Games\Steam\steamapps\common\Half-Life"
+    )
+
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path $candidate)) {
+            return (Resolve-Path $candidate).Path
+        }
+    }
+
+    return $null
 }
 
 function Get-LivePaths {
-    param([string]$ExplicitHlExe)
+    $halfLifeRoot = Find-HalfLifeRoot
 
-    $clientInstall = Resolve-TestbedClientInstall -ExplicitHlExe $ExplicitHlExe
-    $liveModRoot = if ($clientInstall) {
-        Get-TestbedLiveModRoot -ClientRoot $clientInstall.Root -GameDirName (Get-TestbedLiveModName)
-    }
-    else {
-        $null
+    if (-not $halfLifeRoot) {
+        $fallback = Join-Path $script:RepoRoot "testbed"
+        $halfLifeRoot = $fallback
     }
 
-    return [PSCustomObject]@{
-        ClientInstall = $clientInstall
-        ClientRoot = if ($clientInstall) { $clientInstall.Root } else { $null }
-        HlExe = if ($clientInstall) { $clientInstall.HlExe } else { $null }
-        HldsExe = if ($clientInstall -and $clientInstall.Probe) { $clientInstall.Probe.HldsExe } else { $null }
-        LiveModRoot = $liveModRoot
-        LiveLogs = if ($liveModRoot) { Join-Path $liveModRoot "logs" } else { $null }
-        EditorExe = if ($liveModRoot) { Join-Path $liveModRoot "HlConfigEditorCpp.exe" } else { $null }
-        MatchPacks = if ($liveModRoot) { Join-Path $liveModRoot "match_packs" } else { $null }
+    $liveMod = Join-Path $halfLifeRoot "hlserver_testbed"
+    $editor = Join-Path $liveMod "HlConfigEditorCpp.exe"
+
+    if (-not $HlExe) {
+        $script:ResolvedHlExe = Join-Path $halfLifeRoot "hl.exe"
+    } else {
+        $script:ResolvedHlExe = $HlExe
+    }
+
+    [pscustomobject]@{
+        HalfLifeRoot = $halfLifeRoot
+        LiveModRoot = $liveMod
+        EditorExe = $editor
+        HlExe = $script:ResolvedHlExe
     }
 }
 
-function New-GoldSrcPacket {
-    param([string]$Payload)
+function Get-ReportRoot {
+    param([object]$LivePaths)
 
-    $prefix = [byte[]](255, 255, 255, 255)
-    $body = [System.Text.Encoding]::ASCII.GetBytes($Payload)
-    $packet = New-Object byte[] ($prefix.Length + $body.Length)
-    [Array]::Copy($prefix, 0, $packet, 0, $prefix.Length)
-    [Array]::Copy($body, 0, $packet, $prefix.Length, $body.Length)
-    return $packet
+    if ($OutputRoot) {
+        return $OutputRoot
+    }
+
+    return Join-Path $script:RepoRoot "testbed\logs\reports\stock-client-playtests"
 }
 
-function ConvertFrom-GoldSrcPacket {
-    param([byte[]]$Packet)
-
-    if ($Packet.Length -ge 4 -and $Packet[0] -eq 255 -and $Packet[1] -eq 255 -and $Packet[2] -eq 255 -and $Packet[3] -eq 255) {
-        $payload = New-Object byte[] ($Packet.Length - 4)
-        [Array]::Copy($Packet, 4, $payload, 0, $payload.Length)
+function ConvertTo-GoldSrcPacket {
+    param([string]$Command)
+    $payload = [System.Text.Encoding]::ASCII.GetBytes("rcon $Command")
+    $bytes = New-Object byte[] ($payload.Length + 5)
+    for ($i = 0; $i -lt 4; $i++) {
+        $bytes[$i] = 255
     }
-    else {
-        $payload = $Packet
+    [Array]::Copy($payload, 0, $bytes, 4, $payload.Length)
+    $bytes[$bytes.Length - 1] = 0
+    return $bytes
+}
+
+function Read-UdpResponse {
+    param(
+        [System.Net.Sockets.UdpClient]$Udp,
+        [int]$TimeoutMs = 2500
+    )
+
+    $Udp.Client.ReceiveTimeout = $TimeoutMs
+    $endpoint = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
+    $bytes = $Udp.Receive([ref]$endpoint)
+    if ($bytes.Length -le 4) {
+        return ""
     }
 
-    $text = [System.Text.Encoding]::ASCII.GetString($payload)
-    if ($text.StartsWith("l")) {
-        $text = $text.Substring(1)
-    }
-
-    return $text.Trim([char]0, "`r", "`n")
+    return [System.Text.Encoding]::ASCII.GetString($bytes, 4, $bytes.Length - 4).Trim([char]0)
 }
 
 function Invoke-GoldSrcRcon {
     param(
-        [string]$HostName,
-        [int]$Port,
+        [string]$ServerHost,
+        [int]$ServerPort,
         [string]$Password,
-        [string[]]$Commands,
-        [int]$TimeoutMilliseconds = 1500
+        [string]$Command
     )
 
-    if ([string]::IsNullOrWhiteSpace($Password)) {
+    if (-not $Password) {
         throw "RCON password is empty."
-    }
-
-    if ($Password.Contains('"') -or $Password.Contains("`r") -or $Password.Contains("`n")) {
-        throw "RCON password cannot contain quote or newline characters."
     }
 
     $udp = New-Object System.Net.Sockets.UdpClient
     try {
-        $udp.Client.ReceiveTimeout = $TimeoutMilliseconds
-        $udp.Client.SendTimeout = $TimeoutMilliseconds
-        $udp.Connect($HostName, $Port)
+        $udp.Connect($ServerHost, $ServerPort)
 
-        $challengePacket = New-GoldSrcPacket -Payload "challenge rcon`n"
-        $udp.Send($challengePacket, $challengePacket.Length) | Out-Null
-        $remote = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
-        $challengeResponse = $udp.Receive([ref]$remote)
-        $challengeText = ConvertFrom-GoldSrcPacket -Packet $challengeResponse
-        if ($challengeText -notmatch "challenge rcon\s+(\S+)") {
-            throw "HLDS did not return an RCON challenge. Response: $challengeText"
+        $challengePacket = ConvertTo-GoldSrcPacket "challenge rcon"
+        [void]$udp.Send($challengePacket, $challengePacket.Length)
+        $challengeResponse = Read-UdpResponse -Udp $udp
+
+        if ($challengeResponse -notmatch "challenge rcon\s+([\-0-9]+)") {
+            throw "Could not parse RCON challenge response: $challengeResponse"
         }
 
         $challenge = $Matches[1]
-        $responses = New-Object System.Collections.Generic.List[string]
-        foreach ($command in $Commands) {
-            if ([string]::IsNullOrWhiteSpace($command)) {
-                continue
-            }
-
-            $responses.Add("> $command") | Out-Null
-            $packet = New-GoldSrcPacket -Payload ("rcon {0} ""{1}"" {2}`n" -f $challenge, $Password, $command)
-            $udp.Send($packet, $packet.Length) | Out-Null
-            try {
-                $commandResponse = $udp.Receive([ref]$remote)
-                $responses.Add((ConvertFrom-GoldSrcPacket -Packet $commandResponse)) | Out-Null
-            }
-            catch [System.Net.Sockets.SocketException] {
-                $responses.Add("(no response before timeout; command may still have been accepted)") | Out-Null
-            }
-        }
-
-        $responseText = $responses -join "`r`n"
-        if ($responseText -match "Bad rcon_password|Bad Password|No password set") {
-            throw "HLDS rejected the RCON password. Response: $responseText"
-        }
-
-        return $responseText
-    }
-    finally {
+        $commandPacket = ConvertTo-GoldSrcPacket "$challenge `"$Password`" $Command"
+        [void]$udp.Send($commandPacket, $commandPacket.Length)
+        return Read-UdpResponse -Udp $udp
+    } finally {
         $udp.Close()
+    }
+}
+
+function Invoke-RconCommandChecked {
+    param(
+        [string]$Command,
+        [string]$OutputPath = ""
+    )
+
+    if ($DryRun) {
+        $message = "[dry-run] would send RCON: $Command"
+        if ($OutputPath) {
+            Add-ContentLine -Path $OutputPath -Text $message
+        }
+        return [pscustomobject]@{
+            Command = $Command
+            Success = $false
+            Status = "unknown"
+            Output = $message
+            Error = "dry-run"
+        }
+    }
+
+    try {
+        $output = Invoke-GoldSrcRcon -ServerHost $HostName -ServerPort $Port -Password $RconPassword -Command $Command
+        if ($OutputPath) {
+            Add-ContentLine -Path $OutputPath -Text ">>> $Command"
+            Add-ContentLine -Path $OutputPath -Text $output
+            Add-ContentLine -Path $OutputPath -Text ""
+        }
+
+        return [pscustomobject]@{
+            Command = $Command
+            Success = $true
+            Status = "yes"
+            Output = $output
+            Error = ""
+        }
+    } catch {
+        $message = $_.Exception.Message
+        if ($OutputPath) {
+            Add-ContentLine -Path $OutputPath -Text ">>> $Command"
+            Add-ContentLine -Path $OutputPath -Text "ERROR: $message"
+            Add-ContentLine -Path $OutputPath -Text ""
+        }
+
+        return [pscustomobject]@{
+            Command = $Command
+            Success = $false
+            Status = "no"
+            Output = ""
+            Error = $message
+        }
     }
 }
 
 function Test-ClientConnectionFromStatus {
     param([string]$StatusText)
 
-    if ([string]::IsNullOrWhiteSpace($StatusText)) {
+    if (-not $StatusText) {
+        return $null
+    }
+
+    $lines = $StatusText -split "`r?`n"
+    foreach ($line in $lines) {
+        if ($line -match "^\s*#\s+\d+\s+" -or $line -match "^\s*#\s+\d+\s+`"") {
+            return $true
+        }
+    }
+
+    if ($StatusText -match "players\s*:\s*0\s+active") {
         return $false
     }
 
-    if ($StatusText -match "(?im)^\s*players\s*:\s*([1-9]\d*)\s+active") {
-        return $true
+    if ($StatusText -match "0\s+users") {
+        return $false
     }
 
-    if ($StatusText -match "(?im)^#\s*\d+\s+""[^""]+""") {
-        return $true
-    }
-
-    return $false
+    return $null
 }
 
-function Get-LatestWeaponLog {
-    param($LivePaths)
+function Get-QConsoleCandidates {
+    param([object]$LivePaths)
 
-    $roots = New-Object System.Collections.Generic.List[string]
-    $roots.Add((Get-TestbedLogsRoot))
-    if ($LivePaths.LiveLogs) {
-        $roots.Add($LivePaths.LiveLogs)
-    }
-    if ($LivePaths.ClientRoot) {
-        $roots.Add((Join-Path $LivePaths.ClientRoot "logs"))
+    $candidates = @(
+        (Join-Path $LivePaths.HalfLifeRoot "qconsole.log"),
+        (Join-Path $LivePaths.HalfLifeRoot "valve\qconsole.log"),
+        (Join-Path $LivePaths.LiveModRoot "qconsole.log"),
+        (Join-Path $script:RepoRoot "testbed\qconsole.log")
+    )
+
+    return @($candidates | Where-Object { $_ } | Select-Object -Unique)
+}
+
+function Get-ClientConnectionStatus {
+    param(
+        [object]$LivePaths,
+        [string]$StatusText,
+        [datetime]$Since
+    )
+
+    $statusResult = Test-ClientConnectionFromStatus -StatusText $StatusText
+    if ($statusResult -eq $true) {
+        return [pscustomobject]@{ Status = "yes"; Source = "rcon status"; Details = "status output includes at least one player row" }
     }
 
-    $logs = New-Object System.Collections.Generic.List[object]
-    foreach ($root in ($roots | Select-Object -Unique)) {
-        if (-not (Test-Path -LiteralPath $root -PathType Container)) {
+    if ($statusResult -eq $false) {
+        return [pscustomobject]@{ Status = "no"; Source = "rcon status"; Details = "status output reports no active players" }
+    }
+
+    foreach ($path in Get-QConsoleCandidates -LivePaths $LivePaths) {
+        if (-not (Test-Path $path)) {
             continue
         }
 
-        foreach ($log in (Get-ChildItem -LiteralPath $root -Filter "weapon-debug-*.log" -File -ErrorAction SilentlyContinue)) {
-            $logs.Add($log)
+        $item = Get-Item $path
+        if ($item.LastWriteTime -lt $Since) {
+            continue
+        }
+
+        $tail = Get-Content -Path $path -Tail 120 -ErrorAction SilentlyContinue
+        $evidence = $tail | Where-Object {
+            $_ -match "connected" -or
+            $_ -match "entered the game" -or
+            $_ -match "userid" -or
+            $_ -match "STEAM_"
+        } | Select-Object -Last 1
+
+        if ($evidence) {
+            return [pscustomobject]@{ Status = "yes"; Source = $path; Details = "recent qconsole evidence: $evidence" }
         }
     }
 
-    return @($logs | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+    return [pscustomobject]@{ Status = "unknown"; Source = "none"; Details = "RCON status was unavailable or inconclusive and no fresh qconsole evidence was found" }
 }
 
-function Invoke-AnalyzerForWeapon {
-    param(
-        [string]$Weapon,
-        [string]$Destination,
-        [string]$LogPath
+function Get-WeaponLogSearchRoots {
+    param([object]$LivePaths)
+
+    $roots = @(
+        (Join-Path $LivePaths.LiveModRoot "logs"),
+        (Join-Path $LivePaths.HalfLifeRoot "logs"),
+        (Join-Path $script:RepoRoot "testbed\logs")
     )
 
-    $analyzer = Join-Path $PSScriptRoot "analyze-weapon-log.ps1"
-    if (-not (Test-Path -LiteralPath $analyzer -PathType Leaf)) {
-        throw "Analyzer script not found at $analyzer"
+    return @($roots | Where-Object { $_ } | Select-Object -Unique)
+}
+
+function Get-LatestWeaponLog {
+    param([object]$LivePaths)
+
+    $logs = @()
+    foreach ($root in Get-WeaponLogSearchRoots -LivePaths $LivePaths) {
+        if (Test-Path $root) {
+            $logs += Get-ChildItem -Path $root -Filter "weapon-debug-*.log" -File -ErrorAction SilentlyContinue
+        }
     }
 
-    if ([string]::IsNullOrWhiteSpace($LogPath)) {
-        "No weapon-debug log was available for $Weapon." | Set-Content -LiteralPath $Destination -Encoding ASCII
-        return 2
+    if (-not $logs -or $logs.Count -eq 0) {
+        return $null
     }
 
-    $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $analyzer -Path $LogPath -Weapon $Weapon 2>&1
-    $exitCode = $LASTEXITCODE
-    $output | Set-Content -LiteralPath $Destination -Encoding ASCII
-    return $exitCode
+    return $logs | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+}
+
+function Get-LogSnapshot {
+    param([object]$LivePaths)
+
+    $log = Get-LatestWeaponLog -LivePaths $LivePaths
+    if (-not $log) {
+        return [pscustomobject]@{ Path = ""; Length = 0; LastWriteTimeUtc = [datetime]::MinValue }
+    }
+
+    return [pscustomobject]@{
+        Path = $log.FullName
+        Length = $log.Length
+        LastWriteTimeUtc = $log.LastWriteTimeUtc
+    }
+}
+
+function Get-WeaponEventCountSince {
+    param(
+        [string]$LogPath,
+        [string]$WeaponName,
+        [datetime]$Since
+    )
+
+    if (-not $LogPath -or -not (Test-Path $LogPath)) {
+        return 0
+    }
+
+    $count = 0
+    $sinceUtc = $Since.ToUniversalTime()
+
+    foreach ($line in Get-Content -Path $LogPath -ErrorAction SilentlyContinue) {
+        if ($line -notmatch "weapon=$([regex]::Escape($WeaponName))") {
+            continue
+        }
+
+        if ($line -notmatch "type=(accepted|hit|kill)") {
+            continue
+        }
+
+        $lineTime = $null
+        if ($line -match "ts=([0-9]{4}-[0-9]{2}-[0-9]{2}T[^\s]+)") {
+            try {
+                $lineTime = ([datetimeoffset]::Parse($Matches[1])).UtcDateTime
+            } catch {
+                $lineTime = $null
+            }
+        }
+
+        if ($lineTime) {
+            if ($lineTime -ge $sinceUtc) {
+                $count++
+            }
+        }
+    }
+
+    return $count
+}
+
+function Test-FreshTelemetry {
+    param(
+        [object]$Before,
+        [object]$After,
+        [datetime]$StepStart,
+        [string]$WeaponName
+    )
+
+    $eventCount = 0
+    if ($After.Path) {
+        $eventCount = Get-WeaponEventCountSince -LogPath $After.Path -WeaponName $WeaponName -Since $StepStart
+    }
+
+    $fresh = $false
+    $reason = "no telemetry change detected"
+
+    if ($eventCount -gt 0) {
+        $fresh = $true
+        $reason = "$eventCount accepted/hit/kill events after step start"
+    } elseif ($After.Path -and -not $Before.Path) {
+        if ($After.LastWriteTimeUtc -ge $StepStart.ToUniversalTime()) {
+            $fresh = $true
+            $reason = "new weapon log appeared after step start"
+        } else {
+            $reason = "weapon log exists, but it is older than this step"
+        }
+    } elseif ($After.Path -and $Before.Path -and ($After.Path -ne $Before.Path)) {
+        $fresh = $true
+        $reason = "latest weapon log path changed"
+    } elseif ($After.Path -and $Before.Path) {
+        if ($After.Length -gt $Before.Length -or $After.LastWriteTimeUtc -gt $Before.LastWriteTimeUtc) {
+            $fresh = $true
+            $reason = "latest weapon log changed during this step"
+        }
+    }
+
+    [pscustomobject]@{
+        Fresh = $fresh
+        EventCount = $eventCount
+        Reason = $reason
+        LogPath = $After.Path
+    }
+}
+
+function Invoke-Analyzer {
+    param(
+        [object]$LivePaths,
+        [string]$WeaponName,
+        [string]$Destination
+    )
+
+    $analyzer = Join-Path $script:RepoRoot "scripts\analyze-weapon-log.ps1"
+    if (-not (Test-Path $analyzer)) {
+        Set-Content -Path $Destination -Value "Analyzer script missing: $analyzer"
+        return [pscustomobject]@{ Success = $false; Path = $Destination; Error = "Analyzer script missing." }
+    }
+
+    $latest = Get-LatestWeaponLog -LivePaths $LivePaths
+    if (-not $latest) {
+        Set-Content -Path $Destination -Value "No weapon-debug log found."
+        return [pscustomobject]@{ Success = $false; Path = $Destination; Error = "No weapon-debug log found." }
+    }
+
+    try {
+        $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $analyzer -Path $latest.FullName -Weapon $WeaponName 2>&1
+        $output | Set-Content -Path $Destination
+        return [pscustomobject]@{ Success = $true; Path = $Destination; Error = ""; LogPath = $latest.FullName }
+    } catch {
+        $message = $_.Exception.Message
+        Set-Content -Path $Destination -Value "Analyzer failed: $message"
+        return [pscustomobject]@{ Success = $false; Path = $Destination; Error = $message; LogPath = $latest.FullName }
+    }
 }
 
 function Get-WeaponInstructions {
-    param([string]$Weapon)
+    param([string]$WeaponName)
 
-    switch ($Weapon.ToLowerInvariant()) {
+    switch ($WeaponName) {
         "glock" {
             return @(
-                "Stand still and fire one careful click.",
-                "Wait for recovery, then fire another careful click.",
-                "Fire several rapid clicks.",
-                "Expected evidence: accepted shots plus cadence/pattern growth; no hard tap-fire gate required."
+                "Glock:",
+                "- stand still and fire careful single clicks",
+                "- fire rapid clicks without relying on hard tap-fire",
+                "- wait for cadence/pattern reset, then fire again",
+                "- expected telemetry: cadence/pattern fields and reset evidence"
             )
         }
         "mp5" {
             return @(
-                "Fire a controlled 3-5 shot burst.",
-                "Pause for recovery.",
-                "Fire a longer spray while standing, then try a short movement spray.",
-                "Expected evidence: burst-growth/pattern progression and reset/recovery after the pause."
+                "MP5:",
+                "- fire a short 3-5 shot burst",
+                "- pause, then fire a longer held spray",
+                "- try a movement spray if practical",
+                "- expected telemetry: burst-growth, pattern index, and reset evidence"
             )
         }
         "357" {
             return @(
-                "Fire one careful first shot.",
-                "Fire fast follow-up shots.",
-                "Wait for cadence/pattern reset, then fire again.",
-                "Expected evidence: cadence/pattern penalties on rushed follow-ups and reset after idle time."
+                "357:",
+                "- fire one careful first shot",
+                "- fire fast follow-up clicks",
+                "- wait for cadence/pattern reset, then fire again",
+                "- expected telemetry: cadence and deterministic pattern progression"
             )
         }
         "shotgun" {
             return @(
-                "Stand close to the dummy and fire one shell.",
-                "Fire a second shell after a short delay.",
-                "Wait for pattern reset and fire another shell.",
-                "Expected evidence: pellet/pattern telemetry with consistent hit/kill damage summaries."
+                "Shotgun:",
+                "- stand close to the target and fire one shell",
+                "- fire a second shell after a short delay",
+                "- wait for pellet pattern reset and fire again",
+                "- expected telemetry: pellet/pattern fields and consistent hit/kill damage"
             )
         }
-        default {
-            return @("No instructions are defined for $Weapon.")
+    }
+}
+
+function Invoke-CommandSet {
+    param(
+        [string]$Name,
+        [string[]]$Commands,
+        [string]$OutputPath
+    )
+
+    $results = @()
+    foreach ($command in $Commands) {
+        Write-Step "$Name command: $command"
+        if ($DryRun) {
+            Add-ContentLine -Path $OutputPath -Text "[dry-run] $command"
+            $results += [pscustomobject]@{ Command = $command; Success = $false; Status = "unknown"; Error = "dry-run" }
+            continue
         }
+
+        if (-not $script:RconAvailable) {
+            Add-ContentLine -Path $OutputPath -Text "[manual] $command"
+            $results += [pscustomobject]@{ Command = $command; Success = $false; Status = "unknown"; Error = "RCON unavailable" }
+            continue
+        }
+
+        $result = Invoke-RconCommandChecked -Command $command -OutputPath $OutputPath
+        $results += $result
+    }
+
+    $failed = @($results | Where-Object { $_.Status -eq "no" })
+    $unknown = @($results | Where-Object { $_.Status -eq "unknown" })
+
+    if ($failed.Count -gt 0) {
+        return [pscustomobject]@{ Status = "no"; Results = $results; Details = ($failed | Select-Object -First 1).Error }
+    }
+
+    if ($unknown.Count -gt 0) {
+        return [pscustomobject]@{ Status = "unknown"; Results = $results; Details = "manual or dry-run commands were not verified by RCON" }
+    }
+
+    return [pscustomobject]@{ Status = "yes"; Results = $results; Details = "all commands returned RCON responses" }
+}
+
+function Write-ManualFallback {
+    param([string[]]$Commands)
+
+    Write-Host ""
+    Write-Host "Manual fallback commands for HLDS console:"
+    foreach ($command in $Commands) {
+        Write-Host "  $command"
     }
 }
 
-foreach ($weapon in $Weapons) {
-    if (@("glock", "mp5", "357", "shotgun") -notcontains $weapon.ToLowerInvariant()) {
-        throw "Unsupported weapon '$weapon'. Use glock, mp5, 357, or shotgun."
-    }
-}
-
-if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
-    $OutputRoot = Join-Path (Join-Path (Get-TestbedLogsRoot) "reports") "stock-client-playtests"
-}
-
+$selectedWeapons = Resolve-SelectedWeapons
+$livePaths = Get-LivePaths
+$reportRoot = Get-ReportRoot -LivePaths $livePaths
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$reportRoot = Join-Path $OutputRoot $timestamp
-Ensure-Directory -Path $reportRoot
+$reportDir = Join-Path $reportRoot $timestamp
+New-Item -ItemType Directory -Force -Path $reportDir | Out-Null
 
-$summary = New-Object System.Collections.Generic.List[string]
-$livePaths = Get-LivePaths -ExplicitHlExe $HlExe
-$skipPause = $NoPause -or $DryRun
-$rconProvided = -not [string]::IsNullOrWhiteSpace($RconPassword)
-$rconAvailable = $false
+$summaryPath = Join-Path $reportDir "summary.txt"
+$perWeaponPath = Join-Path $reportDir "per-weapon-summary.txt"
+$packageCheckPath = Join-Path $reportDir "package-check.txt"
+$rconLogPath = Join-Path $reportDir "rcon-validation.txt"
+$commandLogPath = Join-Path $reportDir "commands.txt"
+$clientStatusPath = Join-Path $reportDir "client-status.txt"
 
-Write-Section -Lines $summary -Title "Stable Improved HLDM stock-client playtest"
-Write-AndRecord -Lines $summary -Text "timestamp=$timestamp"
-Write-AndRecord -Lines $summary -Text "branch=$(git rev-parse --abbrev-ref HEAD)"
-Write-AndRecord -Lines $summary -Text "commit=$(git rev-parse HEAD)"
-Write-AndRecord -Lines $summary -Text "output=$reportRoot"
-Write-AndRecord -Lines $summary -Text "host=$HostName"
-Write-AndRecord -Lines $summary -Text "port=$Port"
-Write-AndRecord -Lines $summary -Text "match_pack=$MatchPack"
-Write-AndRecord -Lines $summary -Text "target_profile=$TargetProfile"
-Write-AndRecord -Lines $summary -Text "target_spot=$TargetSpot"
-Write-AndRecord -Lines $summary -Text ("rcon_password={0}" -f $(if ($rconProvided) { "provided" } else { "not provided" }))
-Write-AndRecord -Lines $summary -Text "client_root=$($livePaths.ClientRoot)"
-Write-AndRecord -Lines $summary -Text "hl_exe=$($livePaths.HlExe)"
-Write-AndRecord -Lines $summary -Text "live_mod_root=$($livePaths.LiveModRoot)"
+$script:RconAvailable = $false
+$failures = New-Object System.Collections.Generic.List[string]
+$warnings = New-Object System.Collections.Generic.List[string]
+$weaponSummaries = @()
 
-Write-Section -Lines $summary -Title "Package readiness"
-$packageCheckPath = Join-Path $reportRoot "package-check.txt"
-$checkOutput = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "check-improved-hldm.ps1") 2>&1
-$checkExit = $LASTEXITCODE
-$checkOutput | Set-Content -LiteralPath $packageCheckPath -Encoding ASCII
-Write-AndRecord -Lines $summary -Text "package_check=$packageCheckPath exit=$checkExit"
-if ($checkExit -ne 0) {
-    Write-AndRecord -Lines $summary -Text "Package check failed. Fix this before manual playtesting."
+Set-Content -Path $summaryPath -Value @(
+    "Improved HLDM stock-client playtest summary",
+    "timestamp=$timestamp",
+    "branch=$(git -C $script:RepoRoot rev-parse --abbrev-ref HEAD 2>$null)",
+    "commit=$(git -C $script:RepoRoot rev-parse HEAD 2>$null)",
+    "match_pack=$MatchPack",
+    "target_profile=$TargetProfile",
+    "target_spot=$TargetSpot",
+    "weapon_selection=$($selectedWeapons -join ',')",
+    "dry_run=$DryRun",
+    "strict=$Strict",
+    "require_rcon=$RequireRcon",
+    "host=$HostName",
+    "port=$Port",
+    ""
+)
+
+Set-Content -Path $commandLogPath -Value @(
+    "Generated command sequence",
+    "host=$HostName",
+    "port=$Port",
+    ""
+)
+
+Set-Content -Path $rconLogPath -Value @(
+    "RCON validation",
+    "host=$HostName",
+    "port=$Port",
+    "password_provided=$(if ($RconPassword) { 'yes' } else { 'no' })",
+    ""
+)
+
+Write-Section "Stable package readiness"
+Write-Step "Repo root: $script:RepoRoot"
+Write-Step "Report directory: $reportDir"
+Write-Step "Half-Life root: $($livePaths.HalfLifeRoot)"
+Write-Step "Live mod root: $($livePaths.LiveModRoot)"
+
+if (-not (Test-Path (Join-Path $script:RepoRoot "scripts\check-improved-hldm.ps1"))) {
+    $failures.Add("Missing scripts\check-improved-hldm.ps1")
+} else {
+    Write-Step "Package check script is present."
 }
 
-if ($StartServer -and -not $DryRun) {
-    Write-Section -Lines $summary -Title "Launching HLDS and stock client"
-    Write-AndRecord -Lines $summary -Text "The launcher does not persist or write RCON passwords. Set rcon_password in HLDS or a private local cfg before relying on RCON."
-    $launchArgs = @{
-        Port = $Port
-    }
-    if ($NoClient) {
-        $launchArgs["NoClient"] = $true
-    }
-    if (-not [string]::IsNullOrWhiteSpace($HlExe)) {
-        $launchArgs["HlExe"] = $HlExe
-    }
-    & "$PSScriptRoot\play-improved-hldm.ps1" @launchArgs
-}
-else {
-    Write-Section -Lines $summary -Title "Launch instructions"
-    Write-AndRecord -Lines $summary -Text "Dry-run or no -StartServer was selected; no HLDS/client process was launched."
-    Write-AndRecord -Lines $summary -Text "Start live session:"
-    Write-AndRecord -Lines $summary -Text "  .\scripts\play-improved-hldm.bat"
-    Write-AndRecord -Lines $summary -Text "Manual client connect command:"
-    Write-AndRecord -Lines $summary -Text "  connect ${HostName}:$Port"
+if (-not (Test-Path (Join-Path $script:RepoRoot "scripts\analyze-weapon-log.ps1"))) {
+    $failures.Add("Missing scripts\analyze-weapon-log.ps1")
+} else {
+    Write-Step "Analyzer script is present."
 }
 
-Write-Section -Lines $summary -Title "Client connection and RCON"
-if ($rconProvided -and -not $DryRun) {
-    try {
-        $statusResponse = Invoke-GoldSrcRcon -HostName $HostName -Port $Port -Password $RconPassword -Commands @("status")
-        $rconAvailable = $true
-        $statusPath = Join-Path $reportRoot "rcon-status.txt"
-        $statusResponse | Set-Content -LiteralPath $statusPath -Encoding ASCII
-        $clientConnected = Test-ClientConnectionFromStatus -StatusText $statusResponse
-        Write-AndRecord -Lines $summary -Text "rcon_status=$statusPath"
-        Write-AndRecord -Lines $summary -Text ("rcon=PASS client_connected={0}" -f $(if ($clientConnected) { "PASS" } else { "FAIL_OR_NOT_YET" }))
-        if (-not $clientConnected) {
-            Write-AndRecord -Lines $summary -Text "Manual connect command: connect ${HostName}:$Port"
+$checkScript = Join-Path $script:RepoRoot "scripts\check-improved-hldm.ps1"
+if (Test-Path $checkScript) {
+    $checkArguments = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $checkScript)
+    if ($HlExe) {
+        $checkArguments += @("-HlExe", $HlExe)
+    }
+
+    $checkOutput = & powershell.exe @checkArguments 2>&1
+    $checkExit = $LASTEXITCODE
+    $checkOutput | Set-Content -Path $packageCheckPath
+    Add-ContentLine -Path $summaryPath -Text "package_check=$packageCheckPath exit=$checkExit"
+
+    if ($checkExit -eq 0) {
+        Write-Step "Package check: PASS"
+    } else {
+        Write-Step "Package check: FAIL (exit $checkExit)"
+        $failures.Add("Package check failed with exit code $checkExit.")
+    }
+} else {
+    "Missing package check script: $checkScript" | Set-Content -Path $packageCheckPath
+    Add-ContentLine -Path $summaryPath -Text "package_check=$packageCheckPath exit=missing"
+}
+
+if ($StartServer) {
+    $launcher = Join-Path $script:RepoRoot "scripts\play-improved-hldm.bat"
+    if (Test-Path $launcher) {
+        Write-Step "Starting improved HLDM launcher: $launcher"
+        if (-not $DryRun) {
+            Start-Process -FilePath $launcher -WorkingDirectory $script:RepoRoot | Out-Null
+        }
+    } else {
+        $warnings.Add("StartServer requested, but launcher was not found: $launcher")
+        Write-Step "StartServer requested, but launcher was not found: $launcher"
+    }
+}
+
+if (-not $NoClient) {
+    $clientCommand = "`"$($livePaths.HlExe)`" -game hlserver_testbed -console +connect $HostName`:$Port"
+    Write-Step "Stock client launch command: $clientCommand"
+    Add-ContentLine -Path $summaryPath -Text "client_launch_command=$clientCommand"
+} else {
+    Write-Step "Client launch skipped because -NoClient is set."
+}
+
+Write-Section "RCON verification"
+$statusResponse = ""
+$cfgStatusResponse = ""
+
+if ($RconPassword) {
+    if ($DryRun) {
+        Write-Step "Dry run: RCON is not contacted."
+        Add-ContentLine -Path $rconLogPath -Text "[dry-run] status"
+        Add-ContentLine -Path $rconLogPath -Text "[dry-run] exp_cfg_status"
+    } else {
+        $statusResult = Invoke-RconCommandChecked -Command "status" -OutputPath $rconLogPath
+        if ($statusResult.Success) {
+            $statusResponse = $statusResult.Output
+            Write-Step "RCON status: success"
+        } else {
+            Write-Step "RCON status: failed ($($statusResult.Error))"
+        }
+
+        $cfgResult = Invoke-RconCommandChecked -Command "exp_cfg_status" -OutputPath $rconLogPath
+        if ($cfgResult.Success) {
+            $cfgStatusResponse = $cfgResult.Output
+            Write-Step "RCON exp_cfg_status: success"
+        } else {
+            Write-Step "RCON exp_cfg_status: failed ($($cfgResult.Error))"
+        }
+
+        if ($statusResult.Success -and $cfgResult.Success) {
+            $script:RconAvailable = $true
         }
     }
-    catch {
-        Write-AndRecord -Lines $summary -Text "rcon=FAIL $($_.Exception.Message)"
-        Write-AndRecord -Lines $summary -Text "Fallback: paste the printed commands into the HLDS console manually."
-        Write-AndRecord -Lines $summary -Text "Manual connect command: connect ${HostName}:$Port"
-    }
-}
-else {
-    Write-AndRecord -Lines $summary -Text "RCON was not tested. Provide -RconPassword and run without -DryRun to test it."
-    Write-AndRecord -Lines $summary -Text "Manual connect command: connect ${HostName}:$Port"
+} else {
+    Write-Step "RCON password not provided; command execution will use manual fallback."
 }
 
+if (-not $script:RconAvailable) {
+    if ($RequireRcon -or $Strict) {
+        $failures.Add("RCON verification failed or was skipped while -RequireRcon/-Strict was requested.")
+    } else {
+        $warnings.Add("RCON unavailable; manual fallback commands are required.")
+    }
+
+    Write-Host ""
+    Write-Host "RCON verification: no"
+    Write-Host "If you use RCON, start HLDS with a known rcon_password and rerun with:"
+    Write-Host "  .\scripts\run-stock-client-playtest.ps1 -RconPassword <password>"
+    Write-Host "Manual HLDS console fallback does not need the RCON password."
+} else {
+    Write-Host "RCON verification: yes"
+}
+
+Write-Section "Client connection detection"
+$clientStatus = Get-ClientConnectionStatus -LivePaths $livePaths -StatusText $statusResponse -Since $script:StartedAt
+$clientLine = ""
+if ($clientStatus.Status -eq "yes") {
+    $clientLine = "Client connected: yes"
+} elseif ($clientStatus.Status -eq "no") {
+    $clientLine = "Client connected: no"
+} else {
+    $clientLine = "Client status: unknown"
+}
+
+Write-Host $clientLine
+Write-Step "Client detection source: $($clientStatus.Source)"
+Write-Step "Client detection details: $($clientStatus.Details)"
+Set-Content -Path $clientStatusPath -Value @(
+    $clientLine,
+    "source=$($clientStatus.Source)",
+    "details=$($clientStatus.Details)"
+)
+
+if ($clientStatus.Status -ne "yes") {
+    $connectCommand = "connect $HostName`:$Port"
+    $clientLaunchCommand = "`"$($livePaths.HlExe)`" -game hlserver_testbed -console +connect $HostName`:$Port"
+    Write-Host ""
+    Write-Host "Client was not confirmed. Use:"
+    Write-Host "  $clientLaunchCommand"
+    Write-Host "or in the stock Half-Life console:"
+    Write-Host "  $connectCommand"
+    Add-ContentLine -Path $summaryPath -Text "client_connect_command=$connectCommand"
+
+    if ($Strict) {
+        $failures.Add("Strict mode requires a confirmed stock-client connection.")
+    }
+}
+
+Write-Section "Initial sandbox setup validation"
 $initialCommands = @(
     "exp_matchcfg_apply $MatchPack",
-    "exp_sandbox_start"
+    "exp_sandbox_start",
+    "exp_sandbox_target $TargetProfile",
+    "exp_sandbox_spot $TargetSpot",
+    "exp_sandbox_status"
 )
-Write-Section -Lines $summary -Title "Initial live commands"
-foreach ($command in $initialCommands) {
-    Write-AndRecord -Lines $summary -Text "  $command"
-}
-if ($rconAvailable) {
-    try {
-        $response = Invoke-GoldSrcRcon -HostName $HostName -Port $Port -Password $RconPassword -Commands $initialCommands
-        $response | Set-Content -LiteralPath (Join-Path $reportRoot "rcon-initial-commands.txt") -Encoding ASCII
-        Write-AndRecord -Lines $summary -Text "initial_rcon=PASS"
-    }
-    catch {
-        Write-AndRecord -Lines $summary -Text "initial_rcon=FAIL $($_.Exception.Message)"
+
+$initialSetup = Invoke-CommandSet -Name "initial setup" -Commands $initialCommands -OutputPath $commandLogPath
+Write-Step "exp_matchcfg_apply $MatchPack status: $($initialSetup.Status)"
+Write-Step "sandbox start/target/spot status: $($initialSetup.Status)"
+
+if ($initialSetup.Status -ne "yes") {
+    Write-ManualFallback -Commands $initialCommands
+    if ($Strict -and -not $DryRun) {
+        $failures.Add("Strict mode requires verified initial sandbox setup.")
     }
 }
 
-foreach ($weapon in $Weapons) {
-    $normalizedWeapon = $weapon.ToLowerInvariant()
+foreach ($command in $initialCommands) {
+    Add-ContentLine -Path $summaryPath -Text "initial_command=$command"
+}
+
+Write-Section "Guided weapon checks"
+foreach ($weaponName in $selectedWeapons) {
+    Write-Host ""
+    Write-Host "--- $weaponName ---"
+
     $weaponCommands = @(
-        "exp_sandbox_weapon $normalizedWeapon",
-        "exp_sandbox_pack $MatchPack",
+        "exp_sandbox_weapon $weaponName",
         "exp_sandbox_target $TargetProfile",
         "exp_sandbox_spot $TargetSpot",
         "exp_sandbox_reset",
-        "exp_sandbox_status",
-        "exp_sandbox_verify"
+        "exp_sandbox_verify",
+        "exp_sandbox_status"
     )
 
-    Write-Section -Lines $summary -Title ("{0} manual test" -f $normalizedWeapon)
-    Write-AndRecord -Lines $summary -Text "Commands:"
-    foreach ($command in $weaponCommands) {
-        Write-AndRecord -Lines $summary -Text "  $command"
+    $before = Get-LogSnapshot -LivePaths $livePaths
+    $stepStart = Get-Date
+    $setupResult = Invoke-CommandSet -Name "$weaponName setup" -Commands $weaponCommands -OutputPath $commandLogPath
+
+    foreach ($instruction in Get-WeaponInstructions -WeaponName $weaponName) {
+        Write-Host $instruction
     }
 
-    if ($rconAvailable) {
-        try {
-            $weaponResponse = Invoke-GoldSrcRcon -HostName $HostName -Port $Port -Password $RconPassword -Commands $weaponCommands
-            $weaponResponse | Set-Content -LiteralPath (Join-Path $reportRoot ("{0}-rcon.txt" -f $normalizedWeapon)) -Encoding ASCII
-            Write-AndRecord -Lines $summary -Text "weapon_rcon_$normalizedWeapon=PASS"
+    Wait-ManualStep "Shoot the $weaponName test now, then continue."
+
+    $after = Get-LogSnapshot -LivePaths $livePaths
+    $fresh = Test-FreshTelemetry -Before $before -After $after -StepStart $stepStart -WeaponName $weaponName
+
+    if ($fresh.Fresh) {
+        Write-Step "Fresh telemetry detected: yes ($($fresh.Reason))"
+    } else {
+        Write-Step "Fresh telemetry detected: no ($($fresh.Reason))"
+    }
+
+    $analysisPath = Join-Path $reportDir "$weaponName-analysis.txt"
+    $analysis = Invoke-Analyzer -LivePaths $livePaths -WeaponName $weaponName -Destination $analysisPath
+    if ($analysis.Success) {
+        Write-Step "Analyzer report: $analysisPath"
+    } else {
+        Write-Step "Analyzer warning: $($analysis.Error)"
+    }
+
+    $stepClientStatus = $clientStatus.Status
+    if ($fresh.Fresh) {
+        $stepClientStatus = "yes"
+    }
+
+    $stepWarnings = New-Object System.Collections.Generic.List[string]
+    if ($stepClientStatus -ne "yes") {
+        $stepWarnings.Add("client_not_confirmed")
+    }
+    if ($setupResult.Status -ne "yes") {
+        $stepWarnings.Add("setup_$($setupResult.Status)")
+    }
+    if (-not $fresh.Fresh) {
+        $stepWarnings.Add("fresh_telemetry_missing")
+    }
+    if (-not $analysis.Success) {
+        $stepWarnings.Add("analysis_warning")
+    }
+
+    if ($Strict) {
+        if ($stepClientStatus -ne "yes") {
+            $failures.Add("Strict mode: client not confirmed during $weaponName step.")
         }
-        catch {
-            Write-AndRecord -Lines $summary -Text "weapon_rcon_$normalizedWeapon=FAIL $($_.Exception.Message)"
-            Write-AndRecord -Lines $summary -Text "Paste the commands above into HLDS manually before shooting."
+        if (-not $script:RconAvailable) {
+            $failures.Add("Strict mode: RCON unavailable during $weaponName step.")
+        }
+        if ($setupResult.Status -eq "no") {
+            $failures.Add("Strict mode: setup command failed for $weaponName.")
+        }
+        if (-not $fresh.Fresh) {
+            $failures.Add("Strict mode: no fresh telemetry detected for $weaponName.")
         }
     }
-    else {
-        Write-AndRecord -Lines $summary -Text "weapon_rcon_$normalizedWeapon=not_run"
-    }
 
-    Write-AndRecord -Lines $summary -Text "Manual shooting instructions:"
-    foreach ($instruction in (Get-WeaponInstructions -Weapon $normalizedWeapon)) {
-        Write-AndRecord -Lines $summary -Text "  - $instruction"
-    }
-
-    Wait-ForManualStep -Prompt ("Shoot {0} test now." -f $normalizedWeapon) -Skip:$skipPause
-
-    $latestLog = Get-LatestWeaponLog -LivePaths $livePaths
-    $analysisPath = Join-Path $reportRoot ("{0}-analysis.txt" -f $normalizedWeapon)
-    $analysisExit = Invoke-AnalyzerForWeapon -Weapon $normalizedWeapon -Destination $analysisPath -LogPath $(if ($latestLog) { $latestLog.FullName } else { $null })
-    Write-AndRecord -Lines $summary -Text ("analysis_{0}={1} exit={2}" -f $normalizedWeapon, $analysisPath, $analysisExit)
-
-    if ($latestLog) {
-        Copy-Item -LiteralPath $latestLog.FullName -Destination (Join-Path $reportRoot ("latest-weapon-debug-after-{0}.log" -f $normalizedWeapon)) -Force
-        Write-AndRecord -Lines $summary -Text ("latest_log_after_{0}={1}" -f $normalizedWeapon, $latestLog.FullName)
+    $weaponSummaries += [pscustomobject]@{
+        Weapon = $weaponName
+        ClientConnected = $stepClientStatus
+        SetupCommands = $setupResult.Status
+        FreshTelemetry = $(if ($fresh.Fresh) { "yes" } else { "no" })
+        EventCount = $fresh.EventCount
+        AnalyzerReport = $analysisPath
+        LogPath = $fresh.LogPath
+        Warnings = (($stepWarnings.ToArray()) -join ",")
     }
 }
 
-Write-Section -Lines $summary -Title "Editor integration"
-Write-AndRecord -Lines $summary -Text "The editor can be used alongside this script:"
-Write-AndRecord -Lines $summary -Text "  - Live Server tab: send the same RCON commands."
-Write-AndRecord -Lines $summary -Text "  - Telemetry tab: analyze the latest weapon log."
-Write-AndRecord -Lines $summary -Text "  - Guided Tests tab: run guided editor-side setup."
-Write-AndRecord -Lines $summary -Text "  - Reports tab: compare saved guided reports."
+$weaponSummaries | Format-Table -AutoSize | Out-String -Width 220 | Set-Content -Path $perWeaponPath
 
-if ($OpenEditor -and -not $DryRun) {
-    & "$PSScriptRoot\open-hldm-editor.ps1"
+Add-ContentLine -Path $summaryPath -Text ""
+Add-ContentLine -Path $summaryPath -Text "Per-weapon summary:"
+Get-Content -Path $perWeaponPath | Add-Content -Path $summaryPath
+
+if ($OpenEditor) {
+    $editor = Join-Path $script:RepoRoot "scripts\open-hldm-editor.bat"
+    if (Test-Path $editor) {
+        Write-Step "Opening editor helper: $editor"
+        if (-not $DryRun) {
+            Start-Process -FilePath $editor -WorkingDirectory $script:RepoRoot | Out-Null
+        }
+    } else {
+        $warnings.Add("OpenEditor requested, but editor helper was not found: $editor")
+    }
 }
 
-$summaryPath = Join-Path $reportRoot "summary.txt"
-$summary | Set-Content -LiteralPath $summaryPath -Encoding ASCII
+Write-Section "Final playtest summary"
+Write-Host "Summary: $summaryPath"
+Write-Host "Per-weapon summary: $perWeaponPath"
+Write-Host "RCON validation log: $rconLogPath"
+Write-Host "Client status: $clientStatusPath"
+Write-Host ""
+Get-Content -Path $perWeaponPath | ForEach-Object { Write-Host $_ }
 
-Write-Host ""
-Write-Host "Stock-client playtest report ready"
-Write-Host "  output : $reportRoot"
-Write-Host "  summary: $summaryPath"
-Write-Host ""
-Write-Host "Human validation still required: shoot in the stock client and judge subjective feel manually."
+if ($warnings.Count -gt 0) {
+    Add-ContentLine -Path $summaryPath -Text ""
+    Add-ContentLine -Path $summaryPath -Text "Warnings:"
+    foreach ($warning in $warnings) {
+        Add-ContentLine -Path $summaryPath -Text "- $warning"
+    }
+}
+
+if ($failures.Count -gt 0) {
+    Add-ContentLine -Path $summaryPath -Text ""
+    Add-ContentLine -Path $summaryPath -Text "Failures:"
+    foreach ($failure in ($failures.ToArray() | Select-Object -Unique)) {
+        Add-ContentLine -Path $summaryPath -Text "- $failure"
+    }
+
+    Write-Host ""
+    Write-Host "Validation result: FAIL"
+    foreach ($failure in ($failures.ToArray() | Select-Object -Unique)) {
+        Write-Host "  $failure"
+    }
+    exit 1
+}
+
+Write-Host "Validation result: PASS/INFORMATIONAL"
+Write-Host "Human subjective feel testing still requires manual shooting in the stock client."
+exit 0

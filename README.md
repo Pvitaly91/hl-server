@@ -63,7 +63,7 @@ Use the playtest pass when you want a repeatable manual validation loop instead 
 .\scripts\play-improved-hldm.bat
 .\scripts\open-hldm-editor.bat
 .\scripts\run-improved-hldm-playtest.ps1
-.\scripts\run-stock-client-playtest.ps1 -DryRun -NoPause
+.\scripts\run-stock-client-playtest.ps1 -DryRun -NoPause -Weapon glock
 .\scripts\collect-improved-hldm-diagnostics.ps1
 ```
 
@@ -75,7 +75,7 @@ The diagnostics collector writes to:
 testbed\logs\reports\stable-package-diagnostics\<timestamp>\
 ```
 
-It captures git state, resolved live-mod paths, match-pack/cfg lists, latest weapon and HLDS logs when present, package-check output, and analyzer summaries for `all`, `glock`, `mp5`, `357`, and `shotgun` if a weapon log exists.
+It captures git state, resolved live-mod paths, match-pack/cfg lists, latest weapon and HLDS logs when present, latest qconsole evidence when present, package-check output, latest stock-client playtest summaries when present, and analyzer summaries for `all`, `glock`, `mp5`, `357`, and `shotgun` if a weapon log exists.
 
 See [docs/stable-playtest-checklist.md](docs/stable-playtest-checklist.md) for the manual Glock / MP5 / 357 / shotgun checklist. This project improves HLDM gameplay while preserving stock Half-Life client compatibility; it is not a full CS clone, and subjective weapon feel still requires human shooting.
 
@@ -85,7 +85,17 @@ For a more guided real stock-client pass, use:
 .\scripts\run-stock-client-playtest.ps1 -StartServer -RconPassword "<password>"
 ```
 
-This launches the stable package, verifies RCON when a password is provided, prints or sends the `hldm_skill_default` and sandbox commands, pauses for manual Glock / MP5 / 357 / shotgun shooting, and writes per-weapon analyzer output under `testbed\logs\reports\stock-client-playtests\<timestamp>\`. It does not persist RCON passwords; if RCON is not configured, it prints exact fallback commands for manual HLDS console paste. See [docs/stock-client-playtest.md](docs/stock-client-playtest.md).
+This launches the stable package, verifies RCON with `status` and `exp_cfg_status` when a password is provided, prints or sends the `hldm_skill_default` and sandbox commands, pauses for manual Glock / MP5 / 357 / shotgun shooting, checks that fresh weapon telemetry appeared after each step, and writes per-weapon analyzer output under `testbed\logs\reports\stock-client-playtests\<timestamp>\`. It does not persist RCON passwords; if RCON is not configured, it prints exact fallback commands for manual HLDS console paste.
+
+Useful validation variants:
+
+```powershell
+.\scripts\run-stock-client-playtest.ps1 -Weapon mp5 -RconPassword "<password>"
+.\scripts\run-stock-client-playtest.ps1 -StartServer -RconPassword "<password>" -RequireRcon
+.\scripts\run-stock-client-playtest.ps1 -StartServer -RconPassword "<password>" -Strict
+```
+
+`-Weapon` runs a single weapon or `all`; `-RequireRcon` fails if RCON cannot be verified; `-Strict` also fails on unconfirmed client connection or missing fresh telemetry. See [docs/stock-client-playtest.md](docs/stock-client-playtest.md).
 
 ## Weapon Feel Direction
 
@@ -1825,9 +1835,9 @@ Live client-attached mode creates or refreshes a managed mod folder at `Half-Lif
 - `scripts/play-improved-hldm.bat` launches the recommended stock-client-compatible Improved HLDM session using `hldm_skill_default.cfg`.
 - `scripts/open-hldm-editor.bat` opens `<HalfLifeRoot>\hlserver_testbed\HlConfigEditorCpp.exe` and tells you to run setup if it is missing.
 - `scripts/run-improved-hldm-playtest.ps1` prints the stable package playtest flow, weapon checklists, and sandbox commands, with optional server launch, editor open, log folder open, and diagnostics collection switches.
-- `scripts/run-stock-client-playtest.ps1` guides a real stock-client playtest, optionally launches HLDS/client, tests RCON, sends or prints sandbox setup commands, pauses for manual weapon shooting, and saves per-weapon analyzer reports.
+- `scripts/run-stock-client-playtest.ps1` guides a real stock-client playtest, optionally launches HLDS/client, verifies RCON with `status` and `exp_cfg_status`, supports `-Weapon`, `-RequireRcon`, and `-Strict`, detects fresh per-weapon telemetry after manual shooting, and saves per-weapon analyzer reports plus a validation summary.
 - `scripts/analyze-improved-hldm-latest.ps1` runs the existing analyzer against the latest weapon log for `all`, `glock`, `mp5`, `357`, and `shotgun`, then writes the summaries into one timestamped report folder.
-- `scripts/collect-improved-hldm-diagnostics.ps1` writes a stable-package diagnostics bundle with git state, paths, pack/cfg listings, latest logs, package-check output, and analyzer summaries when logs exist.
+- `scripts/collect-improved-hldm-diagnostics.ps1` writes a stable-package diagnostics bundle with git state, paths, pack/cfg listings, latest logs, latest qconsole when present, package-check output, latest stock-client playtest summaries, and analyzer summaries when logs exist.
 - `scripts/show-latest-analysis.ps1` is the shared analyzer BAT helper that loads the newest disposable `weapon-debug-*.log`, prints the log and reports locations, and reruns the existing analyzer with `all`, `glock`, or `mp5` filtering.
 - `scripts/play-glock-live.bat`, `scripts/play-mp5-live.bat`, and `scripts/play-live-test.bat` are Explorer-friendly live launchers for stock-client-attached same-root `hlserver_testbed` sessions.
 - `scripts/show-latest-log-analysis.bat`, `scripts/show-latest-glock-analysis.bat`, and `scripts/show-latest-mp5-analysis.bat` are thin BAT entry points for the latest analyzer summaries.

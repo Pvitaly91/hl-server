@@ -89,6 +89,18 @@ function Get-LatestFile {
     return @($files | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
 }
 
+function Get-LatestDirectory {
+    param([string]$Root)
+
+    if ([string]::IsNullOrWhiteSpace($Root) -or -not (Test-Path -LiteralPath $Root -PathType Container)) {
+        return $null
+    }
+
+    return Get-ChildItem -LiteralPath $Root -Directory -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+}
+
 function Invoke-CommandToFile {
     param(
         [Parameter(Mandatory = $true)]
@@ -176,6 +188,28 @@ else {
     Add-Line -Lines $summary -Text "latest_weapon_log=not_found"
 }
 
+$qconsoleCandidates = @()
+if ($livePaths.ClientRoot) {
+    $qconsoleCandidates += (Join-Path $livePaths.ClientRoot "qconsole.log")
+    $qconsoleCandidates += (Join-Path $livePaths.ClientRoot "valve\qconsole.log")
+}
+if ($livePaths.LiveModRoot) {
+    $qconsoleCandidates += (Join-Path $livePaths.LiveModRoot "qconsole.log")
+}
+$qconsoleCandidates += (Join-Path (Get-RepoRoot) "testbed\qconsole.log")
+$latestQConsole = $qconsoleCandidates |
+    Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } |
+    ForEach-Object { Get-Item -LiteralPath $_ } |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
+if ($latestQConsole) {
+    Copy-IfExists -Path $latestQConsole.FullName -DestinationDirectory $logsDirectory -DestinationName "latest-qconsole.log" | Out-Null
+    Add-Line -Lines $summary -Text "latest_qconsole=$($latestQConsole.FullName)"
+}
+else {
+    Add-Line -Lines $summary -Text "latest_qconsole=not_found"
+}
+
 $latestLaunch = Get-LatestFile -Roots @($repoLogsRoot) -Filter "hlds-*-launch.txt"
 if ($latestLaunch) {
     Copy-IfExists -Path $latestLaunch.FullName -DestinationDirectory $logsDirectory -DestinationName "latest-hlds-launch.txt" | Out-Null
@@ -240,6 +274,35 @@ if ($latestWeaponLog) {
         $output | Set-Content -LiteralPath $analysisPath -Encoding ASCII
         Add-Line -Lines $summary -Text ("analysis_{0}={1} exit={2}" -f $weapon, $analysisPath, $exitCode)
     }
+}
+
+$stockPlaytestRoot = Join-Path (Join-Path (Get-TestbedLogsRoot) "reports") "stock-client-playtests"
+$latestStockPlaytest = Get-LatestDirectory -Root $stockPlaytestRoot
+if ($latestStockPlaytest) {
+    $stockDestination = Join-Path $destinationRoot "stock-client-playtest"
+    Ensure-Directory -Path $stockDestination
+
+    foreach ($fileName in @(
+        "summary.txt",
+        "package-check.txt",
+        "per-weapon-summary.txt",
+        "client-status.txt",
+        "rcon-validation.txt",
+        "commands.txt",
+        "glock-analysis.txt",
+        "mp5-analysis.txt",
+        "357-analysis.txt",
+        "shotgun-analysis.txt"
+    )) {
+        $source = Join-Path $latestStockPlaytest.FullName $fileName
+        Copy-IfExists -Path $source -DestinationDirectory $stockDestination -DestinationName $fileName | Out-Null
+    }
+
+    Add-Line -Lines $summary -Text "latest_stock_client_playtest=$($latestStockPlaytest.FullName)"
+    Add-Line -Lines $summary -Text "stock_client_playtest_copy=$stockDestination"
+}
+else {
+    Add-Line -Lines $summary -Text "latest_stock_client_playtest=not_found"
 }
 
 $summaryPath = Join-Path $destinationRoot "diagnostics-summary.txt"
