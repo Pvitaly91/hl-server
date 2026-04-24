@@ -53,6 +53,31 @@ First guided test flow:
 
 See [docs/stable-workflow.md](docs/stable-workflow.md) for the package workflow and [docs/stable-improved-hldm-state.md](docs/stable-improved-hldm-state.md) for the source branch/commit map and exact integrated state.
 
+## Playtest the stable package
+
+Use the playtest pass when you want a repeatable manual validation loop instead of only building and launching.
+
+```powershell
+.\scripts\setup-improved-hldm.ps1
+.\scripts\check-improved-hldm.ps1
+.\scripts\play-improved-hldm.bat
+.\scripts\open-hldm-editor.bat
+.\scripts\run-improved-hldm-playtest.ps1
+.\scripts\collect-improved-hldm-diagnostics.ps1
+```
+
+The playtest runner is non-destructive by default: it checks the stable package, prints the recommended launch command, prints sandbox setup commands for Glock, MP5, 357, and shotgun validation, and points to the checklist. Pass `-StartServer` if you want it to start the live launcher, `-OpenEditor` if you want it to open the deployed editor, and `-CollectDiagnostics` if you want it to collect a diagnostics bundle after the instructions are printed.
+
+The diagnostics collector writes to:
+
+```text
+testbed\logs\reports\stable-package-diagnostics\<timestamp>\
+```
+
+It captures git state, resolved live-mod paths, match-pack/cfg lists, latest weapon and HLDS logs when present, package-check output, and analyzer summaries for `all`, `glock`, `mp5`, `357`, and `shotgun` if a weapon log exists.
+
+See [docs/stable-playtest-checklist.md](docs/stable-playtest-checklist.md) for the manual Glock / MP5 / 357 / shotgun checklist. This project improves HLDM gameplay while preserving stock Half-Life client compatibility; it is not a full CS clone, and subjective weapon feel still requires human shooting.
+
 ## Weapon Feel Direction
 
 The current gameplay direction is intentionally narrower than "make full Counter-Strike in Half-Life."
@@ -1790,6 +1815,9 @@ Live client-attached mode creates or refreshes a managed mod folder at `Half-Lif
 - `scripts/check-improved-hldm.ps1` prints PASS/FAIL checks for the built DLL, live DLL, deployed editor, match packs, logs, and guided-test report folders.
 - `scripts/play-improved-hldm.bat` launches the recommended stock-client-compatible Improved HLDM session using `hldm_skill_default.cfg`.
 - `scripts/open-hldm-editor.bat` opens `<HalfLifeRoot>\hlserver_testbed\HlConfigEditorCpp.exe` and tells you to run setup if it is missing.
+- `scripts/run-improved-hldm-playtest.ps1` prints the stable package playtest flow, weapon checklists, and sandbox commands, with optional server launch, editor open, log folder open, and diagnostics collection switches.
+- `scripts/analyze-improved-hldm-latest.ps1` runs the existing analyzer against the latest weapon log for `all`, `glock`, `mp5`, `357`, and `shotgun`, then writes the summaries into one timestamped report folder.
+- `scripts/collect-improved-hldm-diagnostics.ps1` writes a stable-package diagnostics bundle with git state, paths, pack/cfg listings, latest logs, package-check output, and analyzer summaries when logs exist.
 - `scripts/show-latest-analysis.ps1` is the shared analyzer BAT helper that loads the newest disposable `weapon-debug-*.log`, prints the log and reports locations, and reruns the existing analyzer with `all`, `glock`, or `mp5` filtering.
 - `scripts/play-glock-live.bat`, `scripts/play-mp5-live.bat`, and `scripts/play-live-test.bat` are Explorer-friendly live launchers for stock-client-attached same-root `hlserver_testbed` sessions.
 - `scripts/show-latest-log-analysis.bat`, `scripts/show-latest-glock-analysis.bat`, and `scripts/show-latest-mp5-analysis.bat` are thin BAT entry points for the latest analyzer summaries.
