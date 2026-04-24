@@ -56,6 +56,20 @@ Needs fixing:
 - map mismatch or missing file errors
 - stock client cannot connect
 
+For a guided real-client run, use:
+
+```powershell
+.\scripts\run-stock-client-playtest.ps1 -StartServer -RconPassword "<password>"
+```
+
+Use a non-destructive command preview first:
+
+```powershell
+.\scripts\run-stock-client-playtest.ps1 -DryRun -NoPause
+```
+
+The guided script writes per-weapon analysis under `testbed\logs\reports\stock-client-playtests\<timestamp>\` and prints `connect 127.0.0.1:<port>` when the client is not verified.
+
 ## Target Dummy Checklist
 
 Use the sandbox flow:
