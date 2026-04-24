@@ -108,6 +108,21 @@ exec my_match.cfg
 
 That direct cfg apply remains the lower-level fallback and is not replaced by packs.
 
+## Weapon sandbox reuse
+
+Match packs can also be used as a sandbox source. This keeps the pack metadata and cfg resolution path intact while adding a one-command weapon-plus-dummy reset:
+
+```text
+exp_sandbox_start
+exp_sandbox_weapon mp5
+exp_sandbox_pack hldm_mp5_burst
+exp_sandbox_target vest_headprotected
+exp_sandbox_spot default
+exp_sandbox_reset
+```
+
+`exp_sandbox_pack <name>` selects and applies the same pack that `exp_matchcfg_apply <name>` would apply. `exp_sandbox_reset` then enables debug weapon logging, grants the selected weapon to the first live player, applies the selected target profile, uses the selected saved target spot when available, and respawns the dummy. The sandbox is a productivity layer over the existing cfg and pack commands, not a separate pack format.
+
 ## Starter packs
 
 The checked-in starter set is intentionally practical rather than authoritative:

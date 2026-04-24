@@ -451,6 +451,13 @@ cvar_t sv_exp_mp5_profile_name = {"sv_exp_mp5_profile_name", "default", FCVAR_SE
 cvar_t sv_exp_357_profile_name = {"sv_exp_357_profile_name", "default", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
 cvar_t sv_exp_shotgun_profile_name = {"sv_exp_shotgun_profile_name", "default", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
 cvar_t sv_exp_session_tag = {"sv_exp_session_tag", "", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
+cvar_t sv_exp_sandbox_mode = {"sv_exp_sandbox_mode", "0", FCVAR_SERVER};
+cvar_t sv_exp_sandbox_weapon = {"sv_exp_sandbox_weapon", "glock", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
+cvar_t sv_exp_sandbox_cfg = {"sv_exp_sandbox_cfg", "", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
+cvar_t sv_exp_sandbox_pack = {"sv_exp_sandbox_pack", "", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
+cvar_t sv_exp_sandbox_target_profile = {"sv_exp_sandbox_target_profile", "unarmored", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
+cvar_t sv_exp_sandbox_target_spot = {"sv_exp_sandbox_target_spot", "", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
+cvar_t sv_exp_sandbox_autoreset = {"sv_exp_sandbox_autoreset", "0", FCVAR_SERVER};
 cvar_t sv_exp_matrix_name = {"sv_exp_matrix_name", "", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
 cvar_t sv_exp_matrix_step = {"sv_exp_matrix_step", "", FCVAR_SERVER | FCVAR_PRINTABLEONLY | FCVAR_NOEXTRAWHITEPACE};
 cvar_t sv_exp_glock_primary_base_spread = {"sv_exp_glock_primary_base_spread", "0.01", FCVAR_SERVER};
@@ -10469,6 +10476,7 @@ void PrintLiveCfgStatus()
     PrintCurrentCfgMetadata();
     PrintLabDummyConsoleLine("cfg commands: exp_cfg_apply <cfg_name_or_path> | exp_cfg_reload | exp_cfg_status | exp_lab_apply <cfg_name_or_path>");
     PrintLabDummyConsoleLine("match cfg commands: exp_matchcfg_list | exp_matchcfg_apply <name> | exp_matchcfg_status");
+    PrintLabDummyConsoleLine("sandbox commands: exp_sandbox_start | exp_sandbox_weapon <name> | exp_sandbox_cfg <cfg> | exp_sandbox_pack <name> | exp_sandbox_target <profile> | exp_sandbox_spot <name|none> | exp_sandbox_reset | exp_sandbox_status");
     PrintMatchConfigPackStatus();
 }
 
@@ -12096,6 +12104,708 @@ void PrintLabDummyStatus()
     PrintLabDummyConsoleLine("commands: exp_target_spawn | exp_target_clear | exp_target_mark [name] | exp_target_unmark [name] | exp_target_list | exp_target_use_saved <name> | exp_target_respawn | exp_target_status | exp_target_tp_front | exp_target_profile <name>");
 }
 
+bool SandboxModeEnabled()
+{
+    return sv_exp_sandbox_mode.value != 0.0f;
+}
+
+bool SandboxAutoresetEnabled()
+{
+    return sv_exp_sandbox_autoreset.value != 0.0f;
+}
+
+const char *ExpSandboxWeaponName()
+{
+    return GetNonEmptyCvarString(sv_exp_sandbox_weapon, "glock");
+}
+
+const char *ExpSandboxCfgRequest()
+{
+    return GetOptionalCvarString(sv_exp_sandbox_cfg);
+}
+
+const char *ExpSandboxPackName()
+{
+    return GetOptionalCvarString(sv_exp_sandbox_pack);
+}
+
+const char *ExpSandboxTargetProfile()
+{
+    return GetNonEmptyCvarString(sv_exp_sandbox_target_profile, "unarmored");
+}
+
+const char *ExpSandboxTargetSpot()
+{
+    return GetOptionalCvarString(sv_exp_sandbox_target_spot);
+}
+
+bool IsSandboxEmptySelection(const char *value)
+{
+    return value == NULL ||
+           value[0] == '\0' ||
+           StringEqualsIgnoreCase(value, "empty") ||
+           StringEqualsIgnoreCase(value, "none") ||
+           StringEqualsIgnoreCase(value, "clear");
+}
+
+bool TryNormalizeSandboxWeaponName(const char *requestedWeapon, char *weaponName, size_t weaponNameSize, char *failureReason, size_t failureReasonSize)
+{
+    if (weaponName == NULL || weaponNameSize == 0)
+    {
+        return false;
+    }
+
+    weaponName[0] = '\0';
+
+    char trimmedWeapon[64];
+    TrimCfgRequestString(requestedWeapon, trimmedWeapon, sizeof(trimmedWeapon));
+    if (trimmedWeapon[0] == '\0')
+    {
+        strncpy_s(trimmedWeapon, sizeof(trimmedWeapon), "glock", _TRUNCATE);
+    }
+
+    if (StringEqualsIgnoreCase(trimmedWeapon, "glock") || StringEqualsIgnoreCase(trimmedWeapon, "9mmhandgun") || StringEqualsIgnoreCase(trimmedWeapon, "pistol"))
+    {
+        strncpy_s(weaponName, weaponNameSize, "glock", _TRUNCATE);
+        return true;
+    }
+
+    if (StringEqualsIgnoreCase(trimmedWeapon, "mp5") || StringEqualsIgnoreCase(trimmedWeapon, "9mmar") || StringEqualsIgnoreCase(trimmedWeapon, "smg"))
+    {
+        strncpy_s(weaponName, weaponNameSize, "mp5", _TRUNCATE);
+        return true;
+    }
+
+    if (StringEqualsIgnoreCase(trimmedWeapon, "357") || StringEqualsIgnoreCase(trimmedWeapon, "python") || StringEqualsIgnoreCase(trimmedWeapon, "magnum"))
+    {
+        strncpy_s(weaponName, weaponNameSize, "357", _TRUNCATE);
+        return true;
+    }
+
+    if (StringEqualsIgnoreCase(trimmedWeapon, "shotgun") || StringEqualsIgnoreCase(trimmedWeapon, "buckshot"))
+    {
+        strncpy_s(weaponName, weaponNameSize, "shotgun", _TRUNCATE);
+        return true;
+    }
+
+    if (failureReason != NULL && failureReasonSize > 0)
+    {
+        _snprintf_s(failureReason, failureReasonSize, _TRUNCATE, "unknown sandbox weapon \"%s\". Supported: glock, mp5, 357, shotgun", trimmedWeapon);
+    }
+
+    return false;
+}
+
+int GetSandboxWeaponId(const char *weaponName)
+{
+    if (StringEqualsIgnoreCase(weaponName, "glock"))
+    {
+        return WEAPON_GLOCK;
+    }
+
+    if (StringEqualsIgnoreCase(weaponName, "mp5"))
+    {
+        return WEAPON_MP5;
+    }
+
+    if (StringEqualsIgnoreCase(weaponName, "357"))
+    {
+        return WEAPON_PYTHON;
+    }
+
+    if (StringEqualsIgnoreCase(weaponName, "shotgun"))
+    {
+        return WEAPON_SHOTGUN;
+    }
+
+    return WEAPON_NONE;
+}
+
+const char *GetSandboxWeaponClassName(const char *weaponName)
+{
+    if (StringEqualsIgnoreCase(weaponName, "glock"))
+    {
+        return "weapon_9mmhandgun";
+    }
+
+    if (StringEqualsIgnoreCase(weaponName, "mp5"))
+    {
+        return "weapon_9mmAR";
+    }
+
+    if (StringEqualsIgnoreCase(weaponName, "357"))
+    {
+        return "weapon_357";
+    }
+
+    if (StringEqualsIgnoreCase(weaponName, "shotgun"))
+    {
+        return "weapon_shotgun";
+    }
+
+    return "unknown";
+}
+
+bool PlayerHasSandboxWeapon(CBasePlayer *pPlayer, const char *weaponName)
+{
+    if (pPlayer == NULL)
+    {
+        return false;
+    }
+
+    const int weaponId = GetSandboxWeaponId(weaponName);
+    if (weaponId == WEAPON_NONE)
+    {
+        return false;
+    }
+
+    return pPlayer->HasPlayerItemFromID(weaponId) != FALSE;
+}
+
+bool PlayerHasSandboxWeaponActive(CBasePlayer *pPlayer, const char *weaponName)
+{
+    if (pPlayer == NULL || pPlayer->m_pActiveItem == NULL)
+    {
+        return false;
+    }
+
+    CBasePlayerWeapon *pWeapon = (CBasePlayerWeapon *)pPlayer->m_pActiveItem->GetWeaponPtr();
+    if (pWeapon == NULL)
+    {
+        return false;
+    }
+
+    return pWeapon->m_iId == GetSandboxWeaponId(weaponName);
+}
+
+void SetSandboxWeaponSelection(const char *weaponName)
+{
+    CVAR_SET_STRING("sv_exp_sandbox_weapon", (char *)weaponName);
+    CVAR_SET_STRING("sv_exp_weapon_under_test", (char *)weaponName);
+}
+
+void SetSandboxLabLoadoutForWeapon(const char *weaponName)
+{
+    CVAR_SET_FLOAT("sv_exp_mp5_lab_loadout", StringEqualsIgnoreCase(weaponName, "mp5") ? 1.0f : 0.0f);
+    CVAR_SET_FLOAT("sv_exp_357_lab_loadout", StringEqualsIgnoreCase(weaponName, "357") ? 1.0f : 0.0f);
+    CVAR_SET_FLOAT("sv_exp_shotgun_lab_loadout", StringEqualsIgnoreCase(weaponName, "shotgun") ? 1.0f : 0.0f);
+}
+
+bool ApplySandboxSelectedCfgOrPack(char *summary, size_t summarySize)
+{
+    if (summary != NULL && summarySize > 0)
+    {
+        summary[0] = '\0';
+    }
+
+    char requestedPack[kMaxMatchConfigPackNameLength];
+    char requestedCfg[kMaxLiveCfgRequestLength];
+    TrimCfgRequestString(ExpSandboxPackName(), requestedPack, sizeof(requestedPack));
+    TrimCfgRequestString(ExpSandboxCfgRequest(), requestedCfg, sizeof(requestedCfg));
+    if (IsSandboxEmptySelection(requestedPack))
+    {
+        requestedPack[0] = '\0';
+    }
+    if (IsSandboxEmptySelection(requestedCfg))
+    {
+        requestedCfg[0] = '\0';
+    }
+
+    if (requestedPack[0] != '\0')
+    {
+        MatchConfigPackRecord pack = {};
+        char failureReason[kMaxLabDummySpotFileFailureLength];
+        if (!LoadMatchConfigPackByName(requestedPack, &pack, failureReason, sizeof(failureReason)))
+        {
+            if (summary != NULL && summarySize > 0)
+            {
+                _snprintf_s(summary, summarySize, _TRUNCATE, "sandbox pack apply failed: %s", failureReason);
+            }
+            return false;
+        }
+
+        ResolvedLiveCfgSelection selection = {};
+        if (!TryResolveLiveCfgSelection(pack.cfgRequest, &selection, failureReason, sizeof(failureReason)))
+        {
+            RecordLiveCfgFailure("sandbox_pack", failureReason);
+            LogLiveCfgCommand("sandbox_pack", pack.cfgRequest, "", "", false, failureReason);
+            if (summary != NULL && summarySize > 0)
+            {
+                _snprintf_s(summary, summarySize, _TRUNCATE, "sandbox pack apply failed: pack=%s cfg=%s reason=%s", pack.name, pack.cfgRequest, failureReason);
+            }
+            return false;
+        }
+
+        if (!ApplyResolvedLiveCfgSelection("sandbox_pack", selection))
+        {
+            if (summary != NULL && summarySize > 0)
+            {
+                _snprintf_s(summary, summarySize, _TRUNCATE, "sandbox pack apply failed: pack=%s cfg=%s", pack.name, selection.execPath);
+            }
+            return false;
+        }
+
+        RememberActiveMatchConfigPack(pack, selection);
+        if (summary != NULL && summarySize > 0)
+        {
+            _snprintf_s(summary, summarySize, _TRUNCATE, "sandbox pack applied: pack=%s cfg=%s", pack.name, selection.execPath);
+        }
+        return true;
+    }
+
+    if (requestedCfg[0] != '\0')
+    {
+        ResolvedLiveCfgSelection selection = {};
+        char failureReason[kMaxLiveCfgFailureLength];
+        if (!TryResolveLiveCfgSelection(requestedCfg, &selection, failureReason, sizeof(failureReason)))
+        {
+            RecordLiveCfgFailure("sandbox_cfg", failureReason);
+            LogLiveCfgCommand("sandbox_cfg", requestedCfg, "", "", false, failureReason);
+            if (summary != NULL && summarySize > 0)
+            {
+                _snprintf_s(summary, summarySize, _TRUNCATE, "sandbox cfg apply failed: %s", failureReason);
+            }
+            return false;
+        }
+
+        if (!ApplyResolvedLiveCfgSelection("sandbox_cfg", selection))
+        {
+            if (summary != NULL && summarySize > 0)
+            {
+                _snprintf_s(summary, summarySize, _TRUNCATE, "sandbox cfg apply failed: cfg=%s", selection.execPath);
+            }
+            return false;
+        }
+
+        ClearActiveMatchConfigPackState("a sandbox cfg override was applied after the previous match pack");
+        if (summary != NULL && summarySize > 0)
+        {
+            _snprintf_s(summary, summarySize, _TRUNCATE, "sandbox cfg applied: cfg=%s", selection.execPath);
+        }
+        return true;
+    }
+
+    if (summary != NULL && summarySize > 0)
+    {
+        strncpy_s(summary, summarySize, "sandbox cfg/pack: none selected, keeping current cvars", _TRUNCATE);
+    }
+    return true;
+}
+
+bool ApplySandboxTargetProfile(char *summary, size_t summarySize)
+{
+    if (summary != NULL && summarySize > 0)
+    {
+        summary[0] = '\0';
+    }
+
+    char requestedProfile[64];
+    TrimCfgRequestString(ExpSandboxTargetProfile(), requestedProfile, sizeof(requestedProfile));
+    if (IsSandboxEmptySelection(requestedProfile))
+    {
+        strncpy_s(requestedProfile, sizeof(requestedProfile), "unarmored", _TRUNCATE);
+    }
+
+    const LabDummyProfileDefinition *pProfile = FindBuiltInLabDummyProfile(requestedProfile);
+    if (pProfile == NULL)
+    {
+        if (summary != NULL && summarySize > 0)
+        {
+            _snprintf_s(summary, summarySize, _TRUNCATE, "sandbox target profile failed: unknown profile \"%s\". Built-in target profiles: %s", requestedProfile, GetLabDummyProfileNames());
+        }
+        return false;
+    }
+
+    ApplyBuiltInLabDummyProfile(pProfile->name);
+    CVAR_SET_STRING("sv_exp_sandbox_target_profile", (char *)pProfile->name);
+    if (summary != NULL && summarySize > 0)
+    {
+        _snprintf_s(summary, summarySize, _TRUNCATE, "sandbox target profile applied: %s (%s)", pProfile->name, pProfile->description);
+    }
+    return true;
+}
+
+bool ApplySandboxTargetSpot(char *summary, size_t summarySize)
+{
+    if (summary != NULL && summarySize > 0)
+    {
+        summary[0] = '\0';
+    }
+
+    char requestedSpot[kMaxLabDummySpotNameLength];
+    TrimCfgRequestString(ExpSandboxTargetSpot(), requestedSpot, sizeof(requestedSpot));
+    if (IsSandboxEmptySelection(requestedSpot))
+    {
+        g_glockLabDummyActiveSpotName[0] = '\0';
+        CVAR_SET_STRING("sv_exp_sandbox_target_spot", (char *)"");
+        if (summary != NULL && summarySize > 0)
+        {
+            strncpy_s(summary, summarySize, "sandbox target spot: none selected, using target placement fallback", _TRUNCATE);
+        }
+        return true;
+    }
+
+    RefreshFutureHooksMapState();
+    const LabDummySavedSpotRecord *spot = FindLabDummySavedSpotConst(requestedSpot);
+    if (spot == NULL)
+    {
+        if (summary != NULL && summarySize > 0)
+        {
+            _snprintf_s(summary, summarySize, _TRUNCATE, "sandbox target spot failed: saved spot \"%s\" was not found for map %s", requestedSpot, GetCurrentMapName());
+        }
+        return false;
+    }
+
+    strncpy_s(g_glockLabDummyActiveSpotName, sizeof(g_glockLabDummyActiveSpotName), spot->name, _TRUNCATE);
+    CVAR_SET_STRING("sv_exp_sandbox_target_spot", (char *)spot->name);
+    if (summary != NULL && summarySize > 0)
+    {
+        _snprintf_s(summary, summarySize, _TRUNCATE, "sandbox target spot applied: %s storage=%s", spot->name, GetLabDummySpotStorageLabel(spot));
+    }
+    return true;
+}
+
+bool ApplySandboxLoadout(const char *weaponName, char *summary, size_t summarySize)
+{
+    if (summary != NULL && summarySize > 0)
+    {
+        summary[0] = '\0';
+    }
+
+    CBasePlayer *pPlayer = FindFirstLivePlayer();
+    if (pPlayer == NULL || pPlayer->pev == NULL)
+    {
+        if (summary != NULL && summarySize > 0)
+        {
+            strncpy_s(summary, summarySize, "sandbox loadout failed: no live player is connected yet", _TRUNCATE);
+        }
+        return false;
+    }
+
+    if (!pPlayer->IsAlive() || pPlayer->pev->deadflag != DEAD_NO)
+    {
+        pPlayer->Spawn();
+    }
+
+    const int savedAutoSwitch = pPlayer->m_iAutoWepSwitch;
+    pPlayer->m_iAutoWepSwitch = 1;
+    ApplyDeterministicRoundLoadoutToPlayer(pPlayer, weaponName);
+    pPlayer->m_iAutoWepSwitch = savedAutoSwitch;
+    SetSandboxLabLoadoutForWeapon(weaponName);
+
+    if (pPlayer->pev != NULL)
+    {
+        pPlayer->pev->health = 100.0f;
+        pPlayer->pev->max_health = 100.0f;
+        pPlayer->pev->armorvalue = 0.0f;
+    }
+
+    if (summary != NULL && summarySize > 0)
+    {
+        _snprintf_s(
+            summary,
+            summarySize,
+            _TRUNCATE,
+            "sandbox loadout ready: player=%s weapon=%s class=%s owned=%d active=%d",
+            GetSafePlayerName(pPlayer),
+            weaponName,
+            GetSandboxWeaponClassName(weaponName),
+            PlayerHasSandboxWeapon(pPlayer, weaponName) ? 1 : 0,
+            PlayerHasSandboxWeaponActive(pPlayer, weaponName) ? 1 : 0);
+    }
+    return true;
+}
+
+void PrintSandboxStatus();
+
+bool RunSandboxReset(const char *reason, bool printStatus)
+{
+    CVAR_SET_FLOAT("sv_exp_sandbox_mode", 1.0f);
+    CVAR_SET_FLOAT("sv_exp_debug_weaponlog", 1.0f);
+
+    char sourceSummary[256];
+    if (!ApplySandboxSelectedCfgOrPack(sourceSummary, sizeof(sourceSummary)))
+    {
+        PrintLabDummyConsoleLine("%s", sourceSummary);
+        return false;
+    }
+    CVAR_SET_FLOAT("sv_exp_sandbox_mode", 1.0f);
+    CVAR_SET_FLOAT("sv_exp_debug_weaponlog", 1.0f);
+
+    char weaponName[16];
+    char failureReason[160];
+    if (!TryNormalizeSandboxWeaponName(ExpSandboxWeaponName(), weaponName, sizeof(weaponName), failureReason, sizeof(failureReason)))
+    {
+        PrintLabDummyConsoleLine("sandbox reset failed: %s", failureReason);
+        return false;
+    }
+    SetSandboxWeaponSelection(weaponName);
+
+    char targetProfileSummary[256];
+    if (!ApplySandboxTargetProfile(targetProfileSummary, sizeof(targetProfileSummary)))
+    {
+        PrintLabDummyConsoleLine("%s", targetProfileSummary);
+        return false;
+    }
+
+    char targetSpotSummary[192];
+    if (!ApplySandboxTargetSpot(targetSpotSummary, sizeof(targetSpotSummary)))
+    {
+        PrintLabDummyConsoleLine("%s", targetSpotSummary);
+        return false;
+    }
+
+    SetLabDummyEnabled(true);
+    char targetRespawnSummary[192];
+    const bool targetReady = TryRespawnLabDummyInternal(reason != NULL ? reason : "sandbox_reset", targetRespawnSummary, sizeof(targetRespawnSummary), true);
+
+    char loadoutSummary[256];
+    const bool loadoutReady = ApplySandboxLoadout(weaponName, loadoutSummary, sizeof(loadoutSummary));
+
+    PrintLabDummyConsoleLine("sandbox reset source: %s", sourceSummary);
+    PrintLabDummyConsoleLine("sandbox reset target: %s", targetProfileSummary);
+    PrintLabDummyConsoleLine("sandbox reset spot: %s", targetSpotSummary);
+    PrintLabDummyConsoleLine("sandbox reset dummy: %s", targetRespawnSummary);
+    PrintLabDummyConsoleLine("sandbox reset loadout: %s", loadoutSummary);
+    PrintLabDummyConsoleLine(
+        "sandbox reset result: success=%d weapon=%s target_ready=%d loadout_ready=%d",
+        (targetReady && loadoutReady) ? 1 : 0,
+        weaponName,
+        targetReady ? 1 : 0,
+        loadoutReady ? 1 : 0);
+
+    if (printStatus)
+    {
+        PrintSandboxStatus();
+    }
+
+    return targetReady && loadoutReady;
+}
+
+void PrintSandboxStatus()
+{
+    char weaponName[16];
+    char failureReason[160];
+    char cfgDisplay[kMaxLiveCfgRequestLength];
+    char packDisplay[kMaxMatchConfigPackNameLength];
+    char spotDisplay[kMaxLabDummySpotNameLength];
+    TrimCfgRequestString(ExpSandboxCfgRequest(), cfgDisplay, sizeof(cfgDisplay));
+    TrimCfgRequestString(ExpSandboxPackName(), packDisplay, sizeof(packDisplay));
+    TrimCfgRequestString(ExpSandboxTargetSpot(), spotDisplay, sizeof(spotDisplay));
+    const bool weaponOk = TryNormalizeSandboxWeaponName(ExpSandboxWeaponName(), weaponName, sizeof(weaponName), failureReason, sizeof(failureReason));
+    CBasePlayer *pPlayer = FindFirstLivePlayer();
+    CBaseEntity *pDummy = GetTrackedLabDummyEntity();
+
+    PrintLabDummyConsoleLine("weapon sandbox: mode=%d autoreset=%d debug_weaponlog=%d", SandboxModeEnabled() ? 1 : 0, SandboxAutoresetEnabled() ? 1 : 0, sv_exp_debug_weaponlog.value != 0.0f ? 1 : 0);
+    PrintLabDummyConsoleLine(
+        "weapon sandbox selection: weapon=%s%s cfg=%s pack=%s target_profile=%s target_spot=%s",
+        weaponOk ? weaponName : ExpSandboxWeaponName(),
+        weaponOk ? "" : " [invalid]",
+        !IsSandboxEmptySelection(cfgDisplay) ? cfgDisplay : "none",
+        !IsSandboxEmptySelection(packDisplay) ? packDisplay : "none",
+        ExpSandboxTargetProfile(),
+        !IsSandboxEmptySelection(spotDisplay) ? spotDisplay : "none");
+    PrintLabDummyConsoleLine(
+        "weapon sandbox player: name=%s live=%d loadout_owned=%d loadout_active=%d",
+        GetSafePlayerName(pPlayer),
+        pPlayer != NULL && pPlayer->pev != NULL ? 1 : 0,
+        weaponOk && PlayerHasSandboxWeapon(pPlayer, weaponName) ? 1 : 0,
+        weaponOk && PlayerHasSandboxWeaponActive(pPlayer, weaponName) ? 1 : 0);
+    PrintLabDummyConsoleLine(
+        "weapon sandbox dummy: exists=%d alive=%d profile=%s active_spot=%s",
+        pDummy != NULL ? 1 : 0,
+        pDummy != NULL && pDummy->IsAlive() ? 1 : 0,
+        ExpGlockLabTargetProfileName(),
+        g_glockLabDummyActiveSpotName[0] != '\0' ? g_glockLabDummyActiveSpotName : "none");
+
+    if (!weaponOk)
+    {
+        PrintLabDummyConsoleLine("weapon sandbox problem: %s", failureReason);
+    }
+
+    PrintLabDummyConsoleLine("weapon sandbox next: exp_sandbox_reset prepares cfg/pack + loadout + dummy; exp_sandbox_verify prints a test-ready summary.");
+}
+
+void ExpSandboxStartCommand()
+{
+    CVAR_SET_FLOAT("sv_exp_sandbox_mode", 1.0f);
+    CVAR_SET_FLOAT("sv_exp_debug_weaponlog", 1.0f);
+    PrintLabDummyConsoleLine("weapon sandbox enabled. debug weapon telemetry is enabled for live verification.");
+
+    if (SandboxAutoresetEnabled())
+    {
+        RunSandboxReset("sandbox_start", true);
+        return;
+    }
+
+    PrintSandboxStatus();
+}
+
+void ExpSandboxStopCommand()
+{
+    CVAR_SET_FLOAT("sv_exp_sandbox_mode", 0.0f);
+    SetSandboxLabLoadoutForWeapon("none");
+    PrintLabDummyConsoleLine("weapon sandbox disabled. Existing cfgs, match packs, and target commands remain available.");
+    PrintSandboxStatus();
+}
+
+void ExpSandboxStatusCommand()
+{
+    PrintSandboxStatus();
+}
+
+void ExpSandboxWeaponCommand()
+{
+    char requestedWeapon[64];
+    BuildCommandArgumentString(1, requestedWeapon, sizeof(requestedWeapon));
+    if (requestedWeapon[0] == '\0')
+    {
+        PrintLabDummyConsoleLine("usage: exp_sandbox_weapon <glock|mp5|357|shotgun>");
+        PrintSandboxStatus();
+        return;
+    }
+
+    char weaponName[16];
+    char failureReason[160];
+    if (!TryNormalizeSandboxWeaponName(requestedWeapon, weaponName, sizeof(weaponName), failureReason, sizeof(failureReason)))
+    {
+        PrintLabDummyConsoleLine("sandbox weapon failed: %s", failureReason);
+        return;
+    }
+
+    SetSandboxWeaponSelection(weaponName);
+    PrintLabDummyConsoleLine("sandbox weapon selected: %s", weaponName);
+
+    if (SandboxModeEnabled() && SandboxAutoresetEnabled())
+    {
+        RunSandboxReset("sandbox_weapon", true);
+    }
+}
+
+void ExpSandboxCfgCommand()
+{
+    char requestedCfg[kMaxLiveCfgRequestLength];
+    BuildCommandArgumentString(1, requestedCfg, sizeof(requestedCfg));
+    if (requestedCfg[0] == '\0')
+    {
+        PrintLabDummyConsoleLine("usage: exp_sandbox_cfg <cfg_name_or_path>");
+        PrintSandboxStatus();
+        return;
+    }
+
+    CVAR_SET_STRING("sv_exp_sandbox_cfg", requestedCfg);
+    CVAR_SET_STRING("sv_exp_sandbox_pack", (char *)"");
+    PrintLabDummyConsoleLine("sandbox cfg selected: %s", requestedCfg);
+
+    if (SandboxModeEnabled() && SandboxAutoresetEnabled())
+    {
+        RunSandboxReset("sandbox_cfg", true);
+        return;
+    }
+
+    char summary[256];
+    ApplySandboxSelectedCfgOrPack(summary, sizeof(summary));
+    PrintLabDummyConsoleLine("%s", summary);
+}
+
+void ExpSandboxPackCommand()
+{
+    char requestedPack[kMaxMatchConfigPackNameLength];
+    BuildCommandArgumentString(1, requestedPack, sizeof(requestedPack));
+    if (requestedPack[0] == '\0')
+    {
+        PrintLabDummyConsoleLine("usage: exp_sandbox_pack <pack_name>");
+        PrintSandboxStatus();
+        return;
+    }
+
+    CVAR_SET_STRING("sv_exp_sandbox_pack", requestedPack);
+    CVAR_SET_STRING("sv_exp_sandbox_cfg", (char *)"");
+    PrintLabDummyConsoleLine("sandbox match pack selected: %s", requestedPack);
+
+    if (SandboxModeEnabled() && SandboxAutoresetEnabled())
+    {
+        RunSandboxReset("sandbox_pack", true);
+        return;
+    }
+
+    char summary[256];
+    ApplySandboxSelectedCfgOrPack(summary, sizeof(summary));
+    PrintLabDummyConsoleLine("%s", summary);
+}
+
+void ExpSandboxTargetCommand()
+{
+    if (CMD_ARGC() < 2)
+    {
+        PrintLabDummyConsoleLine("usage: exp_sandbox_target <profile>");
+        PrintLabDummyConsoleLine("built-in target profiles: %s", GetLabDummyProfileNames());
+        return;
+    }
+
+    char requestedProfile[64];
+    BuildCommandArgumentString(1, requestedProfile, sizeof(requestedProfile));
+    CVAR_SET_STRING("sv_exp_sandbox_target_profile", requestedProfile);
+
+    if (SandboxModeEnabled() && SandboxAutoresetEnabled())
+    {
+        RunSandboxReset("sandbox_target", true);
+        return;
+    }
+
+    char summary[256];
+    ApplySandboxTargetProfile(summary, sizeof(summary));
+    PrintLabDummyConsoleLine("%s", summary);
+}
+
+void ExpSandboxSpotCommand()
+{
+    char requestedSpot[kMaxLabDummySpotNameLength];
+    BuildCommandArgumentString(1, requestedSpot, sizeof(requestedSpot));
+    if (requestedSpot[0] == '\0')
+    {
+        PrintLabDummyConsoleLine("usage: exp_sandbox_spot <saved_spot_name|none>");
+        PrintSandboxStatus();
+        return;
+    }
+
+    CVAR_SET_STRING("sv_exp_sandbox_target_spot", requestedSpot);
+
+    if (SandboxModeEnabled() && SandboxAutoresetEnabled())
+    {
+        RunSandboxReset("sandbox_spot", true);
+        return;
+    }
+
+    char summary[192];
+    ApplySandboxTargetSpot(summary, sizeof(summary));
+    PrintLabDummyConsoleLine("%s", summary);
+}
+
+void ExpSandboxResetCommand()
+{
+    RunSandboxReset("sandbox_reset", true);
+}
+
+void ExpSandboxVerifyCommand()
+{
+    PrintSandboxStatus();
+
+    char weaponName[16];
+    char failureReason[160];
+    if (!TryNormalizeSandboxWeaponName(ExpSandboxWeaponName(), weaponName, sizeof(weaponName), failureReason, sizeof(failureReason)))
+    {
+        PrintLabDummyConsoleLine("weapon sandbox verify failed: %s", failureReason);
+        return;
+    }
+
+    PrintLabDummyConsoleLine(
+        "weapon sandbox verify: fire %s at the dummy now, or run exp_dummy_hit_test %s chest for a deterministic telemetry smoke test.",
+        weaponName,
+        weaponName);
+    PrintLabDummyConsoleLine("weapon sandbox verify: use exp_dummy_hit_test %s head to inspect headshot/helmet telemetry for the current target profile.", weaponName);
+}
+
 void ExpCfgApplyCommand()
 {
     char requestedPath[kMaxLiveCfgRequestLength];
@@ -12660,6 +13370,16 @@ void RegisterFutureGameplayCommands()
     g_engfuncs.pfnAddServerCommand((char *)"exp_matchcfg_list", ExpMatchcfgListCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_matchcfg_apply", ExpMatchcfgApplyCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_matchcfg_status", ExpMatchcfgStatusCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_sandbox_start", ExpSandboxStartCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_sandbox_stop", ExpSandboxStopCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_sandbox_status", ExpSandboxStatusCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_sandbox_weapon", ExpSandboxWeaponCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_sandbox_cfg", ExpSandboxCfgCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_sandbox_pack", ExpSandboxPackCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_sandbox_target", ExpSandboxTargetCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_sandbox_spot", ExpSandboxSpotCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_sandbox_reset", ExpSandboxResetCommand);
+    g_engfuncs.pfnAddServerCommand((char *)"exp_sandbox_verify", ExpSandboxVerifyCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_lab_apply", ExpLabApplyCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_target_spawn", ExpTargetSpawnCommand);
     g_engfuncs.pfnAddServerCommand((char *)"exp_target_clear", ExpTargetClearCommand);
@@ -12841,6 +13561,13 @@ void RegisterFutureGameplayCvars()
     CVAR_REGISTER(&sv_exp_357_profile_name);
     CVAR_REGISTER(&sv_exp_shotgun_profile_name);
     CVAR_REGISTER(&sv_exp_session_tag);
+    CVAR_REGISTER(&sv_exp_sandbox_mode);
+    CVAR_REGISTER(&sv_exp_sandbox_weapon);
+    CVAR_REGISTER(&sv_exp_sandbox_cfg);
+    CVAR_REGISTER(&sv_exp_sandbox_pack);
+    CVAR_REGISTER(&sv_exp_sandbox_target_profile);
+    CVAR_REGISTER(&sv_exp_sandbox_target_spot);
+    CVAR_REGISTER(&sv_exp_sandbox_autoreset);
     CVAR_REGISTER(&sv_exp_matrix_name);
     CVAR_REGISTER(&sv_exp_matrix_step);
     CVAR_REGISTER(&sv_exp_glock_primary_base_spread);

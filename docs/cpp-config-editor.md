@@ -143,6 +143,18 @@ Live-apply helper behavior:
 
 The editor still does not push settings directly into a running server. The browser tab is intentionally a browse/preview/export/copy-command workflow, not server control.
 
+For repeatable weapon-lab sessions, take the copied command and use it as the sandbox source:
+
+```text
+exp_sandbox_start
+exp_sandbox_weapon shotgun
+exp_sandbox_pack hldm_shotgun_control
+exp_sandbox_target unarmored
+exp_sandbox_reset
+```
+
+If the browser copied a plain cfg command, use the cfg name with `exp_sandbox_cfg <cfg-name>` instead. The editor still only browses, previews, exports, and copies commands; `exp_sandbox_*` runs on the server console and reuses the same exported cfg or match pack.
+
 For the recommended stock-client-compatible Improved HLDM workflow, select `hldm_skill_default` in the match-pack browser, preview the cvar diff, click `Load Into Current Project`, and use `Copy Apply Command` or `Quick Export + Copy Apply Command`. The copied live command should be:
 
 ```text

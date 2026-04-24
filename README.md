@@ -371,6 +371,25 @@ The same workflow is now available from inside the editor's `Browser` tab:
 4. Use `Quick Export + Copy Apply Command`.
 5. Paste the copied `exp_cfg_apply ...` or `exp_matchcfg_apply ...` command into the running server.
 
+## Weapon Sandbox Mode
+
+Weapon sandbox mode is a server-side shortcut for repeatable live tuning. It does not add client UI or a new gameplay mode; it wires together the existing cfg/match-pack apply path, deterministic lab loadouts, saved target spots, target dummy profiles, and weapon telemetry.
+
+Minimal loop:
+
+```text
+exp_sandbox_start
+exp_sandbox_weapon mp5
+exp_sandbox_pack hldm_mp5_burst
+exp_sandbox_target vest_headprotected
+exp_sandbox_spot default
+exp_sandbox_reset
+```
+
+`exp_sandbox_reset` enables weapon telemetry, applies the selected cfg or pack if one is set, grants the selected weapon with practical ammo to the first live player, applies the selected dummy profile, selects the saved target spot when present, and respawns the dummy. Use `exp_sandbox_status` to see whether the weapon is owned/active and whether the dummy is alive. Use `exp_sandbox_verify` for the next useful manual or `exp_dummy_hit_test` command.
+
+The sandbox keeps old workflows intact. `exp_cfg_apply`, `exp_matchcfg_apply`, `exp_lab_apply`, and the target commands still work directly outside sandbox mode.
+
 One real client-attached session on `2026-04-22` verified the full pack loop on `crossfire`: `exp_matchcfg_list` enumerated six starter packs, `exp_matchcfg_apply duel_glock` switched the server into a round-based Glock duel, `exp_matchcfg_apply team_mp5_buy` switched the same live server into a team/buy pack, and a later `exp_cfg_apply editor_buy_armor.cfg` proved the older direct cfg path still remained usable afterward.
 
 Integration provenance for this recommended path is recorded in [docs/stable-live-lab-state.md](/D:/DEV/CPP/HL-Server/docs/stable-live-lab-state.md).
@@ -383,6 +402,7 @@ Live lab console commands:
 - `exp_matchcfg_list` prints the available match packs under `<HalfLifeRoot>\hlserver_testbed\match_packs\`.
 - `exp_matchcfg_apply <name>` resolves the pack metadata, applies the referenced cfg, and records the active pack metadata for later status/debugging.
 - `exp_matchcfg_status` prints the current active pack, pack metadata, and the match-pack directory scan state.
+- `exp_sandbox_start`, `exp_sandbox_weapon <glock|mp5|357|shotgun>`, `exp_sandbox_cfg <cfg>`, `exp_sandbox_pack <name>`, `exp_sandbox_target <profile>`, `exp_sandbox_spot <name|none>`, `exp_sandbox_reset`, `exp_sandbox_status`, and `exp_sandbox_verify` provide a repeatable weapon-plus-dummy verification loop without replacing direct cfg or pack commands.
 - `exp_match_start` starts or rearms match progression when team round mode is enabled.
 - `exp_match_stop` disables match progression and returns the server to plain round flow.
 - `exp_match_restart` resets score, halftime, and side mapping, then starts a fresh match.
