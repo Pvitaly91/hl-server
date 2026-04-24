@@ -62,7 +62,13 @@ $scorecardFiles = Get-ChildItem -LiteralPath $ReportRoot -Directory |
 
 $rows = @()
 foreach ($scorecardFile in $scorecardFiles) {
-    $card = Get-Content -LiteralPath $scorecardFile.FullName -Raw | ConvertFrom-Json
+    try {
+        $card = Get-Content -LiteralPath $scorecardFile.FullName -Raw | ConvertFrom-Json
+    } catch {
+        Write-Warning "Skipping unreadable scorecard: $($scorecardFile.FullName) ($($_.Exception.Message))"
+        continue
+    }
+
     foreach ($entry in @($card.entries)) {
         if ($Weapon -ne "all" -and $entry.weapon -ne $Weapon) {
             continue

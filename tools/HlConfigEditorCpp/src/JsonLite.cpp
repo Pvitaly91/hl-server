@@ -26,6 +26,12 @@ JsonValue JsonValue::MakeObject() {
     return value;
 }
 
+JsonValue JsonValue::MakeArray() {
+    JsonValue value;
+    value.type_ = Type::Array;
+    return value;
+}
+
 JsonValue::Type JsonValue::GetType() const {
     return type_;
 }
@@ -46,6 +52,10 @@ bool JsonValue::IsString() const {
     return type_ == Type::String;
 }
 
+bool JsonValue::IsArray() const {
+    return type_ == Type::Array;
+}
+
 bool JsonValue::IsObject() const {
     return type_ == Type::Object;
 }
@@ -60,6 +70,14 @@ double JsonValue::AsNumber() const {
 
 const std::wstring& JsonValue::AsString() const {
     return stringValue_;
+}
+
+const JsonValue::Array& JsonValue::AsArray() const {
+    return arrayValue_;
+}
+
+JsonValue::Array& JsonValue::AsArray() {
+    return arrayValue_;
 }
 
 const JsonValue::Object& JsonValue::AsObject() const {
@@ -102,6 +120,10 @@ private:
         const wchar_t ch = text_[position_];
         if (ch == L'{') {
             return ParseObject(value, errorMessage);
+        }
+
+        if (ch == L'[') {
+            return ParseArray(value, errorMessage);
         }
 
         if (ch == L'"') {
@@ -177,6 +199,40 @@ private:
         }
 
         errorMessage = L"Unexpected end of JSON object.";
+        return false;
+    }
+
+    bool ParseArray(JsonValue& value, std::wstring& errorMessage) {
+        Consume();
+        value = JsonValue::MakeArray();
+        SkipWhitespace();
+
+        if (Match(L']')) {
+            return true;
+        }
+
+        while (!IsAtEnd()) {
+            JsonValue child;
+            if (!ParseValue(child, errorMessage)) {
+                return false;
+            }
+
+            value.AsArray().push_back(std::move(child));
+            SkipWhitespace();
+
+            if (Match(L']')) {
+                return true;
+            }
+
+            if (!Match(L',')) {
+                errorMessage = L"Expected ',' between JSON array items.";
+                return false;
+            }
+
+            SkipWhitespace();
+        }
+
+        errorMessage = L"Unexpected end of JSON array.";
         return false;
     }
 
@@ -434,6 +490,30 @@ void SerializeValue(const JsonValue& value, std::wstring& output, int indentLeve
         output += EscapeString(value.AsString());
         output.push_back(L'"');
         return;
+    case JsonValue::Type::Array: {
+        output += L"[";
+        if (value.AsArray().empty()) {
+            output += L"]";
+            return;
+        }
+
+        bool first = true;
+        for (const JsonValue& child : value.AsArray()) {
+            if (!first) {
+                output += L",";
+            }
+
+            output += L"\n";
+            output.append(static_cast<std::size_t>((indentLevel + 1) * 2), L' ');
+            SerializeValue(child, output, indentLevel + 1);
+            first = false;
+        }
+
+        output += L"\n";
+        output.append(static_cast<std::size_t>(indentLevel * 2), L' ');
+        output += L"]";
+        return;
+    }
     case JsonValue::Type::Object: {
         output += L"{";
         if (value.AsObject().empty()) {

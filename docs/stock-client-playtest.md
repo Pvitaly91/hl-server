@@ -154,7 +154,9 @@ Use the editor afterward:
 
 - `Telemetry` tab to inspect the latest log.
 - `Guided Tests` tab for editor-side setup.
-- `Reports` tab to compare saved guided reports.
+- `Reports` tab to list stock-client scorecard reports beside guided reports, compare analyzer metrics with subjective scores, and export the combined comparison.
+
+The editor reads stock-client folders from `testbed\logs\reports\stock-client-playtests\`. Scorecard rows show weapon, match pack, target profile, overall feel, and notes preview in the report list. The comparison table includes accepted shots, hits, kills, headshot evidence, pattern/cadence evidence, telemetry freshness, subjective ratings, weapon-specific MP5/shotgun ratings, and notes. Missing analyzer data appears as `n/a`; a scorecard-only report should still be usable for comparison.
 
 ## PASS / FAIL Guidance
 

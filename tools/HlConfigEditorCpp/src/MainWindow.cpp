@@ -745,9 +745,37 @@ struct GuidedReportMetrics {
     std::wstring analyzerSummaryText;
 };
 
+struct GuidedReportScorecard {
+    bool hasScorecard = false;
+    bool skipped = false;
+    std::wstring scorecardPath;
+    std::wstring scorecardTextPath;
+    std::wstring skipReason;
+    std::wstring telemetryFresh;
+    int telemetryEventCount = -1;
+    std::wstring telemetryReason;
+    std::wstring analyzerReportPath;
+    std::wstring analyzerStatus;
+    std::wstring analyzerError;
+    int overallFeel = -1;
+    int singleShotAccuracy = -1;
+    int spamSprayPenalty = -1;
+    int movementPenaltyFeel = -1;
+    int headshotFeel = -1;
+    int clientVisualSync = -1;
+    int shortBurstFeel = -1;
+    int longSprayPunishment = -1;
+    int pelletConsistencyFeel = -1;
+    int closeRangeLethalityFeel = -1;
+    std::wstring notes;
+    std::wstring globalNotes;
+    std::wstring warnings;
+};
+
 struct GuidedReportEntry {
     std::wstring timestamp;
     std::wstring weapon;
+    std::wstring reportKind;
     std::wstring sourceType;
     std::wstring sourceValue;
     std::wstring targetProfile;
@@ -760,6 +788,7 @@ struct GuidedReportEntry {
     bool hasJsonSidecar = false;
     bool parsedFromText = false;
     GuidedReportMetrics metrics;
+    GuidedReportScorecard scorecard;
 };
 
 std::wstring Utf8ToWide(const std::string& value) {
@@ -1258,6 +1287,14 @@ int ReadJsonInt(const hlcfg::JsonValue::Object& object, const std::wstring& key,
         return fallbackValue;
     }
     return static_cast<int>(value->AsNumber());
+}
+
+bool ReadJsonBool(const hlcfg::JsonValue::Object& object, const std::wstring& key, bool fallbackValue = false) {
+    const hlcfg::JsonValue* value = FindJsonMember(object, key);
+    if (value == nullptr || !value->IsBool()) {
+        return fallbackValue;
+    }
+    return value->AsBool();
 }
 
 std::wstring UnquoteCfgValue(const std::wstring& value) {
@@ -2595,7 +2632,7 @@ private:
     void CreateReportsPage() {
         HWND page = pages_[kReportsPageIndex];
 
-        CreateGroupBox(page, L"Guided Test Report History", 20, 20, 500, 310);
+        CreateGroupBox(page, L"Reports / Test History", 20, 20, 500, 310);
         CreateMultiSelectListBox(page, IDC_REPORT_LIST, 40, 55, 460, 210);
         CreateButton(page, L"Refresh", IDC_REPORT_REFRESH, 40, 280, 90, 24);
         CreateButton(page, L"Compare Selected", IDC_REPORT_COMPARE, 145, 280, 145, 24);
@@ -5193,6 +5230,16 @@ private:
         return std::filesystem::path(L".") / L"guided-tests";
     }
 
+    std::filesystem::path GetStockClientPlaytestReportFolder() const {
+        if (!environment_.repoRoot.empty()) {
+            return std::filesystem::path(environment_.repoRoot) / L"testbed" / L"logs" / L"reports" / L"stock-client-playtests";
+        }
+        if (!environment_.liveModRoot.empty()) {
+            return std::filesystem::path(environment_.liveModRoot) / L"reports" / L"stock-client-playtests";
+        }
+        return std::filesystem::path(L".") / L"stock-client-playtests";
+    }
+
     std::wstring BuildGuidedReportText() const {
         std::wstring report;
         report += L"Guided weapon test report\r\n";
@@ -5296,10 +5343,38 @@ private:
         return folders;
     }
 
+    std::vector<std::filesystem::path> GetStockClientPlaytestHistoryFolders() const {
+        std::vector<std::filesystem::path> folders;
+        const std::filesystem::path primary = GetStockClientPlaytestReportFolder();
+        if (!primary.empty()) {
+            folders.push_back(primary);
+        }
+        if (!environment_.liveModRoot.empty()) {
+            const std::filesystem::path liveFolder = std::filesystem::path(environment_.liveModRoot) / L"reports" / L"stock-client-playtests";
+            if (std::find(folders.begin(), folders.end(), liveFolder) == folders.end()) {
+                folders.push_back(liveFolder);
+            }
+        }
+        return folders;
+    }
+
     std::wstring GetReportTextValue(const std::wstring& text, const std::wstring& key) const {
         std::wstringstream stream(text);
         std::wstring line;
         const std::wstring expected = key + L":";
+        while (std::getline(stream, line)) {
+            const std::wstring trimmed = hlcfg::Trimmed(line);
+            if (trimmed.rfind(expected, 0) == 0) {
+                return hlcfg::Trimmed(trimmed.substr(expected.size()));
+            }
+        }
+        return {};
+    }
+
+    std::wstring GetReportTextEqualsValue(const std::wstring& text, const std::wstring& key) const {
+        std::wstringstream stream(text);
+        std::wstring line;
+        const std::wstring expected = key + L"=";
         while (std::getline(stream, line)) {
             const std::wstring trimmed = hlcfg::Trimmed(line);
             if (trimmed.rfind(expected, 0) == 0) {
@@ -5445,6 +5520,175 @@ private:
         return metrics;
     }
 
+    GuidedReportMetrics BuildMetricsFromAnalyzerFile(const std::wstring& analyzerPath) const {
+        if (analyzerPath.empty()) {
+            return {};
+        }
+
+        std::wstring analyzerText;
+        std::wstring errorMessage;
+        if (!ReadUtf8TextFile(std::filesystem::path(analyzerPath), analyzerText, errorMessage)) {
+            return {};
+        }
+
+        return BuildMetricsFromAnalyzerText(analyzerText);
+    }
+
+    std::wstring ScoreText(int value) const {
+        return value >= 0 ? std::to_wstring(value) : L"n/a";
+    }
+
+    std::wstring NotesPreview(const std::wstring& value) const {
+        std::wstring preview = hlcfg::Trimmed(value);
+        std::replace(preview.begin(), preview.end(), L'\r', L' ');
+        std::replace(preview.begin(), preview.end(), L'\n', L' ');
+        if (preview.empty()) {
+            return L"n/a";
+        }
+        constexpr std::size_t kMaxPreview = 72;
+        if (preview.size() > kMaxPreview) {
+            preview = preview.substr(0, kMaxPreview - 3) + L"...";
+        }
+        return preview;
+    }
+
+    GuidedReportScorecard LoadScorecardFields(
+        const hlcfg::JsonValue::Object& rootObject,
+        const hlcfg::JsonValue::Object& entryObject,
+        const std::filesystem::path& scorecardPath,
+        const std::filesystem::path& scorecardTextPath) const {
+        GuidedReportScorecard scorecard;
+        scorecard.hasScorecard = true;
+        scorecard.scorecardPath = scorecardPath.wstring();
+        std::error_code existsError;
+        if (std::filesystem::exists(scorecardTextPath, existsError) && !existsError) {
+            scorecard.scorecardTextPath = scorecardTextPath.wstring();
+        }
+        scorecard.skipped = ReadJsonBool(entryObject, L"skipped");
+        scorecard.skipReason = ReadJsonString(entryObject, L"skip_reason");
+        scorecard.telemetryFresh = ReadJsonString(entryObject, L"telemetry_fresh");
+        scorecard.telemetryEventCount = ReadJsonInt(entryObject, L"telemetry_event_count");
+        scorecard.telemetryReason = ReadJsonString(entryObject, L"telemetry_reason");
+        scorecard.analyzerReportPath = ReadJsonString(entryObject, L"analyzer_report");
+        scorecard.analyzerStatus = ReadJsonString(entryObject, L"analyzer_status");
+        scorecard.analyzerError = ReadJsonString(entryObject, L"analyzer_error");
+        scorecard.notes = ReadJsonString(entryObject, L"notes");
+        scorecard.globalNotes = ReadJsonString(entryObject, L"global_notes");
+        if (scorecard.globalNotes.empty()) {
+            scorecard.globalNotes = ReadJsonString(rootObject, L"global_notes");
+        }
+        scorecard.warnings = ReadJsonString(entryObject, L"warnings");
+
+        if (const hlcfg::JsonValue* ratingsValue = FindJsonMember(entryObject, L"ratings"); ratingsValue != nullptr && ratingsValue->IsObject()) {
+            const auto& ratings = ratingsValue->AsObject();
+            scorecard.overallFeel = ReadJsonInt(ratings, L"overall_feel");
+            scorecard.singleShotAccuracy = ReadJsonInt(ratings, L"single_shot_accuracy");
+            scorecard.spamSprayPenalty = ReadJsonInt(ratings, L"spam_spray_penalty");
+            scorecard.movementPenaltyFeel = ReadJsonInt(ratings, L"movement_penalty_feel");
+            scorecard.headshotFeel = ReadJsonInt(ratings, L"headshot_feel");
+            scorecard.clientVisualSync = ReadJsonInt(ratings, L"client_visual_sync");
+            scorecard.shortBurstFeel = ReadJsonInt(ratings, L"short_burst_feel");
+            scorecard.longSprayPunishment = ReadJsonInt(ratings, L"long_spray_punishment");
+            scorecard.pelletConsistencyFeel = ReadJsonInt(ratings, L"pellet_consistency_feel");
+            scorecard.closeRangeLethalityFeel = ReadJsonInt(ratings, L"close_range_lethality_feel");
+        }
+
+        return scorecard;
+    }
+
+    void ApplyStockScorecardRootFields(const hlcfg::JsonValue::Object& rootObject, GuidedReportEntry& entry) const {
+        entry.timestamp = ReadJsonString(rootObject, L"timestamp");
+        entry.sourceType = L"match_pack";
+        entry.sourceValue = ReadJsonString(rootObject, L"match_pack");
+        entry.targetProfile = ReadJsonString(rootObject, L"target_profile");
+        entry.targetSpot = ReadJsonString(rootObject, L"target_spot");
+        entry.scenario = ReadJsonBool(rootObject, L"scorecard_only") ? L"stock-client scorecard-only" : L"stock-client playtest";
+        entry.reportKind = L"stock-client";
+    }
+
+    bool LoadStockClientScorecardJson(
+        const std::filesystem::path& reportDirectory,
+        const std::filesystem::path& scorecardPath,
+        std::vector<GuidedReportEntry>& entries) const {
+        std::wstring text;
+        std::wstring errorMessage;
+        if (!ReadUtf8TextFile(scorecardPath, text, errorMessage)) {
+            return false;
+        }
+
+        hlcfg::JsonValue root;
+        if (!hlcfg::ParseJsonText(text, root, errorMessage) || !root.IsObject()) {
+            return false;
+        }
+
+        const auto& rootObject = root.AsObject();
+        const std::filesystem::path summaryPath = reportDirectory / L"summary.txt";
+        const std::filesystem::path scorecardTextPath = reportDirectory / L"scorecard.txt";
+        const std::filesystem::path defaultReportPath = std::filesystem::exists(summaryPath) ? summaryPath : scorecardPath;
+
+        const hlcfg::JsonValue* scoreEntriesValue = FindJsonMember(rootObject, L"entries");
+        if (scoreEntriesValue == nullptr || !scoreEntriesValue->IsArray()) {
+            return false;
+        }
+
+        bool addedAny = false;
+        for (const hlcfg::JsonValue& scoreEntryValue : scoreEntriesValue->AsArray()) {
+            if (!scoreEntryValue.IsObject()) {
+                continue;
+            }
+
+            const auto& scoreEntryObject = scoreEntryValue.AsObject();
+            GuidedReportEntry entry;
+            ApplyStockScorecardRootFields(rootObject, entry);
+            entry.weapon = ReadJsonString(scoreEntryObject, L"weapon");
+            entry.reportPath = defaultReportPath.wstring();
+            entry.jsonPath = scorecardPath.wstring();
+            entry.hasJsonSidecar = true;
+            entry.scorecard = LoadScorecardFields(rootObject, scoreEntryObject, scorecardPath, scorecardTextPath);
+            entry.analyzedLogPath = entry.scorecard.analyzerReportPath;
+            entry.metrics = BuildMetricsFromAnalyzerFile(entry.scorecard.analyzerReportPath);
+            if (entry.timestamp.empty()) {
+                entry.timestamp = reportDirectory.filename().wstring();
+            }
+            entries.push_back(std::move(entry));
+            addedAny = true;
+        }
+
+        return addedAny;
+    }
+
+    bool LoadStockClientSummaryReport(const std::filesystem::path& reportDirectory, GuidedReportEntry& entry) const {
+        const std::filesystem::path summaryPath = reportDirectory / L"summary.txt";
+        std::wstring summaryText;
+        std::wstring errorMessage;
+        if (!ReadUtf8TextFile(summaryPath, summaryText, errorMessage)) {
+            return false;
+        }
+
+        entry.reportKind = L"stock-client";
+        entry.reportPath = summaryPath.wstring();
+        entry.timestamp = GetReportTextEqualsValue(summaryText, L"timestamp");
+        entry.weapon = GetReportTextEqualsValue(summaryText, L"weapon_selection");
+        entry.sourceType = L"match_pack";
+        entry.sourceValue = GetReportTextEqualsValue(summaryText, L"match_pack");
+        entry.targetProfile = GetReportTextEqualsValue(summaryText, L"target_profile");
+        entry.targetSpot = GetReportTextEqualsValue(summaryText, L"target_spot");
+        entry.scenario = L"stock-client playtest";
+        if (entry.timestamp.empty()) {
+            entry.timestamp = reportDirectory.filename().wstring();
+        }
+
+        const std::filesystem::path analysisPath = reportDirectory / (entry.weapon + L"-analysis.txt");
+        std::error_code existsError;
+        if (!entry.weapon.empty() && std::filesystem::exists(analysisPath, existsError) && !existsError) {
+            entry.analyzedLogPath = analysisPath.wstring();
+            entry.metrics = BuildMetricsFromAnalyzerFile(entry.analyzedLogPath);
+        }
+
+        entry.parsedFromText = true;
+        return true;
+    }
+
     bool LoadGuidedReportJson(const std::filesystem::path& jsonPath, GuidedReportEntry& entry) const {
         std::wstring text;
         std::wstring errorMessage;
@@ -5458,6 +5702,7 @@ private:
         }
 
         const auto& object = root.AsObject();
+        entry.reportKind = L"guided";
         entry.timestamp = ReadJsonString(object, L"timestamp");
         entry.weapon = ReadJsonString(object, L"weapon");
         entry.sourceType = ReadJsonString(object, L"source_type");
@@ -5574,6 +5819,32 @@ private:
             reportEntries_.push_back(std::move(entry));
         }
 
+        for (const std::filesystem::path& folder : GetStockClientPlaytestHistoryFolders()) {
+            std::error_code error;
+            if (!std::filesystem::exists(folder, error) || error) {
+                continue;
+            }
+
+            for (const auto& directoryEntry : std::filesystem::directory_iterator(folder, error)) {
+                if (error || !directoryEntry.is_directory()) {
+                    continue;
+                }
+
+                const std::filesystem::path reportDirectory = directoryEntry.path();
+                const std::filesystem::path scorecardPath = reportDirectory / L"scorecard.json";
+                std::error_code existsError;
+                if (std::filesystem::exists(scorecardPath, existsError) && !existsError &&
+                    LoadStockClientScorecardJson(reportDirectory, scorecardPath, reportEntries_)) {
+                    continue;
+                }
+
+                GuidedReportEntry entry;
+                if (LoadStockClientSummaryReport(reportDirectory, entry)) {
+                    reportEntries_.push_back(std::move(entry));
+                }
+            }
+        }
+
         std::sort(reportEntries_.begin(), reportEntries_.end(), [](const GuidedReportEntry& left, const GuidedReportEntry& right) {
             return left.timestamp > right.timestamp;
         });
@@ -5593,12 +5864,35 @@ private:
         return entry.sourceType + L": " + entry.sourceValue;
     }
 
+    std::wstring ReportKindLabel(const GuidedReportEntry& entry) const {
+        if (!entry.reportKind.empty()) {
+            return entry.reportKind;
+        }
+        return entry.scorecard.hasScorecard ? L"stock-client" : L"guided";
+    }
+
+    std::wstring ScorecardNotesText(const GuidedReportEntry& entry) const {
+        if (!entry.scorecard.notes.empty()) {
+            return entry.scorecard.notes;
+        }
+        return entry.scorecard.globalNotes;
+    }
+
     std::wstring ReportListLabel(const GuidedReportEntry& entry) const {
         std::wstring label = entry.timestamp.empty() ? L"(unknown time)" : entry.timestamp;
+        label += L" | " + ReportKindLabel(entry);
         label += L" | " + (entry.weapon.empty() ? L"weapon?" : entry.weapon);
         label += L" | " + (entry.sourceValue.empty() ? entry.sourceType : entry.sourceValue);
         label += L" | " + (entry.targetProfile.empty() ? L"target?" : entry.targetProfile);
-        label += L" | " + (entry.scenario.empty() ? L"scenario?" : entry.scenario);
+        if (entry.scorecard.hasScorecard) {
+            label += L" | scorecard overall=" + ScoreText(entry.scorecard.overallFeel);
+            const std::wstring notes = NotesPreview(ScorecardNotesText(entry));
+            if (notes != L"n/a") {
+                label += L" | " + notes;
+            }
+        } else {
+            label += L" | " + (entry.scenario.empty() ? L"scenario?" : entry.scenario);
+        }
         if (!entry.hasJsonSidecar) {
             label += L" | text-only";
         }
@@ -5630,7 +5924,7 @@ private:
 
         RefreshReportSelectionDetails();
         if (lastReportStatus_.empty()) {
-            SetReportStatus(L"Loaded " + std::to_wstring(reportEntries_.size()) + L" guided test report(s). Select two or more, then click Compare Selected.");
+            SetReportStatus(L"Loaded " + std::to_wstring(reportEntries_.size()) + L" report history item(s). Select two or more, then click Compare Selected.");
         } else {
             SetReportStatus(lastReportStatus_);
         }
@@ -5677,6 +5971,7 @@ private:
     std::wstring BuildReportDetailsText(const GuidedReportEntry& entry) const {
         std::wstring text;
         text += L"timestamp: " + entry.timestamp + L"\r\n";
+        text += L"kind: " + ReportKindLabel(entry) + L"\r\n";
         text += L"weapon: " + entry.weapon + L"\r\n";
         text += L"source: " + ReportSourceLabel(entry) + L"\r\n";
         text += L"target_profile: " + entry.targetProfile + L"\r\n";
@@ -5685,6 +5980,33 @@ private:
         text += L"report: " + entry.reportPath + L"\r\n";
         text += L"json_sidecar: " + (entry.hasJsonSidecar ? entry.jsonPath : L"(missing; parsed as text)") + L"\r\n";
         text += L"log: " + entry.analyzedLogPath + L"\r\n";
+        if (entry.scorecard.hasScorecard) {
+            text += L"\r\nScorecard\r\n";
+            text += L"scorecard_json: " + entry.scorecard.scorecardPath + L"\r\n";
+            text += L"scorecard_txt: " + (entry.scorecard.scorecardTextPath.empty() ? L"n/a" : entry.scorecard.scorecardTextPath) + L"\r\n";
+            text += L"scorecard_skipped: " + std::wstring(entry.scorecard.skipped ? L"yes" : L"no") + L"\r\n";
+            if (entry.scorecard.skipped) {
+                text += L"skip_reason: " + entry.scorecard.skipReason + L"\r\n";
+            }
+            text += L"telemetry_fresh: " + (entry.scorecard.telemetryFresh.empty() ? L"n/a" : entry.scorecard.telemetryFresh) + L"\r\n";
+            text += L"telemetry_events: " + MetricText(entry.scorecard.telemetryEventCount) + L"\r\n";
+            text += L"analyzer_status: " + (entry.scorecard.analyzerStatus.empty() ? L"n/a" : entry.scorecard.analyzerStatus) + L"\r\n";
+            text += L"overall/single/spam_or_spray: " + ScoreText(entry.scorecard.overallFeel) + L" / " +
+                    ScoreText(entry.scorecard.singleShotAccuracy) + L" / " + ScoreText(entry.scorecard.spamSprayPenalty) + L"\r\n";
+            text += L"movement/headshot/visual_sync: " + ScoreText(entry.scorecard.movementPenaltyFeel) + L" / " +
+                    ScoreText(entry.scorecard.headshotFeel) + L" / " + ScoreText(entry.scorecard.clientVisualSync) + L"\r\n";
+            if (entry.scorecard.shortBurstFeel >= 0 || entry.scorecard.longSprayPunishment >= 0) {
+                text += L"mp5 short_burst/long_spray: " + ScoreText(entry.scorecard.shortBurstFeel) + L" / " +
+                        ScoreText(entry.scorecard.longSprayPunishment) + L"\r\n";
+            }
+            if (entry.scorecard.pelletConsistencyFeel >= 0 || entry.scorecard.closeRangeLethalityFeel >= 0) {
+                text += L"shotgun pellet_consistency/close_lethality: " + ScoreText(entry.scorecard.pelletConsistencyFeel) + L" / " +
+                        ScoreText(entry.scorecard.closeRangeLethalityFeel) + L"\r\n";
+            }
+            text += L"notes: " + NotesPreview(ScorecardNotesText(entry)) + L"\r\n";
+            text += L"scorecard_warnings: " + (entry.scorecard.warnings.empty() ? L"n/a" : entry.scorecard.warnings) + L"\r\n";
+        }
+        text += L"\r\nAnalyzer metrics\r\n";
         text += L"accepted_shots: " + MetricText(entry.metrics.acceptedShots) + L"\r\n";
         text += L"hits/kills: " + MetricText(entry.metrics.hitEvents) + L" / " + MetricText(entry.metrics.killEvents) + L"\r\n";
         text += L"headshots: " + MetricText(entry.metrics.headshotHits) + L" hits / " + MetricText(entry.metrics.headshotKills) + L" kills\r\n";
@@ -5721,8 +6043,9 @@ private:
 
         appendRow(text, L"file", [](const GuidedReportEntry& entry) { return std::filesystem::path(entry.reportPath).filename().wstring(); });
         appendRow(text, L"timestamp", [](const GuidedReportEntry& entry) { return entry.timestamp; });
+        appendRow(text, L"kind", [&](const GuidedReportEntry& entry) { return ReportKindLabel(entry); });
         appendRow(text, L"weapon", [](const GuidedReportEntry& entry) { return entry.weapon; });
-        appendRow(text, L"source", [&](const GuidedReportEntry& entry) { return ReportSourceLabel(entry); });
+        appendRow(text, L"config/preset/pack", [&](const GuidedReportEntry& entry) { return ReportSourceLabel(entry); });
         appendRow(text, L"target", [](const GuidedReportEntry& entry) { return entry.targetProfile; });
         appendRow(text, L"scenario", [](const GuidedReportEntry& entry) { return entry.scenario; });
         appendRow(text, L"accepted shots", [&](const GuidedReportEntry& entry) { return MetricText(entry.metrics.acceptedShots); });
@@ -5737,6 +6060,21 @@ private:
         appendRow(text, L"spread summary", [](const GuidedReportEntry& entry) { return entry.metrics.spreadSummary.empty() ? L"n/a" : entry.metrics.spreadSummary; });
         appendRow(text, L"damage summary", [](const GuidedReportEntry& entry) { return entry.metrics.damageSummary.empty() ? L"n/a" : entry.metrics.damageSummary; });
         appendRow(text, L"consistency warnings", [](const GuidedReportEntry& entry) { return entry.metrics.consistencyWarnings.empty() ? L"n/a" : entry.metrics.consistencyWarnings; });
+        appendRow(text, L"scorecard", [](const GuidedReportEntry& entry) {
+            return std::wstring(entry.scorecard.hasScorecard ? (entry.scorecard.skipped ? L"skipped" : L"yes") : L"no");
+        });
+        appendRow(text, L"telemetry freshness", [](const GuidedReportEntry& entry) { return entry.scorecard.telemetryFresh.empty() ? L"n/a" : entry.scorecard.telemetryFresh; });
+        appendRow(text, L"overall feel", [&](const GuidedReportEntry& entry) { return ScoreText(entry.scorecard.overallFeel); });
+        appendRow(text, L"single-shot accuracy", [&](const GuidedReportEntry& entry) { return ScoreText(entry.scorecard.singleShotAccuracy); });
+        appendRow(text, L"spam/spray penalty", [&](const GuidedReportEntry& entry) { return ScoreText(entry.scorecard.spamSprayPenalty); });
+        appendRow(text, L"movement penalty feel", [&](const GuidedReportEntry& entry) { return ScoreText(entry.scorecard.movementPenaltyFeel); });
+        appendRow(text, L"headshot feel", [&](const GuidedReportEntry& entry) { return ScoreText(entry.scorecard.headshotFeel); });
+        appendRow(text, L"visual/desync score", [&](const GuidedReportEntry& entry) { return ScoreText(entry.scorecard.clientVisualSync); });
+        appendRow(text, L"short burst feel", [&](const GuidedReportEntry& entry) { return ScoreText(entry.scorecard.shortBurstFeel); });
+        appendRow(text, L"long spray punishment", [&](const GuidedReportEntry& entry) { return ScoreText(entry.scorecard.longSprayPunishment); });
+        appendRow(text, L"pellet consistency", [&](const GuidedReportEntry& entry) { return ScoreText(entry.scorecard.pelletConsistencyFeel); });
+        appendRow(text, L"close-range lethality", [&](const GuidedReportEntry& entry) { return ScoreText(entry.scorecard.closeRangeLethalityFeel); });
+        appendRow(text, L"notes preview", [&](const GuidedReportEntry& entry) { return NotesPreview(ScorecardNotesText(entry)); });
         return text;
     }
 
@@ -5821,7 +6159,7 @@ private:
         }
 
         std::wstring output;
-        output += L"Guided test comparison\r\n";
+        output += L"Editor report comparison\r\n";
         output += L"timestamp: " + BuildLocalTimestampText(false) + L"\r\n\r\n";
         output += L"selected_reports:\r\n";
         for (std::size_t index : selected) {
@@ -5829,7 +6167,7 @@ private:
         }
         output += L"\r\ncomparison:\r\n" + lastReportComparisonText_;
 
-        const std::filesystem::path outputPath = GetReportComparisonFolder() / (L"guided-comparison-" + BuildLocalTimestampText(true) + L".txt");
+        const std::filesystem::path outputPath = GetReportComparisonFolder() / (L"report-comparison-" + BuildLocalTimestampText(true) + L".txt");
         std::wstring errorMessage;
         if (!WriteUtf8TextFile(outputPath, output, errorMessage)) {
             SetReportStatus(L"Unable to export comparison.\r\n\r\n" + errorMessage);

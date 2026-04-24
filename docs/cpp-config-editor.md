@@ -210,9 +210,19 @@ The `Reports` tab lists guided weapon test reports saved under:
 <repo-root>\testbed\logs\reports\guided-tests\
 ```
 
-New reports keep the readable `.txt` file and add a same-name `.json` sidecar. The sidecar stores normalized metadata and metrics so future comparisons do not need to scrape every value from the full analyzer text. The fields include timestamp, weapon, source type/value, target profile, target spot, scenario, analyzed log path, accepted shots, hits, kills, headshot hits/kills, pattern evidence, cadence evidence, burst-growth evidence, armor evidence, spread summary, damage summary, and consistency warnings.
+It also lists stock-client playtest report folders saved under:
+
+```text
+<repo-root>\testbed\logs\reports\stock-client-playtests\
+```
+
+New guided reports keep the readable `.txt` file and add a same-name `.json` sidecar. The sidecar stores normalized metadata and metrics so future comparisons do not need to scrape every value from the full analyzer text. The fields include timestamp, weapon, source type/value, target profile, target spot, scenario, analyzed log path, accepted shots, hits, kills, headshot hits/kills, pattern evidence, cadence evidence, burst-growth evidence, armor evidence, spread summary, damage summary, and consistency warnings.
 
 Older text-only reports remain supported. The editor lists them, marks them as `text-only`, and infers whatever metadata and metrics it can from the plain report headers and analyzer output. Missing metrics show as `n/a` instead of crashing the UI.
+
+Stock-client playtest folders are listed as `stock-client` history items. When a folder has `scorecard.json`, each weapon entry is parsed for match pack, target profile/spot, telemetry freshness, analyzer report path, overall feel, single-shot accuracy, spam/spray penalty, movement penalty feel, headshot feel, visual/desync score, notes, and MP5/shotgun-specific ratings when present. Folders without scorecards still list from `summary.txt` when available. Missing or malformed scorecard data is treated as unavailable instead of crashing the Reports tab.
+
+The report list shows whether a row has a scorecard, the overall feel score when available, and a short notes preview. The details panel shows scorecard paths, skipped state, telemetry freshness, analyzer status, subjective scores, notes, and warnings beside the analyzer metrics.
 
 Report actions:
 
@@ -226,7 +236,9 @@ Report actions:
 <repo-root>\testbed\logs\reports\guided-tests\comparisons\
 ```
 
-The comparison is evidence for tuning, not an automatic balance verdict. Use the metrics to spot regressions or useful differences, then still judge stock-client feel by shooting manually.
+The comparison includes analyzer metrics and subjective scorecard fields in the same table, including telemetry freshness, overall feel, single-shot accuracy, spam/spray penalty, movement penalty feel, headshot feel, visual/desync score, MP5 short-burst/long-spray ratings, shotgun pellet/lethality ratings, and notes preview. A scorecard-only report remains comparable even when analyzer metrics are unavailable; those analyzer cells show `n/a`.
+
+The comparison is evidence for tuning, not an automatic balance verdict. Use analyzer metrics to spot regressions or useful differences, use scorecards to preserve human feedback, and still judge stock-client feel by shooting manually.
 
 ## Telemetry tab
 
