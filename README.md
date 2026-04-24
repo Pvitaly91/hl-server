@@ -193,7 +193,15 @@ The editor now also has a dedicated `Browser` tab for the existing preset and ma
 - `Copy Apply Command` copies the exact live command for the currently loaded project
 - `Quick Export + Copy Apply Command` writes the cfg first, then copies the exact `exp_cfg_apply ...` or `exp_matchcfg_apply ...` command
 
-This is still a browser/export workflow, not direct live server control from the editor. The intended loop is: browse, preview, load, export, then run the copied command in HLDS.
+The editor also has a `Live Server` tab for a thinner direct-apply loop. Enter the target host, port, and `rcon_password`, then use:
+
+- `Test Connection` to send `status`
+- `Apply Current CFG` to quick-export the current project and send `exp_cfg_apply <cfg>`
+- `Apply Selected Match Pack` to send `exp_matchcfg_apply <pack>`
+- `Sandbox Reset` or the combined apply-plus-reset buttons for weapon-lab iteration
+- `Apply Sandbox Setup` to send the generated `exp_sandbox_*` setup sequence
+
+If RCON is unavailable or rejected, the editor keeps the workflow usable by copying the exact commands for manual HLDS paste. This is a convenience helper over the existing server console commands, not a new server-control protocol.
 
 For the current Glock and MP5 feel pass, the most important editor fields are now labeled more directly:
 
@@ -230,7 +238,7 @@ Export behavior:
 - When the editor can resolve the real Half-Life root from `HL_EXE` or `HLDS_EXE`, it defaults the export folder to `<HalfLifeRoot>\hlserver_testbed\`.
 - If the live root is not available, it falls back to `<repo-root>\testbed\mods\hlserver_testbed\`.
 - If you choose a custom folder inside `<HalfLifeRoot>\hlserver_testbed\cfg_profiles\`, the legacy `cfg_profiles\...` launcher and `exec cfg_profiles/...` workflow remains supported.
-- The editor does not hot-apply changes to a running server. Export the `.cfg`, then load it manually in HLDS or start a cfg-driven live session with the launcher commands below.
+- The `Live Server` tab can hot-send exported cfg, match-pack, sandbox-reset, and custom commands through GoldSrc RCON when the running HLDS has a matching `rcon_password`; manual console paste remains the fallback.
 - Exported `.cfg` files can now represent full match configs, not just weapon and dummy tuning. The generated file can include round, team round, buy, armor, and helmet cvars alongside the normal weapon and target settings.
 
 Troubleshooting:

@@ -141,9 +141,32 @@ Live-apply helper behavior:
 - when the loaded project includes match-pack metadata and exports into the live mod root, the copied command becomes `exp_matchcfg_apply <pack-name>`
 - otherwise the copied command is `exp_cfg_apply <cfg-name>`
 
-The editor still does not push settings directly into a running server. The browser tab is intentionally a browse/preview/export/copy-command workflow, not server control.
+The editor now also includes a `Live Server` tab for a small direct-apply workflow over GoldSrc RCON. It is intentionally thin: it sends the same server console commands you could paste manually.
 
-For repeatable weapon-lab sessions, take the copied command and use it as the sandbox source:
+Live Server fields:
+
+- host, default `127.0.0.1`
+- port, default `27015`
+- RCON password, entered by the user
+- cfg filename
+- match-pack name
+- sandbox weapon, target profile, and target spot
+- custom command text
+
+Live Server actions:
+
+- `Test Connection` sends `status`
+- `Apply Current CFG` quick-exports the open project and sends `exp_cfg_apply <cfg>`
+- `Apply Selected Match Pack` sends `exp_matchcfg_apply <pack>`
+- `Sandbox Reset` sends `exp_sandbox_reset`
+- `Apply CFG + Sandbox Reset` quick-exports the open project, applies it, then resets the sandbox
+- `Apply Pack + Sandbox Reset` applies the selected pack, then resets the sandbox
+- `Apply Sandbox Setup` sends the generated `exp_sandbox_*` command sequence
+- `Send Custom Command` sends the command text currently shown in the live tab
+
+If RCON is unavailable, the password is missing, or HLDS rejects the command, the editor shows the failure and copies the exact fallback commands for manual paste into the HLDS console. This is not full automatic server orchestration; it is a practical command sender over the existing cfg, match-pack, and sandbox command paths.
+
+For repeatable weapon-lab sessions, either send the generated sandbox setup from the `Live Server` tab or paste the equivalent commands manually:
 
 ```text
 exp_sandbox_start
@@ -153,7 +176,7 @@ exp_sandbox_target unarmored
 exp_sandbox_reset
 ```
 
-If the browser copied a plain cfg command, use the cfg name with `exp_sandbox_cfg <cfg-name>` instead. The editor still only browses, previews, exports, and copies commands; `exp_sandbox_*` runs on the server console and reuses the same exported cfg or match pack.
+If the browser copied a plain cfg command, use the cfg name with `exp_sandbox_cfg <cfg-name>` instead. The live tab reuses `exp_sandbox_*` on the server side; it does not introduce a separate sandbox config system.
 
 For the recommended stock-client-compatible Improved HLDM workflow, select `hldm_skill_default` in the match-pack browser, preview the cvar diff, click `Load Into Current Project`, and use `Copy Apply Command` or `Quick Export + Copy Apply Command`. The copied live command should be:
 

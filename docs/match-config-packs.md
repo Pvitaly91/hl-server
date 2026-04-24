@@ -204,8 +204,9 @@ The editor now also has a dedicated `Browser` tab for the pack layer:
 - the diff pane compares the current editor project against the incoming pack cvars
 - `Load Into Current Project` merges that pack into the open project
 - `Copy Apply Command` then gives the exact runtime command for the loaded project
+- the `Live Server` tab can send `exp_matchcfg_apply <pack>` through GoldSrc RCON when host, port, and `rcon_password` are configured
 
-That means the pack layer can now be reused from inside the editor without leaving the existing `.hlcfg.json -> .cfg -> apply command` workflow.
+That means the pack layer can now be reused from inside the editor without leaving the existing `.hlcfg.json -> .cfg -> apply command` workflow. If RCON is unavailable, the editor falls back to copying the exact command for manual HLDS paste.
 
 ## Recommended workflow
 

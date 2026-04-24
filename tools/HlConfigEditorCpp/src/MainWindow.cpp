@@ -2,12 +2,14 @@
 
 #include <commctrl.h>
 #include <commdlg.h>
+#include <cctype>
 #include <cwchar>
 #include <cwctype>
 #include <filesystem>
 #include <fstream>
 #include <cstring>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -30,6 +32,7 @@ constexpr wchar_t kPageWindowClassName[] = L"HlConfigEditorCppPage";
 constexpr wchar_t kWindowTitle[] = L"HL Weapon Config Editor (C++)";
 constexpr int kWindowWidth = 1160;
 constexpr int kWindowHeight = 860;
+constexpr int kRconTimeoutMilliseconds = 1500;
 
 double ParseConfigDouble(const std::wstring& value, double fallbackValue) {
     if (value.empty()) {
@@ -279,6 +282,27 @@ enum ControlId : int {
     IDC_BROWSER_OPEN_LIVE_MOD_FOLDER,
     IDC_BROWSER_STATUS,
 
+    IDC_LIVE_SERVER_HOST = 1700,
+    IDC_LIVE_SERVER_PORT,
+    IDC_LIVE_SERVER_PASSWORD,
+    IDC_LIVE_CFG_FILE,
+    IDC_LIVE_MATCH_PACK,
+    IDC_LIVE_SANDBOX_WEAPON,
+    IDC_LIVE_SANDBOX_TARGET,
+    IDC_LIVE_SANDBOX_SPOT,
+    IDC_LIVE_CUSTOM_COMMAND,
+    IDC_LIVE_STATUS,
+    IDC_LIVE_TEST_CONNECTION,
+    IDC_LIVE_APPLY_CFG,
+    IDC_LIVE_APPLY_MATCH_PACK,
+    IDC_LIVE_SANDBOX_RESET,
+    IDC_LIVE_APPLY_CFG_SANDBOX_RESET,
+    IDC_LIVE_APPLY_PACK_SANDBOX_RESET,
+    IDC_LIVE_APPLY_SANDBOX_SETUP,
+    IDC_LIVE_COPY_SANDBOX_SEQUENCE,
+    IDC_LIVE_SEND_CUSTOM,
+    IDC_LIVE_COPY_FALLBACK,
+
     IDC_LIVE_MOD_FOLDER_PREVIEW = 1400,
     IDC_EXPORT_FOLDER,
     IDC_BROWSE_EXPORT_FOLDER,
@@ -300,12 +324,13 @@ enum ControlId : int {
     IDC_EXPORT_STATUS,
 };
 
-constexpr int kPageCount = 11;
+constexpr int kPageCount = 12;
 constexpr int kRoundPageIndex = 6;
 constexpr int kTeamRoundPageIndex = 7;
 constexpr int kBuyEquipmentPageIndex = 8;
 constexpr int kBrowserPageIndex = 9;
-constexpr int kExportPageIndex = 10;
+constexpr int kLiveServerPageIndex = 10;
+constexpr int kExportPageIndex = 11;
 
 HFONT GetUiFont() {
     return static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
@@ -634,6 +659,312 @@ std::wstring Utf8ToWide(const std::string& value) {
     std::wstring result(static_cast<std::size_t>(required), L'\0');
     MultiByteToWideChar(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), result.data(), required);
     return result;
+}
+
+std::string WideToUtf8(const std::wstring& value) {
+    if (value.empty()) {
+        return {};
+    }
+
+    const int required = WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), nullptr, 0, nullptr, nullptr);
+    if (required <= 0) {
+        return {};
+    }
+
+    std::string result(static_cast<std::size_t>(required), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), result.data(), required, nullptr, nullptr);
+    return result;
+}
+
+std::string BuildGoldSrcConnectionlessPacket(const std::string& payload) {
+    return std::string(4, static_cast<char>(0xFF)) + payload;
+}
+
+std::string StripGoldSrcConnectionlessHeader(const std::string& packet) {
+    if (packet.size() >= 4 &&
+        static_cast<unsigned char>(packet[0]) == 0xFF &&
+        static_cast<unsigned char>(packet[1]) == 0xFF &&
+        static_cast<unsigned char>(packet[2]) == 0xFF &&
+        static_cast<unsigned char>(packet[3]) == 0xFF) {
+        return packet.substr(4);
+    }
+
+    return packet;
+}
+
+std::string StripGoldSrcPrintPrefix(const std::string& payload) {
+    // GoldSrc RCON command replies are usually S2A_PRINT packets with a leading 'l' marker.
+    if (!payload.empty() && payload.front() == 'l') {
+        return payload.substr(1);
+    }
+    return payload;
+}
+
+std::wstring TrimRconResponseText(const std::wstring& value) {
+    std::wstring result = value;
+    while (!result.empty() && (result.back() == L'\0' || result.back() == L'\n' || result.back() == L'\r')) {
+        result.pop_back();
+    }
+    return result;
+}
+
+bool ParseUnsignedShortPort(const std::wstring& value, unsigned short& port) {
+    const std::wstring trimmed = hlcfg::Trimmed(value);
+    if (trimmed.empty()) {
+        return false;
+    }
+
+    wchar_t* end = nullptr;
+    const long parsed = std::wcstol(trimmed.c_str(), &end, 10);
+    if (end == trimmed.c_str() || parsed <= 0 || parsed > 65535) {
+        return false;
+    }
+
+    port = static_cast<unsigned short>(parsed);
+    return true;
+}
+
+struct LiveRconResult {
+    bool success = false;
+    std::wstring response;
+    std::wstring error;
+};
+
+class WsaSession {
+public:
+    WsaSession() {
+        initialized_ = WSAStartup(MAKEWORD(2, 2), &data_) == 0;
+    }
+
+    ~WsaSession() {
+        if (initialized_) {
+            WSACleanup();
+        }
+    }
+
+    bool IsInitialized() const {
+        return initialized_;
+    }
+
+private:
+    WSADATA data_{};
+    bool initialized_ = false;
+};
+
+struct SocketHandleCloser {
+    void operator()(SOCKET* socketHandle) const {
+        if (socketHandle != nullptr) {
+            if (*socketHandle != INVALID_SOCKET) {
+                closesocket(*socketHandle);
+            }
+            delete socketHandle;
+        }
+    }
+};
+
+using SocketHandle = std::unique_ptr<SOCKET, SocketHandleCloser>;
+
+bool ResolveRconAddress(const std::wstring& host, unsigned short port, sockaddr_in& address, std::wstring& errorMessage) {
+    const std::string hostUtf8 = WideToUtf8(hlcfg::Trimmed(host));
+    if (hostUtf8.empty()) {
+        errorMessage = L"Server host is empty.";
+        return false;
+    }
+
+    address = {};
+    address.sin_family = AF_INET;
+    address.sin_port = htons(port);
+
+    const unsigned long parsedAddress = inet_addr(hostUtf8.c_str());
+    if (parsedAddress != INADDR_NONE) {
+        address.sin_addr.s_addr = parsedAddress;
+        return true;
+    }
+
+    hostent* hostEntry = gethostbyname(hostUtf8.c_str());
+    if (hostEntry == nullptr || hostEntry->h_addr_list == nullptr || hostEntry->h_addr_list[0] == nullptr) {
+        errorMessage = L"Unable to resolve RCON host: " + host;
+        return false;
+    }
+
+    memcpy(&address.sin_addr, hostEntry->h_addr_list[0], static_cast<std::size_t>(hostEntry->h_length));
+    return true;
+}
+
+bool SendUdpPacket(SOCKET socketHandle, const sockaddr_in& address, const std::string& packet, std::wstring& errorMessage) {
+    const int sent = sendto(
+        socketHandle,
+        packet.data(),
+        static_cast<int>(packet.size()),
+        0,
+        reinterpret_cast<const sockaddr*>(&address),
+        sizeof(address));
+    if (sent == SOCKET_ERROR || sent != static_cast<int>(packet.size())) {
+        errorMessage = L"UDP send failed with WinSock error " + std::to_wstring(WSAGetLastError()) + L".";
+        return false;
+    }
+
+    return true;
+}
+
+bool ReceiveUdpPacket(SOCKET socketHandle, std::string& packet, std::wstring& errorMessage) {
+    char buffer[8192]{};
+    sockaddr_in fromAddress{};
+    int fromLength = sizeof(fromAddress);
+    const int received = recvfrom(socketHandle, buffer, static_cast<int>(sizeof(buffer)), 0, reinterpret_cast<sockaddr*>(&fromAddress), &fromLength);
+    if (received == SOCKET_ERROR) {
+        const int errorCode = WSAGetLastError();
+        if (errorCode == WSAETIMEDOUT) {
+            errorMessage = L"RCON response timed out.";
+        } else {
+            errorMessage = L"UDP receive failed with WinSock error " + std::to_wstring(errorCode) + L".";
+        }
+        return false;
+    }
+
+    packet.assign(buffer, buffer + received);
+    return true;
+}
+
+bool ExtractRconChallenge(const std::string& packet, std::string& challenge, std::wstring& errorMessage) {
+    const std::string text = StripGoldSrcConnectionlessHeader(packet);
+    const std::string marker = "challenge rcon";
+    const std::size_t markerPosition = text.find(marker);
+    if (markerPosition == std::string::npos) {
+        errorMessage = L"HLDS did not return an RCON challenge. Response was:\n" + Utf8ToWide(text);
+        return false;
+    }
+
+    std::size_t start = markerPosition + marker.size();
+    while (start < text.size() && std::isspace(static_cast<unsigned char>(text[start]))) {
+        ++start;
+    }
+
+    std::size_t end = start;
+    while (end < text.size() && !std::isspace(static_cast<unsigned char>(text[end]))) {
+        ++end;
+    }
+
+    challenge = text.substr(start, end - start);
+    if (challenge.empty()) {
+        errorMessage = L"HLDS returned an empty RCON challenge.";
+        return false;
+    }
+
+    return true;
+}
+
+bool SendGoldSrcRconCommands(
+    const std::wstring& host,
+    const std::wstring& portText,
+    const std::wstring& password,
+    const std::vector<std::wstring>& commands,
+    LiveRconResult& result) {
+    result = {};
+
+    unsigned short port = 0;
+    if (!ParseUnsignedShortPort(portText, port)) {
+        result.error = L"Server port must be a number from 1 to 65535.";
+        return false;
+    }
+
+    if (hlcfg::Trimmed(password).empty()) {
+        result.error = L"RCON password is empty. Enter the server rcon_password or copy the fallback commands.";
+        return false;
+    }
+
+    std::vector<std::wstring> filteredCommands;
+    for (const std::wstring& command : commands) {
+        const std::wstring trimmed = hlcfg::Trimmed(command);
+        if (!trimmed.empty()) {
+            filteredCommands.push_back(trimmed);
+        }
+    }
+
+    if (filteredCommands.empty()) {
+        result.error = L"No live command was provided.";
+        return false;
+    }
+
+    WsaSession wsa;
+    if (!wsa.IsInitialized()) {
+        result.error = L"Unable to initialize WinSock.";
+        return false;
+    }
+
+    sockaddr_in address{};
+    if (!ResolveRconAddress(host, port, address, result.error)) {
+        return false;
+    }
+
+    SocketHandle socketHandle(new SOCKET(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)));
+    if (*socketHandle == INVALID_SOCKET) {
+        result.error = L"Unable to create UDP socket. WinSock error " + std::to_wstring(WSAGetLastError()) + L".";
+        return false;
+    }
+
+    int timeout = kRconTimeoutMilliseconds;
+    setsockopt(*socketHandle, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+    setsockopt(*socketHandle, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+
+    if (!SendUdpPacket(*socketHandle, address, BuildGoldSrcConnectionlessPacket("challenge rcon\n"), result.error)) {
+        return false;
+    }
+
+    std::string challengePacket;
+    if (!ReceiveUdpPacket(*socketHandle, challengePacket, result.error)) {
+        result.error += L"\nConfirm HLDS is running, the host/port are correct, and rcon_password is set.";
+        return false;
+    }
+
+    std::string challenge;
+    if (!ExtractRconChallenge(challengePacket, challenge, result.error)) {
+        return false;
+    }
+
+    const std::string passwordUtf8 = WideToUtf8(password);
+    if (passwordUtf8.find('"') != std::string::npos || passwordUtf8.find('\n') != std::string::npos || passwordUtf8.find('\r') != std::string::npos) {
+        result.error = L"RCON password contains unsupported quote or newline characters.";
+        return false;
+    }
+
+    std::wstring response;
+    for (const std::wstring& command : filteredCommands) {
+        const std::string commandUtf8 = WideToUtf8(command);
+        if (commandUtf8.find('\n') != std::string::npos || commandUtf8.find('\r') != std::string::npos) {
+            result.error = L"Live command contains an unsupported newline. Send one command per action.";
+            return false;
+        }
+
+        response += L"> " + command + L"\r\n";
+        const std::string packet = BuildGoldSrcConnectionlessPacket("rcon " + challenge + " \"" + passwordUtf8 + "\" " + commandUtf8 + "\n");
+        if (!SendUdpPacket(*socketHandle, address, packet, result.error)) {
+            return false;
+        }
+
+        std::string commandPacket;
+        std::wstring receiveError;
+        if (ReceiveUdpPacket(*socketHandle, commandPacket, receiveError)) {
+            std::wstring payload = TrimRconResponseText(Utf8ToWide(StripGoldSrcPrintPrefix(StripGoldSrcConnectionlessHeader(commandPacket))));
+            if (!payload.empty()) {
+                response += payload + L"\r\n";
+            }
+        } else {
+            response += L"(no response before timeout; command may still have been accepted)\r\n";
+        }
+    }
+
+    if (response.find(L"Bad rcon_password") != std::wstring::npos ||
+        response.find(L"Bad Password") != std::wstring::npos ||
+        response.find(L"No password set") != std::wstring::npos) {
+        result.error = L"HLDS rejected the RCON command. Check rcon_password.";
+        result.response = response;
+        return false;
+    }
+
+    result.success = true;
+    result.response = response;
+    return true;
 }
 
 bool ReadUtf8TextFile(const std::filesystem::path& path, std::wstring& text, std::wstring& errorMessage) {
@@ -1127,6 +1458,36 @@ private:
         case IDC_BROWSER_OPEN_LIVE_MOD_FOLDER:
             OpenResolvedFolder(GetLiveModFolder(), L"The live mod folder could not be resolved.", L"Opened live mod folder");
             return 0;
+        case IDC_LIVE_TEST_CONNECTION:
+            TestLiveServerConnection();
+            return 0;
+        case IDC_LIVE_APPLY_CFG:
+            ApplyCurrentCfgToLiveServer(false);
+            return 0;
+        case IDC_LIVE_APPLY_MATCH_PACK:
+            ApplySelectedMatchPackToLiveServer(false);
+            return 0;
+        case IDC_LIVE_SANDBOX_RESET:
+            SendLiveCommandSequence({L"exp_sandbox_reset"}, L"Sandbox reset");
+            return 0;
+        case IDC_LIVE_APPLY_CFG_SANDBOX_RESET:
+            ApplyCurrentCfgToLiveServer(true);
+            return 0;
+        case IDC_LIVE_APPLY_PACK_SANDBOX_RESET:
+            ApplySelectedMatchPackToLiveServer(true);
+            return 0;
+        case IDC_LIVE_APPLY_SANDBOX_SETUP:
+            SendSandboxSetupToLiveServer();
+            return 0;
+        case IDC_LIVE_COPY_SANDBOX_SEQUENCE:
+            CopySandboxSequence();
+            return 0;
+        case IDC_LIVE_SEND_CUSTOM:
+            SendCustomLiveCommand();
+            return 0;
+        case IDC_LIVE_COPY_FALLBACK:
+            CopyLastLiveFallbackCommands();
+            return 0;
         case IDC_BROWSE_EXPORT_FOLDER:
             BrowseExportFolder();
             return 0;
@@ -1162,11 +1523,20 @@ private:
             return 0;
         }
 
+        if ((notifyCode == EN_CHANGE || notifyCode == CBN_SELCHANGE) && IsLiveServerControl(controlId)) {
+            if (controlId == IDC_LIVE_CUSTOM_COMMAND) {
+                return 0;
+            }
+            RefreshLiveServerCommandPreview(false);
+            return 0;
+        }
+
         if (notifyCode == EN_CHANGE || notifyCode == BN_CLICKED || notifyCode == CBN_SELCHANGE) {
             if (controlId != IDC_LIVE_MOD_FOLDER_PREVIEW && controlId != IDC_LAUNCHER_PREVIEW &&
                 controlId != IDC_EXEC_PREVIEW && controlId != IDC_CFG_PREVIEW &&
                 controlId != IDC_HALF_LIFE_ROOT_PREVIEW && controlId != IDC_QUICK_EXPORT_TARGET_PREVIEW &&
-                controlId != IDC_EDITOR_EXE_PATH_PREVIEW && controlId != IDC_EXPORT_STATUS) {
+                controlId != IDC_EDITOR_EXE_PATH_PREVIEW && controlId != IDC_EXPORT_STATUS &&
+                !IsLiveServerControl(controlId)) {
                 MaybeRefreshSuggestedCfgFileName(controlId);
                 dirty_ = true;
                 UpdateWindowTitle();
@@ -1218,6 +1588,7 @@ private:
             L"Team Round",
             L"Buy & Equipment",
             L"Browser",
+            L"Live Server",
             L"Export",
         };
         for (int index = 0; index < kPageCount; ++index) {
@@ -1240,6 +1611,7 @@ private:
         CreateTeamRoundPage();
         CreateBuyEquipmentPage();
         CreateBrowserPage();
+        CreateLiveServerPage();
         CreateExportPage();
         ShowActivePage(0);
     }
@@ -1754,6 +2126,55 @@ private:
         CreateMultiLineEdit(page, IDC_BROWSER_STATUS, 700, 645, 320, 38, true);
     }
 
+    void CreateLiveServerPage() {
+        HWND page = pages_[kLiveServerPageIndex];
+
+        CreateGroupBox(page, L"Connection", 20, 20, 500, 165);
+        CreateLabel(page, L"Server host", 40, 55, 120, 20);
+        CreateEdit(page, IDC_LIVE_SERVER_HOST, 170, 50, 200, 24);
+        CreateLabel(page, L"Port", 390, 55, 40, 20);
+        CreateEdit(page, IDC_LIVE_SERVER_PORT, 435, 50, 60, 24);
+        CreateLabel(page, L"RCON password", 40, 90, 120, 20);
+        CreateEdit(page, IDC_LIVE_SERVER_PASSWORD, 170, 85, 325, 24, ES_PASSWORD);
+        CreateButton(page, L"Test Connection", IDC_LIVE_TEST_CONNECTION, 40, 125, 150, 24);
+        CreateButton(page, L"Copy Last Fallback", IDC_LIVE_COPY_FALLBACK, 205, 125, 160, 24);
+        CreateLabel(page, L"If RCON is missing or rejected, the exact commands are copied for manual HLDS paste.", 40, 155, 430, 20);
+
+        CreateGroupBox(page, L"Live Apply", 540, 20, 520, 205);
+        CreateLabel(page, L"CFG file", 560, 55, 100, 20);
+        CreateEdit(page, IDC_LIVE_CFG_FILE, 690, 50, 310, 24);
+        CreateButton(page, L"Apply Current CFG", IDC_LIVE_APPLY_CFG, 560, 85, 165, 24);
+        CreateButton(page, L"Apply CFG + Sandbox Reset", IDC_LIVE_APPLY_CFG_SANDBOX_RESET, 740, 85, 220, 24);
+        CreateLabel(page, L"Match pack", 560, 125, 100, 20);
+        CreateEdit(page, IDC_LIVE_MATCH_PACK, 690, 120, 310, 24);
+        CreateButton(page, L"Apply Selected Match Pack", IDC_LIVE_APPLY_MATCH_PACK, 560, 155, 210, 24);
+        CreateButton(page, L"Apply Pack + Sandbox Reset", IDC_LIVE_APPLY_PACK_SANDBOX_RESET, 785, 155, 210, 24);
+        CreateLabel(page, L"CFG actions quick-export current project before sending exp_cfg_apply.", 560, 190, 430, 20);
+
+        CreateGroupBox(page, L"Sandbox Setup", 20, 215, 1040, 185);
+        CreateLabel(page, L"Weapon", 40, 250, 80, 20);
+        HWND weaponCombo = CreateCombo(page, IDC_LIVE_SANDBOX_WEAPON, 120, 245, 140, 140);
+        ComboBox_AddString(weaponCombo, L"glock");
+        ComboBox_AddString(weaponCombo, L"mp5");
+        ComboBox_AddString(weaponCombo, L"357");
+        ComboBox_AddString(weaponCombo, L"shotgun");
+        ComboBox_SetCurSel(weaponCombo, 0);
+        CreateLabel(page, L"Target profile", 285, 250, 110, 20);
+        CreateEdit(page, IDC_LIVE_SANDBOX_TARGET, 395, 245, 190, 24);
+        CreateLabel(page, L"Target spot", 610, 250, 90, 20);
+        CreateEdit(page, IDC_LIVE_SANDBOX_SPOT, 700, 245, 170, 24);
+        CreateButton(page, L"Sandbox Reset", IDC_LIVE_SANDBOX_RESET, 890, 245, 140, 24);
+        CreateLabel(page, L"Generated sandbox sequence", 40, 290, 160, 20);
+        CreateMultiLineEdit(page, IDC_LIVE_CUSTOM_COMMAND, 205, 285, 470, 70, false);
+        CreateButton(page, L"Apply Sandbox Setup", IDC_LIVE_APPLY_SANDBOX_SETUP, 700, 285, 180, 24);
+        CreateButton(page, L"Copy Sandbox Sequence", IDC_LIVE_COPY_SANDBOX_SEQUENCE, 700, 320, 180, 24);
+        CreateButton(page, L"Send Custom Command", IDC_LIVE_SEND_CUSTOM, 895, 285, 150, 24);
+        CreateLabel(page, L"The sequence uses exp_sandbox_* commands and the selected cfg or match pack above.", 700, 355, 320, 20);
+
+        CreateGroupBox(page, L"Live Status", 20, 420, 1040, 250);
+        CreateMultiLineEdit(page, IDC_LIVE_STATUS, 40, 450, 990, 190, true);
+    }
+
     void CreateExportPage() {
         HWND page = pages_[kExportPageIndex];
         CreateGroupBox(page, L"Resolved Paths And Targets", 20, 20, 1040, 255);
@@ -1820,6 +2241,8 @@ private:
             RefreshExportPreview(true);
         } else if (pageIndex == kBrowserPageIndex) {
             RefreshBrowserPanels();
+        } else if (pageIndex == kLiveServerPageIndex) {
+            RefreshLiveServerCommandPreview(false);
         }
     }
 
@@ -1828,6 +2251,8 @@ private:
         document_.exportSettings.exportFolder = environment_.defaultExportFolder;
         document_.exportSettings.cfgFileName = BuildSuggestedCfgFileName(document_);
         lastBrowserStatus_.clear();
+        lastLiveStatus_.clear();
+        lastLiveFallbackCommands_.clear();
         dirty_ = false;
     }
 
@@ -3152,6 +3577,7 @@ private:
         RefreshResolvedExportInfo();
         RefreshMatchSummary();
         RefreshBrowserControls();
+        RefreshLiveServerCommandPreview(true);
 
         if (lastActionStatus_.empty()) {
             lastActionStatus_ = L"Ready.\n\nQuick export target:\n" + BuildQuickExportTargetPathPreview();
@@ -3594,6 +4020,359 @@ private:
         SetActionStatus(std::wstring(actionLabel) + L":\n" + folder);
     }
 
+    bool IsLiveServerControl(int controlId) const {
+        return controlId >= IDC_LIVE_SERVER_HOST && controlId <= IDC_LIVE_COPY_FALLBACK;
+    }
+
+    void SetLiveStatus(const std::wstring& value) {
+        lastLiveStatus_ = value;
+        const bool wasLoadingControls = loadingControls_;
+        loadingControls_ = true;
+        SetTextValue(IDC_LIVE_STATUS, value);
+        loadingControls_ = wasLoadingControls;
+    }
+
+    std::wstring JoinCommandsForClipboard(const std::vector<std::wstring>& commands) const {
+        std::wstring text;
+        for (const std::wstring& command : commands) {
+            const std::wstring trimmed = hlcfg::Trimmed(command);
+            if (trimmed.empty()) {
+                continue;
+            }
+
+            if (!text.empty()) {
+                text += L"\r\n";
+            }
+            text += trimmed;
+        }
+        return text;
+    }
+
+    std::vector<std::wstring> SplitLiveCommandLines(const std::wstring& value) const {
+        std::vector<std::wstring> commands;
+        std::wstringstream stream(value);
+        std::wstring line;
+        while (std::getline(stream, line)) {
+            const std::wstring trimmed = hlcfg::Trimmed(line);
+            if (!trimmed.empty()) {
+                commands.push_back(trimmed);
+            }
+        }
+        return commands;
+    }
+
+    std::wstring GetLiveServerHost() const {
+        std::wstring host = hlcfg::Trimmed(GetTextValue(IDC_LIVE_SERVER_HOST));
+        return host.empty() ? L"127.0.0.1" : host;
+    }
+
+    std::wstring GetLiveServerPort() const {
+        std::wstring port = hlcfg::Trimmed(GetTextValue(IDC_LIVE_SERVER_PORT));
+        return port.empty() ? L"27015" : port;
+    }
+
+    std::wstring GetLiveCfgFileName() const {
+        std::wstring cfg = hlcfg::Trimmed(GetTextValue(IDC_LIVE_CFG_FILE));
+        if (cfg.empty()) {
+            cfg = GetEffectiveCfgFileNameForQuickExport();
+        }
+        return hlcfg::EnsureCfgFileName(cfg);
+    }
+
+    std::wstring GetLiveMatchPackName() const {
+        std::wstring pack = hlcfg::Trimmed(GetTextValue(IDC_LIVE_MATCH_PACK));
+        if (pack.empty()) {
+            pack = hlcfg::Trimmed(GetTextValue(IDC_MATCH_PACK_NAME));
+        }
+        return pack;
+    }
+
+    std::wstring GetLiveSandboxWeapon() const {
+        std::wstring weapon = GetComboSelectionValue(IDC_LIVE_SANDBOX_WEAPON);
+        if (weapon.empty()) {
+            weapon = GetWeaponSelection();
+        }
+        return weapon.empty() ? L"glock" : weapon;
+    }
+
+    std::wstring GetLiveSandboxTargetProfile() const {
+        std::wstring profile = hlcfg::Trimmed(GetTextValue(IDC_LIVE_SANDBOX_TARGET));
+        if (profile.empty()) {
+            profile = hlcfg::Trimmed(GetTextValue(IDC_DUMMY_TARGET_PROFILE_NAME));
+        }
+        return profile;
+    }
+
+    std::wstring GetLiveSandboxSpot() const {
+        return hlcfg::Trimmed(GetTextValue(IDC_LIVE_SANDBOX_SPOT));
+    }
+
+    bool CopyCommandListToClipboard(const std::vector<std::wstring>& commands, const wchar_t* actionLabel) {
+        const std::wstring text = JoinCommandsForClipboard(commands);
+        if (text.empty()) {
+            SetLiveStatus(std::wstring(actionLabel) + L": no command to copy.");
+            return false;
+        }
+
+        if (!CopyTextToClipboard(hwnd_, text)) {
+            SetLiveStatus(std::wstring(actionLabel) + L": unable to copy commands to the clipboard.\r\n\r\n" + text);
+            return false;
+        }
+
+        lastLiveFallbackCommands_ = commands;
+        SetLiveStatus(std::wstring(actionLabel) + L": copied commands.\r\n\r\n" + text);
+        return true;
+    }
+
+    void CopyLastLiveFallbackCommands() {
+        if (lastLiveFallbackCommands_.empty()) {
+            RefreshLiveServerCommandPreview(false);
+        }
+
+        if (lastLiveFallbackCommands_.empty()) {
+            SetLiveStatus(L"No fallback commands are available yet.");
+            return;
+        }
+
+        CopyCommandListToClipboard(lastLiveFallbackCommands_, L"Copy fallback");
+    }
+
+    bool SendLiveCommandSequence(const std::vector<std::wstring>& commands, const wchar_t* actionLabel) {
+        std::vector<std::wstring> filteredCommands;
+        for (const std::wstring& command : commands) {
+            const std::wstring trimmed = hlcfg::Trimmed(command);
+            if (!trimmed.empty()) {
+                filteredCommands.push_back(trimmed);
+            }
+        }
+
+        if (filteredCommands.empty()) {
+            SetLiveStatus(std::wstring(actionLabel) + L": no commands to send.");
+            return false;
+        }
+
+        lastLiveFallbackCommands_ = filteredCommands;
+
+        LiveRconResult rconResult;
+        const bool sent = SendGoldSrcRconCommands(
+            GetLiveServerHost(),
+            GetLiveServerPort(),
+            GetTextValue(IDC_LIVE_SERVER_PASSWORD),
+            filteredCommands,
+            rconResult);
+
+        if (!sent) {
+            const bool copied = CopyTextToClipboard(hwnd_, JoinCommandsForClipboard(filteredCommands));
+            std::wstring status = std::wstring(actionLabel) + L" could not be sent through RCON.\r\n\r\n";
+            status += rconResult.error.empty() ? L"RCON failed without a detailed error." : rconResult.error;
+            if (!rconResult.response.empty()) {
+                status += L"\r\n\r\nServer response:\r\n" + rconResult.response;
+            }
+            status += copied ? L"\r\n\r\nFallback commands copied for manual HLDS paste:\r\n"
+                             : L"\r\n\r\nFallback commands could not be copied; paste manually:\r\n";
+            status += JoinCommandsForClipboard(filteredCommands);
+            SetLiveStatus(status);
+            return false;
+        }
+
+        std::wstring status = std::wstring(actionLabel) + L" sent to ";
+        status += GetLiveServerHost() + L":" + GetLiveServerPort();
+        status += L".\r\n\r\n";
+        status += rconResult.response.empty() ? JoinCommandsForClipboard(filteredCommands) : rconResult.response;
+        SetLiveStatus(status);
+        return true;
+    }
+
+    std::vector<std::wstring> BuildSandboxSetupCommands() const {
+        std::vector<std::wstring> commands;
+        commands.push_back(L"exp_sandbox_start");
+        commands.push_back(L"exp_sandbox_weapon " + GetLiveSandboxWeapon());
+
+        const std::wstring pack = GetLiveMatchPackName();
+        const std::wstring cfg = GetLiveCfgFileName();
+        if (!pack.empty()) {
+            commands.push_back(L"exp_sandbox_pack " + pack);
+        } else if (!cfg.empty()) {
+            commands.push_back(L"exp_sandbox_cfg " + cfg);
+        }
+
+        const std::wstring target = GetLiveSandboxTargetProfile();
+        if (!target.empty()) {
+            commands.push_back(L"exp_sandbox_target " + target);
+        }
+
+        const std::wstring spot = GetLiveSandboxSpot();
+        if (!spot.empty()) {
+            commands.push_back(L"exp_sandbox_spot " + spot);
+        }
+
+        commands.push_back(L"exp_sandbox_reset");
+        return commands;
+    }
+
+    void RefreshLiveServerCommandPreview(bool overwriteUserFields) {
+        const bool wasLoadingControls = loadingControls_;
+        loadingControls_ = true;
+
+        if (overwriteUserFields || GetTextValue(IDC_LIVE_SERVER_HOST).empty()) {
+            SetTextValue(IDC_LIVE_SERVER_HOST, L"127.0.0.1");
+        }
+        if (overwriteUserFields || GetTextValue(IDC_LIVE_SERVER_PORT).empty()) {
+            SetTextValue(IDC_LIVE_SERVER_PORT, L"27015");
+        }
+        if (overwriteUserFields || GetTextValue(IDC_LIVE_CFG_FILE).empty()) {
+            SetTextValue(IDC_LIVE_CFG_FILE, GetEffectiveCfgFileNameForQuickExport());
+        }
+        if (overwriteUserFields || GetTextValue(IDC_LIVE_MATCH_PACK).empty()) {
+            SetTextValue(IDC_LIVE_MATCH_PACK, hlcfg::Trimmed(document_.matchPack.name));
+        }
+
+        const std::wstring weapon = GetWeaponSelection().empty() ? document_.general.weaponUnderTest : GetWeaponSelection();
+        if (overwriteUserFields || GetComboSelectionValue(IDC_LIVE_SANDBOX_WEAPON).empty()) {
+            SetComboSelectionValue(IDC_LIVE_SANDBOX_WEAPON, weapon.empty() ? L"glock" : weapon);
+        }
+        if (overwriteUserFields || GetTextValue(IDC_LIVE_SANDBOX_TARGET).empty()) {
+            SetTextValue(IDC_LIVE_SANDBOX_TARGET, document_.targetDummy.targetProfileName);
+        }
+        if (overwriteUserFields || GetTextValue(IDC_LIVE_SANDBOX_SPOT).empty()) {
+            SetTextValue(IDC_LIVE_SANDBOX_SPOT, L"default");
+        }
+
+        const std::vector<std::wstring> sandboxCommands = BuildSandboxSetupCommands();
+        SetTextValue(IDC_LIVE_CUSTOM_COMMAND, JoinCommandsForClipboard(sandboxCommands));
+        lastLiveFallbackCommands_ = sandboxCommands;
+
+        if (lastLiveStatus_.empty()) {
+            std::wstring status = L"Ready to send live commands through GoldSrc RCON.\r\n";
+            status += L"Set host, port, and rcon_password, then use Apply CFG or Sandbox Setup.\r\n\r\n";
+            status += L"Current sandbox sequence:\r\n" + JoinCommandsForClipboard(sandboxCommands);
+            SetTextValue(IDC_LIVE_STATUS, status);
+        } else {
+            SetTextValue(IDC_LIVE_STATUS, lastLiveStatus_);
+        }
+
+        loadingControls_ = wasLoadingControls;
+    }
+
+    bool QuickExportForLiveApply(hlcfg::ExportResult& result) {
+        const std::wstring liveModFolder = GetLiveModFolder();
+        if (liveModFolder.empty()) {
+            ShowActionError(
+                L"Live apply quick export",
+                L"The live mod folder could not be resolved.",
+                BuildQuickExportTargetPathPreview(),
+                L"Resolve HL_EXE or HLDS_EXE, then try again.");
+            return false;
+        }
+
+        hlcfg::ProjectDocument exportDocument;
+        PrepareDocumentForExport(exportDocument, &liveModFolder);
+
+        hlcfg::ExportResult preview;
+        std::wstring errorMessage;
+        if (!hlcfg::BuildExportResult(exportDocument, environment_, preview, errorMessage)) {
+            ShowActionError(
+                L"Live apply quick export",
+                errorMessage,
+                BuildQuickExportTargetPathPreview(),
+                L"Verify the cfg filename and live mod path.");
+            return false;
+        }
+
+        if (!ConfirmOverwrite(preview.exportPath, L"Live apply quick export")) {
+            SetLiveStatus(L"Live apply quick export was cancelled.\r\n\r\nTarget path:\r\n" + preview.exportPath);
+            return false;
+        }
+
+        if (!hlcfg::ExportCfgToFile(exportDocument, environment_, result, errorMessage)) {
+            ShowActionError(
+                L"Live apply quick export",
+                errorMessage,
+                preview.exportPath,
+                L"Check that the live mod folder is writable.");
+            return false;
+        }
+
+        std::error_code verifyError;
+        if (!std::filesystem::exists(result.exportPath, verifyError) || verifyError) {
+            ShowActionError(
+                L"Live apply quick export",
+                L"The cfg export completed, but the file could not be confirmed on disk.",
+                result.exportPath,
+                L"Check file permissions and the live mod folder.");
+            return false;
+        }
+
+        document_ = std::move(exportDocument);
+        document_.exportSettings.exportFolder = std::filesystem::path(result.exportPath).parent_path().wstring();
+        document_.exportSettings.cfgFileName = std::filesystem::path(result.exportPath).filename().wstring();
+
+        const bool wasLoadingControls = loadingControls_;
+        loadingControls_ = true;
+        SetTextValue(IDC_EXPORT_FOLDER, document_.exportSettings.exportFolder);
+        SetTextValue(IDC_EXPORT_FILE_NAME, document_.exportSettings.cfgFileName);
+        SetTextValue(IDC_LIVE_CFG_FILE, document_.exportSettings.cfgFileName);
+        loadingControls_ = wasLoadingControls;
+
+        dirty_ = true;
+        UpdateWindowTitle();
+        RefreshResolvedExportInfo();
+        RefreshExportPreview(true);
+        ReloadBrowserEntries();
+        RefreshBrowserControls();
+        RefreshLiveServerCommandPreview(false);
+        return true;
+    }
+
+    void TestLiveServerConnection() {
+        SendLiveCommandSequence({L"status"}, L"Test connection");
+    }
+
+    void ApplyCurrentCfgToLiveServer(bool resetSandbox) {
+        hlcfg::ExportResult exportResult;
+        if (!QuickExportForLiveApply(exportResult)) {
+            return;
+        }
+
+        const std::wstring cfgFileName = std::filesystem::path(exportResult.exportPath).filename().wstring();
+        std::vector<std::wstring> commands{L"exp_cfg_apply " + cfgFileName};
+        if (resetSandbox) {
+            commands.push_back(L"exp_sandbox_reset");
+        }
+
+        SendLiveCommandSequence(commands, resetSandbox ? L"Apply CFG + sandbox reset" : L"Apply current CFG");
+    }
+
+    void ApplySelectedMatchPackToLiveServer(bool resetSandbox) {
+        const std::wstring pack = GetLiveMatchPackName();
+        if (pack.empty()) {
+            SetLiveStatus(L"Select or enter a match pack name before applying it.");
+            return;
+        }
+
+        std::vector<std::wstring> commands{L"exp_matchcfg_apply " + pack};
+        if (resetSandbox) {
+            commands.push_back(L"exp_sandbox_reset");
+        }
+        SendLiveCommandSequence(commands, resetSandbox ? L"Apply match pack + sandbox reset" : L"Apply selected match pack");
+    }
+
+    void SendSandboxSetupToLiveServer() {
+        SendLiveCommandSequence(BuildSandboxSetupCommands(), L"Apply sandbox setup");
+    }
+
+    void CopySandboxSequence() {
+        CopyCommandListToClipboard(BuildSandboxSetupCommands(), L"Copy sandbox sequence");
+    }
+
+    void SendCustomLiveCommand() {
+        std::vector<std::wstring> commands = SplitLiveCommandLines(GetTextValue(IDC_LIVE_CUSTOM_COMMAND));
+        if (commands.empty()) {
+            commands.push_back(hlcfg::Trimmed(GetTextValue(IDC_LIVE_CUSTOM_COMMAND)));
+        }
+        SendLiveCommandSequence(commands, L"Send custom command");
+    }
+
     HINSTANCE instance_ = nullptr;
     std::wstring moduleFilePath_;
     hlcfg::EnvironmentPaths environment_;
@@ -3605,6 +4384,8 @@ private:
     std::wstring lastSuggestedCfgFileName_;
     std::wstring lastActionStatus_;
     std::wstring lastBrowserStatus_;
+    std::wstring lastLiveStatus_;
+    std::vector<std::wstring> lastLiveFallbackCommands_;
     std::vector<BrowserEntry> presetBrowserEntries_;
     std::vector<BrowserEntry> matchPackBrowserEntries_;
     std::vector<std::size_t> presetBrowserVisibleIndices_;
