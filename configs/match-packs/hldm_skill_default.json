@@ -1,0 +1,10 @@
+{
+  "name": "hldm_skill_default",
+  "description": "Recommended Improved HLDM baseline: classic deathmatch structure with the current skill-based Glock, MP5, 357, and shotgun feel enabled.",
+  "cfg": "match_packs/hldm_skill_default.cfg",
+  "weapon_under_test": "hldm",
+  "target_profile": "",
+  "mode": "hldm_deathmatch",
+  "tags": "hldm,recommended,deathmatch,weapon-feel",
+  "notes": "Default recommendation for everyday stock-client-compatible HLDM testing. It keeps round, team, buy, match, armor, and lab dummy systems off unless applied separately."
+}

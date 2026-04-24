@@ -1,0 +1,10 @@
+{
+  "name": "hldm_mp5_burst",
+  "description": "Improved HLDM MP5 pack that emphasizes controlled bursts, deterministic early spray shape, and harsher long-spray bloom.",
+  "cfg": "match_packs/hldm_mp5_burst.cfg",
+  "weapon_under_test": "mp5",
+  "target_profile": "",
+  "mode": "hldm_deathmatch",
+  "tags": "hldm,mp5,burst,smg",
+  "notes": "Keeps classic deathmatch flow while making MP5 spray-control behavior easier to inspect and tune."
+}

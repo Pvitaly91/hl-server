@@ -1,0 +1,10 @@
+{
+  "name": "hldm_precision_duel",
+  "description": "Improved HLDM precision pack focused on Glock and 357 cadence, first-shot reward, and readable headshot damage without enabling round rules.",
+  "cfg": "match_packs/hldm_precision_duel.cfg",
+  "weapon_under_test": "357",
+  "target_profile": "",
+  "mode": "hldm_deathmatch",
+  "tags": "hldm,precision,glock,357,duel",
+  "notes": "Use when testing pistol and 357 timing feel inside normal deathmatch. It is experimental tuning, not CS deagle parity."
+}

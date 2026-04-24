@@ -124,6 +124,7 @@ Match packs:
 - listed from `<HalfLifeRoot>\hlserver_testbed\match_packs\`
 - previewed with description, tags, notes, and referenced cfg path
 - loaded through the referenced cfg so the preview shows the real server cvar set, not only the JSON metadata
+- includes the Improved HLDM packs such as `hldm_skill_default`, `hldm_precision_duel`, `hldm_mp5_burst`, `hldm_shotgun_control`, and `hldm_headshot_lab` once starter packs are synced into the live mod
 
 Diff / merge behavior:
 
@@ -141,6 +142,14 @@ Live-apply helper behavior:
 - otherwise the copied command is `exp_cfg_apply <cfg-name>`
 
 The editor still does not push settings directly into a running server. The browser tab is intentionally a browse/preview/export/copy-command workflow, not server control.
+
+For the recommended stock-client-compatible Improved HLDM workflow, select `hldm_skill_default` in the match-pack browser, preview the cvar diff, click `Load Into Current Project`, and use `Copy Apply Command` or `Quick Export + Copy Apply Command`. The copied live command should be:
+
+```text
+exp_matchcfg_apply hldm_skill_default
+```
+
+That pack is deathmatch-oriented: it improves Glock, MP5, 357, and shotgun weapon feel while keeping round mode, team round mode, buy mode, economy, and match progression off. The other `hldm_*` packs are focused variants for precision, MP5 bursts, shotgun control, and headshot/dummy verification.
 
 In the simple path, the editor writes directly into:
 

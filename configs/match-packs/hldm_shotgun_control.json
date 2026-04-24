@@ -1,0 +1,10 @@
+{
+  "name": "hldm_shotgun_control",
+  "description": "Improved HLDM shotgun pack with deterministic pellet placement and tighter repeated-shot control for less random close-range testing.",
+  "cfg": "match_packs/hldm_shotgun_control.cfg",
+  "weapon_under_test": "shotgun",
+  "target_profile": "",
+  "mode": "hldm_deathmatch",
+  "tags": "hldm,shotgun,pellets,spread",
+  "notes": "Keeps shotgun identity while making pellet placement and follow-up spread more learnable. Not a claim of full CS shotgun parity."
+}

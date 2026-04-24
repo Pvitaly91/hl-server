@@ -2620,6 +2620,7 @@ function Install-TestbedRuntime {
     $runtimeValveDlls = Join-Path $runtimeRoot "valve\dlls"
     Ensure-Directory -Path $runtimeValveDlls
     Copy-Item -LiteralPath $BuiltDllPath -Destination (Join-Path $runtimeValveDlls "hl.dll") -Force
+    Sync-TestbedStarterMatchPacks -ModRoot (Join-Path $runtimeRoot "valve")
 
     if (-not [string]::IsNullOrWhiteSpace($BuiltPdbPath) -and (Test-LeafPath -Path $BuiltPdbPath)) {
         Copy-Item -LiteralPath $BuiltPdbPath -Destination (Join-Path $runtimeValveDlls "hl.pdb") -Force

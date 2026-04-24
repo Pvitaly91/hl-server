@@ -35,6 +35,7 @@ The current gameplay direction is intentionally narrower than "make full Counter
 - Shotgun primary fire can now also layer a deterministic pellet layout over its existing spread scale so repeated shots feel less like a pure random cone and more like a learnable server-side pattern.
 - Movement, air state, crouch stability, and readable headshot damage are part of the tuning target.
 - Real-player and fake-verification-client hit telemetry now logs armor before/after, health before/after, damage absorbed by armor, helmet/head-protection state, and direct headshot evidence on the hit line itself.
+- The recommended Improved HLDM packs package these weapon-feel changes into deathmatch-oriented configs, with `hldm_skill_default` as the everyday baseline.
 - Stock client compatibility is preserved, but client-side recoil and prediction are still only approximated because this repository does not ship a custom client DLL.
 
 ## Headshot / Armor Verification
@@ -313,14 +314,29 @@ Match packs are a thin usability layer over the existing cfg workflow. They do n
 
 - `<HalfLifeRoot>\hlserver_testbed\match_packs\`
 
+The testbed installer also syncs the checked-in starter packs into the disposable runtime mod folder so `scripts\run-server.ps1` can apply the same pack names without a manual copy step.
+
 The built-in checked-in starter packs currently include:
 
+- `hldm_skill_default`
+- `hldm_precision_duel`
+- `hldm_mp5_burst`
+- `hldm_shotgun_control`
+- `hldm_headshot_lab`
 - `duel_glock`
 - `duel_357`
 - `team_mp5_buy`
 - `team_shotgun`
 - `armor_test`
 - `aim_lab`
+
+The `hldm_*` packs are the recommended Improved HLDM path. They keep classic deathmatch framing by default and do not force round mode, team round mode, buy mode, economy, or match progression unless the pack is explicitly a lab pack. The default recommendation is:
+
+```text
+exp_matchcfg_apply hldm_skill_default
+```
+
+Use the focused variants when tuning one area: `hldm_precision_duel` for Glock/357 precision, `hldm_mp5_burst` for controlled MP5 bursts, `hldm_shotgun_control` for deterministic shotgun pellets, and `hldm_headshot_lab` for dummy/headshot verification. These are experimental feel presets, not final balance and not full Counter-Strike parity.
 
 Each pack describes at least:
 
@@ -341,7 +357,7 @@ Recommended daily flow:
 
 1. Start a live session.
 2. Run `exp_matchcfg_list`.
-3. Apply a starter pack such as `exp_matchcfg_apply duel_glock` or `exp_matchcfg_apply team_mp5_buy`.
+3. Apply the recommended Improved HLDM default with `exp_matchcfg_apply hldm_skill_default`, or choose a focused/advanced pack such as `exp_matchcfg_apply hldm_mp5_burst`, `exp_matchcfg_apply duel_glock`, or `exp_matchcfg_apply team_mp5_buy`.
 4. Inspect the resolved state with `exp_matchcfg_status`, `exp_cfg_status`, and the normal round/team/buy status commands.
 5. If you want to leave pack mode and go back to a plain cfg, use `exp_cfg_apply my_match.cfg` or legacy `exec my_match.cfg`.
 

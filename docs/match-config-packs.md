@@ -16,7 +16,7 @@ The repository also ships starter packs under:
 <repo-root>\configs\match-packs\
 ```
 
-During the normal `hlserver_testbed` refresh path, those checked-in starter packs are copied into the live mod and preserved alongside user-created pack files.
+During the normal `hlserver_testbed` refresh path, those checked-in starter packs are copied into the live mod and preserved alongside user-created pack files. The disposable testbed installer now syncs the same checked-in packs into `testbed\runtime\valve\match_packs\`, so `scripts\run-server.ps1` can apply the same names without a manual copy step.
 
 ## File format
 
@@ -28,6 +28,7 @@ Each pack is one JSON file per named mode, for example:
 - `team_shotgun.json`
 - `armor_test.json`
 - `aim_lab.json`
+- `hldm_skill_default.json`
 
 Current fields are intentionally small:
 
@@ -77,6 +78,8 @@ Because the underlying runtime still consumes normal cfg files, packs can also c
 
 That means packs can describe a whole reusable duel, team, buy, armor, or match-progression setup without any pack-system redesign.
 
+Packs can also be simpler than a match. The `hldm_*` packs are deliberately deathmatch-oriented cfg bundles that leave round, team, buy, and match progression off while applying the current weapon-feel tuning.
+
 ## Commands
 
 The runtime adds three high-level commands:
@@ -109,6 +112,11 @@ That direct cfg apply remains the lower-level fallback and is not replaced by pa
 
 The checked-in starter set is intentionally practical rather than authoritative:
 
+- `hldm_skill_default`
+- `hldm_precision_duel`
+- `hldm_mp5_burst`
+- `hldm_shotgun_control`
+- `hldm_headshot_lab`
 - `duel_glock`
 - `duel_357`
 - `team_mp5_buy`
@@ -118,6 +126,7 @@ The checked-in starter set is intentionally practical rather than authoritative:
 
 They are meant as quick reusable starting points for the gameplay systems already present:
 
+- improved stock-client-compatible HLDM weapon feel
 - duel round mode
 - team round mode
 - deterministic loadouts
@@ -127,6 +136,36 @@ They are meant as quick reusable starting points for the gameplay systems alread
 - live-lab target testing
 
 They are not claims of final balance.
+
+## Improved HLDM packs
+
+The recommended everyday pack is:
+
+```text
+exp_matchcfg_apply hldm_skill_default
+```
+
+It is the default Improved HLDM recommendation because it:
+
+- keeps normal deathmatch flow
+- keeps round, team, buy, match progression, armor, and dummy systems off
+- enables the current Glock cadence/pattern work
+- enables MP5 controlled-burst and deterministic pattern behavior
+- enables 357 cadence/pattern precision behavior
+- enables shotgun deterministic pellet behavior
+
+The focused Improved HLDM variants are:
+
+- `hldm_precision_duel`
+  More deliberate Glock/357 timing for precision sidearm testing inside normal deathmatch.
+- `hldm_mp5_burst`
+  MP5-focused controlled-burst tuning with deterministic early spray and stronger long-spray bloom.
+- `hldm_shotgun_control`
+  Shotgun-focused deterministic pellet layout and tighter repeated-shot control.
+- `hldm_headshot_lab`
+  Verification pack that turns debug logging and the protected-head dummy on for headshot/armor telemetry checks.
+
+These packs are intentionally not full Counter-Strike modes. They package the current weapon-feel work for HLDM-style play while leaving the advanced round/team/buy systems available as separate packs.
 
 ## Editor integration
 
@@ -156,7 +195,7 @@ That means the pack layer can now be reused from inside the editor without leavi
 ## Recommended workflow
 
 1. Run `exp_matchcfg_list`.
-2. Apply a starter pack such as `exp_matchcfg_apply duel_glock` or `exp_matchcfg_apply team_mp5_buy`.
+2. Apply a starter pack such as `exp_matchcfg_apply hldm_skill_default`, `exp_matchcfg_apply duel_glock`, or `exp_matchcfg_apply team_mp5_buy`.
 3. Inspect the applied state with `exp_matchcfg_status` and `exp_cfg_status`.
 4. If you want to tweak the mode, open the editor project, change values, export a new cfg, and optionally export pack metadata from the editor.
 5. Reapply with either `exp_matchcfg_apply <name>` or `exp_cfg_apply <cfg>`.

@@ -1,0 +1,10 @@
+{
+  "name": "hldm_headshot_lab",
+  "description": "Improved HLDM lab pack for inspecting headshot, armor, helmet, and dummy damage telemetry across the tuned weapons.",
+  "cfg": "match_packs/hldm_headshot_lab.cfg",
+  "weapon_under_test": "hldm_headshot_lab",
+  "target_profile": "vest_headprotected",
+  "mode": "hldm_lab",
+  "tags": "hldm,headshot,armor,dummy,telemetry",
+  "notes": "This is the only Improved HLDM pack that turns debug logging and the protected-head dummy on by default. It is for verification, not everyday deathmatch."
+}
