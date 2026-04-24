@@ -289,6 +289,8 @@ if ($latestStockPlaytest) {
         "client-status.txt",
         "rcon-validation.txt",
         "commands.txt",
+        "scorecard.json",
+        "scorecard.txt",
         "glock-analysis.txt",
         "mp5-analysis.txt",
         "357-analysis.txt",

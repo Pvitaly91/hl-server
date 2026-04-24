@@ -74,25 +74,45 @@ For a hard validation run that should fail on missing client, missing RCON, or s
 .\scripts\run-stock-client-playtest.ps1 -StartServer -RconPassword "<password>" -Strict
 ```
 
+For a non-interactive scorecard smoke test:
+
+```powershell
+.\scripts\run-stock-client-playtest.ps1 -DryRun -NoPause -Weapon glock -DefaultScore 4
+```
+
+To skip subjective feedback:
+
+```powershell
+.\scripts\run-stock-client-playtest.ps1 -Weapon glock -NoScorecard
+```
+
+To compare recent human ratings against telemetry/analyzer status:
+
+```powershell
+.\scripts\compare-playtest-scorecards.ps1 -Count 5
+```
+
 Use a non-destructive command preview first:
 
 ```powershell
 .\scripts\run-stock-client-playtest.ps1 -DryRun -NoPause -Weapon glock
 ```
 
-The guided script writes `summary.txt`, `per-weapon-summary.txt`, RCON validation output, client-status evidence, and per-weapon analyzer reports under `testbed\logs\reports\stock-client-playtests\<timestamp>\`. It prints `Client connected: yes`, `Client connected: no`, or `Client status: unknown`, and prints `connect 127.0.0.1:<port>` when the client is not verified.
+The guided script writes `summary.txt`, `per-weapon-summary.txt`, RCON validation output, client-status evidence, `scorecard.json`, `scorecard.txt`, and per-weapon analyzer reports under `testbed\logs\reports\stock-client-playtests\<timestamp>\`. It prints `Client connected: yes`, `Client connected: no`, or `Client status: unknown`, and prints `connect 127.0.0.1:<port>` when the client is not verified.
 
 Ready enough:
 
 - client status is `yes`, or the manual connect command is clear
 - RCON says `yes`, or fallback commands are visible when RCON is not required
 - each weapon step says `Fresh telemetry detected: yes` after manual shooting
+- scorecard ratings and notes are present when subjective capture is enabled, or skipped state is explicit when `-NoScorecard` is used
 
 Needs fixing:
 
 - strict mode fails before manual shooting because client/RCON prerequisites are missing
 - fresh telemetry is `no` after shooting
 - per-weapon summary points to stale or missing analyzer output
+- scorecard files are missing from the playtest report
 
 ## Target Dummy Checklist
 
@@ -268,7 +288,7 @@ Run:
 Ready enough:
 
 - analyzer output is created for `all`, `glock`, `mp5`, `357`, and `shotgun`
-- diagnostics folder contains git info, paths, pack list, latest logs, latest qconsole evidence when present, analyzer summaries, and the latest stock-client playtest summary when present
+- diagnostics folder contains git info, paths, pack list, latest logs, latest qconsole evidence when present, analyzer summaries, and the latest stock-client playtest summary/scorecard when present
 - editor `Telemetry`, `Guided Tests`, and `Reports` remain usable
 
 Needs fixing:

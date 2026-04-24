@@ -20,10 +20,18 @@ param(
     [switch]$DryRun,
     [switch]$NoPause,
     [switch]$RequireRcon,
-    [switch]$Strict
+    [switch]$Strict,
+    [switch]$NoScorecard,
+    [switch]$ScorecardOnly,
+    [int]$DefaultScore = 0,
+    [string]$Notes = ""
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($DefaultScore -ne 0 -and ($DefaultScore -lt 1 -or $DefaultScore -gt 5)) {
+    throw "-DefaultScore must be 0 or a value from 1 to 5."
+}
 
 $script:StartedAt = Get-Date
 $script:RepoRoot = Split-Path -Parent $PSScriptRoot
@@ -64,6 +72,115 @@ function Wait-ManualStep {
         Read-Host "Press Enter when done" | Out-Null
     } else {
         Write-Step "Skipping pause because -NoPause or -DryRun is set."
+    }
+}
+
+function Read-ScorecardRating {
+    param(
+        [string]$Prompt,
+        [int]$Default
+    )
+
+    if ($Default -ge 1 -and $Default -le 5) {
+        return $Default
+    }
+
+    if ($DryRun -or $NoPause) {
+        return $null
+    }
+
+    while ($true) {
+        $inputText = Read-Host "$Prompt (1-5, blank to skip)"
+        if ([string]::IsNullOrWhiteSpace($inputText)) {
+            return $null
+        }
+
+        $value = 0
+        if ([int]::TryParse($inputText, [ref]$value) -and $value -ge 1 -and $value -le 5) {
+            return $value
+        }
+
+        Write-Host "Enter a number from 1 to 5, or blank to skip."
+    }
+}
+
+function Get-ScorecardPrompts {
+    param([string]$WeaponName)
+
+    $prompts = @(
+        [pscustomobject]@{ Key = "overall_feel"; Label = "Overall feel" },
+        [pscustomobject]@{ Key = "single_shot_accuracy"; Label = "Single-shot accuracy" },
+        [pscustomobject]@{ Key = "spam_spray_penalty"; Label = "Spam/spray penalty feel" },
+        [pscustomobject]@{ Key = "movement_penalty_feel"; Label = "Movement penalty feel" },
+        [pscustomobject]@{ Key = "headshot_feel"; Label = "Headshot feel" },
+        [pscustomobject]@{ Key = "client_visual_sync"; Label = "Client visual/sync cleanliness, 1=bad desync, 5=clean" }
+    )
+
+    if ($WeaponName -eq "mp5") {
+        $prompts += @(
+            [pscustomobject]@{ Key = "short_burst_feel"; Label = "Short burst feel" },
+            [pscustomobject]@{ Key = "long_spray_punishment"; Label = "Long spray punishment" }
+        )
+    }
+
+    if ($WeaponName -eq "shotgun") {
+        $prompts += @(
+            [pscustomobject]@{ Key = "pellet_consistency_feel"; Label = "Pellet consistency feel" },
+            [pscustomobject]@{ Key = "close_range_lethality_feel"; Label = "Close-range lethality feel" }
+        )
+    }
+
+    return $prompts
+}
+
+function Read-WeaponScorecard {
+    param(
+        [string]$WeaponName,
+        [object]$Telemetry,
+        [string]$AnalyzerPath,
+        [string]$AnalyzerStatus,
+        [string]$AnalyzerError,
+        [string]$StepWarnings
+    )
+
+    $ratings = [ordered]@{}
+    $skipped = $false
+    $skipReason = ""
+    $weaponNotes = ""
+
+    if ($NoScorecard) {
+        $skipped = $true
+        $skipReason = "-NoScorecard"
+    } elseif (($DryRun -or $NoPause) -and ($DefaultScore -lt 1 -or $DefaultScore -gt 5)) {
+        $skipped = $true
+        $skipReason = "non-interactive run without -DefaultScore"
+    } else {
+        Write-Host ""
+        Write-Host "Scorecard for $WeaponName"
+        Write-Host "Use 1=poor, 3=acceptable, 5=strong. For client visual/sync, 1=bad desync and 5=clean."
+        foreach ($prompt in Get-ScorecardPrompts -WeaponName $WeaponName) {
+            $ratings[$prompt.Key] = Read-ScorecardRating -Prompt $prompt.Label -Default $DefaultScore
+        }
+
+        if (-not $DryRun -and -not $NoPause) {
+            $weaponNotes = Read-Host "Short notes for $WeaponName (blank ok)"
+        }
+    }
+
+    [pscustomobject]@{
+        weapon = $WeaponName
+        skipped = $skipped
+        skip_reason = $skipReason
+        ratings = $ratings
+        notes = $weaponNotes
+        global_notes = $Notes
+        telemetry_fresh = $(if ($Telemetry.Fresh) { "yes" } else { "no" })
+        telemetry_event_count = $Telemetry.EventCount
+        telemetry_reason = $Telemetry.Reason
+        analyzer_report = $AnalyzerPath
+        analyzer_status = $AnalyzerStatus
+        analyzer_error = $AnalyzerError
+        warnings = $StepWarnings
     }
 }
 
@@ -557,9 +674,10 @@ function Invoke-CommandSet {
     $results = @()
     foreach ($command in $Commands) {
         Write-Step "$Name command: $command"
-        if ($DryRun) {
-            Add-ContentLine -Path $OutputPath -Text "[dry-run] $command"
-            $results += [pscustomobject]@{ Command = $command; Success = $false; Status = "unknown"; Error = "dry-run" }
+        if ($DryRun -or $ScorecardOnly) {
+            $mode = if ($ScorecardOnly) { "scorecard-only" } else { "dry-run" }
+            Add-ContentLine -Path $OutputPath -Text "[$mode] $command"
+            $results += [pscustomobject]@{ Command = $command; Success = $false; Status = "unknown"; Error = $mode }
             continue
         }
 
@@ -607,6 +725,8 @@ New-Item -ItemType Directory -Force -Path $reportDir | Out-Null
 $summaryPath = Join-Path $reportDir "summary.txt"
 $perWeaponPath = Join-Path $reportDir "per-weapon-summary.txt"
 $packageCheckPath = Join-Path $reportDir "package-check.txt"
+$scorecardJsonPath = Join-Path $reportDir "scorecard.json"
+$scorecardTextPath = Join-Path $reportDir "scorecard.txt"
 $rconLogPath = Join-Path $reportDir "rcon-validation.txt"
 $commandLogPath = Join-Path $reportDir "commands.txt"
 $clientStatusPath = Join-Path $reportDir "client-status.txt"
@@ -615,6 +735,7 @@ $script:RconAvailable = $false
 $failures = New-Object System.Collections.Generic.List[string]
 $warnings = New-Object System.Collections.Generic.List[string]
 $weaponSummaries = @()
+$scorecardEntries = @()
 
 Set-Content -Path $summaryPath -Value @(
     "Improved HLDM stock-client playtest summary",
@@ -628,6 +749,10 @@ Set-Content -Path $summaryPath -Value @(
     "dry_run=$DryRun",
     "strict=$Strict",
     "require_rcon=$RequireRcon",
+    "scorecard_only=$ScorecardOnly",
+    "no_scorecard=$NoScorecard",
+    "default_score=$DefaultScore",
+    "notes=$Notes",
     "host=$HostName",
     "port=$Port",
     ""
@@ -693,7 +818,7 @@ if ($StartServer) {
     $launcher = Join-Path $script:RepoRoot "scripts\play-improved-hldm.bat"
     if (Test-Path $launcher) {
         Write-Step "Starting improved HLDM launcher: $launcher"
-        if (-not $DryRun) {
+        if (-not $DryRun -and -not $ScorecardOnly) {
             Start-Process -FilePath $launcher -WorkingDirectory $script:RepoRoot | Out-Null
         }
     } else {
@@ -702,10 +827,12 @@ if ($StartServer) {
     }
 }
 
-if (-not $NoClient) {
+if (-not $NoClient -and -not $ScorecardOnly) {
     $clientCommand = "`"$($livePaths.HlExe)`" -game hlserver_testbed -console +connect $HostName`:$Port"
     Write-Step "Stock client launch command: $clientCommand"
     Add-ContentLine -Path $summaryPath -Text "client_launch_command=$clientCommand"
+} elseif ($ScorecardOnly) {
+    Write-Step "Client launch skipped because -ScorecardOnly is set."
 } else {
     Write-Step "Client launch skipped because -NoClient is set."
 }
@@ -714,7 +841,7 @@ Write-Section "RCON verification"
 $statusResponse = ""
 $cfgStatusResponse = ""
 
-if ($RconPassword) {
+if ($RconPassword -and -not $ScorecardOnly) {
     if ($DryRun) {
         Write-Step "Dry run: RCON is not contacted."
         Add-ContentLine -Path $rconLogPath -Text "[dry-run] status"
@@ -740,12 +867,17 @@ if ($RconPassword) {
             $script:RconAvailable = $true
         }
     }
+} elseif ($ScorecardOnly) {
+    Write-Step "Scorecard-only mode: RCON is not contacted."
+    Add-ContentLine -Path $rconLogPath -Text "[scorecard-only] RCON not contacted."
 } else {
     Write-Step "RCON password not provided; command execution will use manual fallback."
 }
 
 if (-not $script:RconAvailable) {
-    if ($RequireRcon -or $Strict) {
+    if ($ScorecardOnly) {
+        $warnings.Add("RCON not contacted because -ScorecardOnly was set.")
+    } elseif (($RequireRcon -or $Strict) -and -not $ScorecardOnly) {
         $failures.Add("RCON verification failed or was skipped while -RequireRcon/-Strict was requested.")
     } else {
         $warnings.Add("RCON unavailable; manual fallback commands are required.")
@@ -789,8 +921,9 @@ if ($clientStatus.Status -ne "yes") {
     Write-Host "or in the stock Half-Life console:"
     Write-Host "  $connectCommand"
     Add-ContentLine -Path $summaryPath -Text "client_connect_command=$connectCommand"
+    $warnings.Add("Client connection was not confirmed.")
 
-    if ($Strict) {
+    if ($Strict -and -not $ScorecardOnly) {
         $failures.Add("Strict mode requires a confirmed stock-client connection.")
     }
 }
@@ -810,7 +943,7 @@ Write-Step "sandbox start/target/spot status: $($initialSetup.Status)"
 
 if ($initialSetup.Status -ne "yes") {
     Write-ManualFallback -Commands $initialCommands
-    if ($Strict -and -not $DryRun) {
+    if ($Strict -and -not $DryRun -and -not $ScorecardOnly) {
         $failures.Add("Strict mode requires verified initial sandbox setup.")
     }
 }
@@ -841,7 +974,11 @@ foreach ($weaponName in $selectedWeapons) {
         Write-Host $instruction
     }
 
-    Wait-ManualStep "Shoot the $weaponName test now, then continue."
+    if ($ScorecardOnly) {
+        Write-Step "Scorecard-only mode: skipping setup execution and manual shooting pause."
+    } else {
+        Wait-ManualStep "Shoot the $weaponName test now, then continue."
+    }
 
     $after = Get-LogSnapshot -LivePaths $livePaths
     $fresh = Test-FreshTelemetry -Before $before -After $after -StepStart $stepStart -WeaponName $weaponName
@@ -874,12 +1011,21 @@ foreach ($weaponName in $selectedWeapons) {
     }
     if (-not $fresh.Fresh) {
         $stepWarnings.Add("fresh_telemetry_missing")
+        $warnings.Add("No fresh telemetry detected for $weaponName.")
     }
     if (-not $analysis.Success) {
         $stepWarnings.Add("analysis_warning")
     }
 
-    if ($Strict) {
+    $analysisStatus = if ($analysis.Success) { "yes" } else { "no" }
+    $scorecardEntry = Read-WeaponScorecard -WeaponName $weaponName -Telemetry $fresh -AnalyzerPath $analysisPath -AnalyzerStatus $analysisStatus -AnalyzerError $analysis.Error -StepWarnings (($stepWarnings.ToArray()) -join ",")
+    $scorecardEntries += $scorecardEntry
+    if ($scorecardEntry.skipped) {
+        $stepWarnings.Add("scorecard_skipped")
+        $warnings.Add("Scorecard skipped for $weaponName ($($scorecardEntry.skip_reason)).")
+    }
+
+    if ($Strict -and -not $ScorecardOnly) {
         if ($stepClientStatus -ne "yes") {
             $failures.Add("Strict mode: client not confirmed during $weaponName step.")
         }
@@ -900,6 +1046,9 @@ foreach ($weaponName in $selectedWeapons) {
         SetupCommands = $setupResult.Status
         FreshTelemetry = $(if ($fresh.Fresh) { "yes" } else { "no" })
         EventCount = $fresh.EventCount
+        AnalyzerStatus = $analysisStatus
+        OverallScore = $(if ($scorecardEntry.skipped) { "" } else { $scorecardEntry.ratings["overall_feel"] })
+        Scorecard = $(if ($scorecardEntry.skipped) { "skipped" } else { "captured" })
         AnalyzerReport = $analysisPath
         LogPath = $fresh.LogPath
         Warnings = (($stepWarnings.ToArray()) -join ",")
@@ -908,9 +1057,99 @@ foreach ($weaponName in $selectedWeapons) {
 
 $weaponSummaries | Format-Table -AutoSize | Out-String -Width 220 | Set-Content -Path $perWeaponPath
 
+$mapName = ""
+if ($statusResponse -match "map\s*:\s*([^\r\n]+)") {
+    $mapName = $Matches[1].Trim()
+}
+
+$scorecardSkipped = [bool]$NoScorecard
+$scorecard = [ordered]@{
+    timestamp = $timestamp
+    branch = (git -C $script:RepoRoot rev-parse --abbrev-ref HEAD 2>$null)
+    commit = (git -C $script:RepoRoot rev-parse HEAD 2>$null)
+    map = $mapName
+    host = $HostName
+    port = $Port
+    match_pack = $MatchPack
+    target_profile = $TargetProfile
+    target_spot = $TargetSpot
+    weapon_selection = $selectedWeapons
+    dry_run = [bool]$DryRun
+    scorecard_only = [bool]$ScorecardOnly
+    no_scorecard = [bool]$NoScorecard
+    default_score = $DefaultScore
+    global_notes = $Notes
+    report_dir = $reportDir
+    entries = $scorecardEntries
+}
+
+$scorecard | ConvertTo-Json -Depth 8 | Set-Content -Path $scorecardJsonPath
+
+$scorecardText = New-Object System.Collections.Generic.List[string]
+$scorecardText.Add("Improved HLDM stock-client playtest scorecard") | Out-Null
+$scorecardText.Add("timestamp=$timestamp") | Out-Null
+$scorecardText.Add("branch=$($scorecard.branch)") | Out-Null
+$scorecardText.Add("commit=$($scorecard.commit)") | Out-Null
+$scorecardText.Add("map=$mapName") | Out-Null
+$scorecardText.Add("match_pack=$MatchPack") | Out-Null
+$scorecardText.Add("target_profile=$TargetProfile") | Out-Null
+$scorecardText.Add("target_spot=$TargetSpot") | Out-Null
+$scorecardText.Add("scorecard_skipped=$scorecardSkipped") | Out-Null
+$scorecardText.Add("global_notes=$Notes") | Out-Null
+$scorecardText.Add("") | Out-Null
+
+foreach ($entry in $scorecardEntries) {
+    $scorecardText.Add("[$($entry.weapon)]") | Out-Null
+    $scorecardText.Add("skipped=$($entry.skipped)") | Out-Null
+    if ($entry.skipped) {
+        $scorecardText.Add("skip_reason=$($entry.skip_reason)") | Out-Null
+    } else {
+        foreach ($key in $entry.ratings.Keys) {
+            $scorecardText.Add("$key=$($entry.ratings[$key])") | Out-Null
+        }
+        $scorecardText.Add("notes=$($entry.notes)") | Out-Null
+    }
+    $scorecardText.Add("telemetry_fresh=$($entry.telemetry_fresh)") | Out-Null
+    $scorecardText.Add("telemetry_event_count=$($entry.telemetry_event_count)") | Out-Null
+    $scorecardText.Add("analyzer_status=$($entry.analyzer_status)") | Out-Null
+    $scorecardText.Add("analyzer_report=$($entry.analyzer_report)") | Out-Null
+    if ($entry.analyzer_error) {
+        $scorecardText.Add("analyzer_error=$($entry.analyzer_error)") | Out-Null
+    }
+    $scorecardText.Add("warnings=$($entry.warnings)") | Out-Null
+    $scorecardText.Add("") | Out-Null
+}
+
+$scorecardText | Set-Content -Path $scorecardTextPath
+
 Add-ContentLine -Path $summaryPath -Text ""
 Add-ContentLine -Path $summaryPath -Text "Per-weapon summary:"
 Get-Content -Path $perWeaponPath | Add-Content -Path $summaryPath
+
+Add-ContentLine -Path $summaryPath -Text ""
+Add-ContentLine -Path $summaryPath -Text "Scorecard:"
+Add-ContentLine -Path $summaryPath -Text "scorecard_json=$scorecardJsonPath"
+Add-ContentLine -Path $summaryPath -Text "scorecard_txt=$scorecardTextPath"
+if ($NoScorecard) {
+    Add-ContentLine -Path $summaryPath -Text "scorecard=skipped (-NoScorecard)"
+} else {
+    foreach ($entry in $scorecardEntries) {
+        if ($entry.skipped) {
+            Add-ContentLine -Path $summaryPath -Text ("{0}: scorecard skipped ({1})" -f $entry.weapon, $entry.skip_reason)
+        } else {
+            Add-ContentLine -Path $summaryPath -Text ("{0}: analyzer={1} telemetry={2} overall={3} single={4} spam_or_spray={5} movement={6} headshot={7} client_sync={8}" -f `
+                $entry.weapon,
+                $entry.analyzer_status,
+                $entry.telemetry_fresh,
+                $entry.ratings["overall_feel"],
+                $entry.ratings["single_shot_accuracy"],
+                $entry.ratings["spam_spray_penalty"],
+                $entry.ratings["movement_penalty_feel"],
+                $entry.ratings["headshot_feel"],
+                $entry.ratings["client_visual_sync"])
+        }
+    }
+}
 
 if ($OpenEditor) {
     $editor = Join-Path $script:RepoRoot "scripts\open-hldm-editor.bat"
@@ -929,6 +1168,11 @@ Write-Host "Summary: $summaryPath"
 Write-Host "Per-weapon summary: $perWeaponPath"
 Write-Host "RCON validation log: $rconLogPath"
 Write-Host "Client status: $clientStatusPath"
+Write-Host "Scorecard JSON: $scorecardJsonPath"
+Write-Host "Scorecard text: $scorecardTextPath"
+if ($NoScorecard) {
+    Write-Host "Scorecard subjective prompts: skipped"
+}
 Write-Host ""
 Get-Content -Path $perWeaponPath | ForEach-Object { Write-Host $_ }
 

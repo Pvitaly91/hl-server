@@ -103,6 +103,37 @@ Fresh telemetry detected: no
 
 If this says `no`, the analyzer output may be stale and should not be treated as proof of the just-performed shooting step.
 
+## Subjective Scorecard
+
+After each weapon step, the script can capture a short subjective scorecard. Ratings use `1=poor`, `3=acceptable`, and `5=strong`.
+
+Common ratings:
+
+- overall feel
+- single-shot accuracy
+- spam/spray penalty feel
+- movement penalty feel
+- headshot feel
+- client visual/sync cleanliness, where `1` means bad desync and `5` means clean
+
+Weapon-specific ratings:
+
+- MP5: short burst feel and long spray punishment
+- Shotgun: pellet consistency feel and close-range lethality feel
+
+Useful options:
+
+```powershell
+.\scripts\run-stock-client-playtest.ps1 -Weapon glock -DefaultScore 4
+.\scripts\run-stock-client-playtest.ps1 -Weapon glock -NoScorecard
+.\scripts\run-stock-client-playtest.ps1 -ScorecardOnly -Weapon mp5 -DefaultScore 3 -Notes "Re-rate latest MP5 log"
+.\scripts\compare-playtest-scorecards.ps1 -Count 5
+```
+
+`-NoScorecard` skips subjective prompts and records the skip in `summary.txt`, `scorecard.json`, and `scorecard.txt`. `-DefaultScore <1-5>` fills every rating without prompting, which is useful for dry-run smoke tests. `-ScorecardOnly` avoids live command execution and lets you attach feedback to the latest analyzer/log context. `-Notes` adds a global note to the scorecard. `compare-playtest-scorecards.ps1` reads recent scorecards and can add `-ExportCsv <path>` for spreadsheet review.
+
+The scorecard is human feedback, not automated truth. It is intended to be read beside telemetry freshness, analyzer output, and consistency warnings.
+
 ## Report Contents
 
 Each stock-client playtest report includes:
@@ -113,6 +144,8 @@ Each stock-client playtest report includes:
 - `client-status.txt`
 - `rcon-validation.txt`
 - `commands.txt`
+- `scorecard.json`
+- `scorecard.txt`
 - `<weapon>-analysis.txt`
 - latest weapon log path used by each analysis when available
 - branch and commit information
@@ -133,6 +166,7 @@ PASS means:
 - RCON works, or fallback commands are clear when not required
 - fresh telemetry is detected for the weapon step in strict validation
 - analyzer output is collected for the selected weapons
+- scorecard files exist, with skipped state recorded when `-NoScorecard` is used
 
 FAIL means:
 
@@ -141,5 +175,6 @@ FAIL means:
 - strict mode cannot detect fresh telemetry for a weapon step
 - analyzer output is missing even though weapon logs exist
 - fallback commands are not visible
+- scorecard capture unexpectedly blocks a dry-run or does not write scorecard files
 
 This workflow does not claim final balance or full CS parity. It only makes stock-client manual testing repeatable and easier to diagnose.
