@@ -207,6 +207,8 @@ The editor also has a `Telemetry` tab for the post-shooting feedback loop. It fi
 
 The editor also has a `Guided Tests` tab for repeatable manual weapon-feel checks. Choose a weapon, source config or match pack, target profile, saved target spot, and test scenario, then click `Start Test` to send the existing `exp_sandbox_*` / `exp_matchcfg_apply` setup commands through the Live Server RCON helper. If RCON is missing or rejected, the editor copies the exact fallback command sequence for manual HLDS paste. After shooting in the stock client, click `Finish & Analyze` to run the analyzer against the latest weapon log and use `Save Test Report` to write a text report under `<repo-root>\testbed\logs\reports\guided-tests\`.
 
+The editor now also has a `Reports` tab for comparing saved guided runs. New guided reports keep the readable `.txt` file and add a small `.json` sidecar with normalized metadata and metrics; older text-only reports are still listed and parsed where possible. Select two or more reports to compare accepted shots, hits, kills, headshot evidence, pattern/cadence/burst evidence, spread/damage summaries, and consistency warnings, then export the comparison under `<repo-root>\testbed\logs\reports\guided-tests\comparisons\`.
+
 For the current Glock and MP5 feel pass, the most important editor fields are now labeled more directly:
 
 - `Shot growth (cadence bloom per shot)` or `Burst growth (cadence bloom per shot)`

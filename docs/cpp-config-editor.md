@@ -202,6 +202,32 @@ After the user shoots in-game, `Finish & Analyze` locates the newest weapon log 
 
 The report includes timestamp, weapon, source, target profile, target spot, scenario, generated command sequence, shooting instructions, analyzed log path, and analyzer output.
 
+## Reports tab
+
+The `Reports` tab lists guided weapon test reports saved under:
+
+```text
+<repo-root>\testbed\logs\reports\guided-tests\
+```
+
+New reports keep the readable `.txt` file and add a same-name `.json` sidecar. The sidecar stores normalized metadata and metrics so future comparisons do not need to scrape every value from the full analyzer text. The fields include timestamp, weapon, source type/value, target profile, target spot, scenario, analyzed log path, accepted shots, hits, kills, headshot hits/kills, pattern evidence, cadence evidence, burst-growth evidence, armor evidence, spread summary, damage summary, and consistency warnings.
+
+Older text-only reports remain supported. The editor lists them, marks them as `text-only`, and infers whatever metadata and metrics it can from the plain report headers and analyzer output. Missing metrics show as `n/a` instead of crashing the UI.
+
+Report actions:
+
+- `Refresh` reloads the report folder.
+- `Compare Selected` compares two or more selected reports in a tab-separated table.
+- `Open Report` and `Open Log` use the Windows shell to open the selected report or source weapon log.
+- `Copy Report Path`, `Copy Log Path`, and `Copy Comparison` keep the data easy to paste elsewhere.
+- `Export Comparison` writes a text comparison report under:
+
+```text
+<repo-root>\testbed\logs\reports\guided-tests\comparisons\
+```
+
+The comparison is evidence for tuning, not an automatic balance verdict. Use the metrics to spot regressions or useful differences, then still judge stock-client feel by shooting manually.
+
 ## Telemetry tab
 
 The editor now includes a `Telemetry` tab for the simple post-shooting analysis loop. It does not replace the PowerShell analyzer or make balance decisions; it only finds logs and runs the existing analyzer from inside the editor.
@@ -407,6 +433,7 @@ Recommended tab layout:
 - `Browser`
 - `Live Server`
 - `Guided Tests`
+- `Reports`
 - `Telemetry`
 - `Export`
 
