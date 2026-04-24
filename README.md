@@ -203,6 +203,8 @@ The editor also has a `Live Server` tab for a thinner direct-apply loop. Enter t
 
 If RCON is unavailable or rejected, the editor keeps the workflow usable by copying the exact commands for manual HLDS paste. This is a convenience helper over the existing server console commands, not a new server-control protocol.
 
+The editor also has a `Telemetry` tab for the post-shooting feedback loop. It finds the latest `weapon-debug-*.log` from the Half-Life root, the live `hlserver_testbed\logs\` folder, or the repo `testbed\logs\` folder, then runs `scripts\analyze-weapon-log.ps1` with a selected weapon filter (`all`, `glock`, `mp5`, `357`, or `shotgun`). This keeps the manual analyzer available while making the common "shoot, analyze latest, adjust config" loop visible inside the editor.
+
 For the current Glock and MP5 feel pass, the most important editor fields are now labeled more directly:
 
 - `Shot growth (cadence bloom per shot)` or `Burst growth (cadence bloom per shot)`
@@ -1577,6 +1579,21 @@ Analyze the newest disposable weapon log:
 
 ```powershell
 .\scripts\analyze-weapon-log.ps1 -Latest
+```
+
+The same analyzer can now be run from the native editor's `Telemetry` tab:
+
+1. Use the editor to quick-export/apply a cfg or match pack.
+2. Use the `Live Server` tab or HLDS console to run sandbox setup/reset if desired.
+3. Shoot in the live client until the server writes `weapon-debug-*.log` lines.
+4. Open `Telemetry`, click `Find Latest Log`, choose a weapon filter, then click `Analyze Latest`.
+5. If the editor cannot find PowerShell, the analyzer script, or the selected log, it shows the failure and the manual fallback remains the PowerShell command below.
+
+Manual weapon-filter examples:
+
+```powershell
+.\scripts\analyze-weapon-log.ps1 -Latest -Weapon glock
+.\scripts\analyze-weapon-log.ps1 -Path .\testbed\logs\weapon-debug-20260416-114837.log -Weapon mp5
 ```
 
 Analyze a specific log file:

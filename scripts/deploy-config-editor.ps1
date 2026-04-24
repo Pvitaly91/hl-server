@@ -34,7 +34,8 @@ function Test-CanMarkManagedLiveModFolder {
 
     $allowedDirectories = @(
         "cfg_profiles",
-        "logs"
+        "logs",
+        "match_packs"
     )
 
     $items = Get-ChildItem -LiteralPath $LiveModRoot -Force -ErrorAction SilentlyContinue
@@ -65,7 +66,8 @@ function Test-CanMarkManagedLiveModFolder {
 function Ensure-ManagedLiveModMarker {
     param(
         [string]$LiveModRoot,
-        [string]$HalfLifeRoot
+        [string]$HalfLifeRoot,
+        [string]$RepoRoot
     )
 
     if ([string]::IsNullOrWhiteSpace($LiveModRoot) -or -not (Test-Path -LiteralPath $LiveModRoot)) {
@@ -73,11 +75,15 @@ function Ensure-ManagedLiveModMarker {
     }
 
     $markerPath = Join-Path $LiveModRoot ".hl-server-live-mod.txt"
-    if (Test-Path -LiteralPath $markerPath) {
-        return
+    $markerExists = Test-Path -LiteralPath $markerPath
+    if ($markerExists) {
+        $existingMarker = Get-Content -LiteralPath $markerPath -Raw -ErrorAction SilentlyContinue
+        if ($existingMarker -match "(?m)^Repo root:") {
+            return
+        }
     }
 
-    if (-not (Test-CanMarkManagedLiveModFolder -LiveModRoot $LiveModRoot)) {
+    if (-not $markerExists -and -not (Test-CanMarkManagedLiveModFolder -LiveModRoot $LiveModRoot)) {
         Write-DeployWarning "Skipped writing the managed live-mod marker because $LiveModRoot contains files that were not recognized as safe editor-deployment content."
         return
     }
@@ -85,12 +91,13 @@ function Ensure-ManagedLiveModMarker {
     @"
 Managed same-root live mod placeholder prepared by hl-server editor deployment.
 Client root: $HalfLifeRoot
+Repo root: $RepoRoot
 Game dir: hlserver_testbed
 Purpose: preserve root-level cfg exports and allow the live launcher to refresh this folder later.
 Timestamp: $(Get-Date -Format o)
 "@ | Set-Content -LiteralPath $markerPath -Encoding ASCII
 
-    Write-DeployInfo "Wrote managed live-mod marker: $markerPath"
+    Write-DeployInfo "Updated managed live-mod marker: $markerPath"
 }
 
 function Get-RepoRoot {
@@ -208,7 +215,7 @@ catch {
 }
 
 try {
-    Ensure-ManagedLiveModMarker -LiveModRoot $liveModRoot -HalfLifeRoot $halfLifeRoot
+    Ensure-ManagedLiveModMarker -LiveModRoot $liveModRoot -HalfLifeRoot $halfLifeRoot -RepoRoot $repoRoot
 }
 catch {
     Write-DeployWarning "The editor was copied, but the managed live-mod marker could not be updated in $liveModRoot. $($_.Exception.Message)"

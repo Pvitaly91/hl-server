@@ -140,13 +140,16 @@ std::map<std::wstring, std::wstring> LoadEnvFile(const std::wstring& repoRoot) {
     return values;
 }
 
-std::wstring FindRepoRoot(const std::wstring& moduleFilePath) {
-    std::filesystem::path current = std::filesystem::path(moduleFilePath).parent_path();
+bool LooksLikeRepoRoot(const std::filesystem::path& root) {
     std::error_code error;
+    return !root.empty() &&
+           (std::filesystem::exists(root / L".git", error) ||
+            (std::filesystem::exists(root / L"README.md", error) && std::filesystem::exists(root / L"scripts", error)));
+}
 
+std::wstring FindRepoRootByWalking(std::filesystem::path current) {
     while (!current.empty()) {
-        if (std::filesystem::exists(current / L".git", error) ||
-            (std::filesystem::exists(current / L"README.md", error) && std::filesystem::exists(current / L"scripts", error))) {
+        if (LooksLikeRepoRoot(current)) {
             return current.wstring();
         }
 
@@ -159,6 +162,93 @@ std::wstring FindRepoRoot(const std::wstring& moduleFilePath) {
     }
 
     return {};
+}
+
+std::wstring RepoRootIfValid(const std::wstring& candidate) {
+    const std::wstring trimmed = Trim(candidate);
+    if (trimmed.empty()) {
+        return {};
+    }
+
+    std::error_code error;
+    std::filesystem::path path = std::filesystem::weakly_canonical(std::filesystem::path(trimmed), error);
+    if (error) {
+        path = std::filesystem::path(trimmed);
+    }
+
+    return LooksLikeRepoRoot(path) ? path.wstring() : std::wstring();
+}
+
+std::wstring ReadRepoRootFromLiveModMarker(const std::filesystem::path& moduleFolder) {
+    const std::filesystem::path markerPath = moduleFolder / L".hl-server-live-mod.txt";
+    if (!FileExists(markerPath)) {
+        return {};
+    }
+
+    std::ifstream stream(markerPath, std::ios::binary);
+    if (!stream) {
+        return {};
+    }
+
+    const std::string bytes((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+    std::wstringstream lines(Utf8ToWide(bytes));
+    std::wstring line;
+    while (std::getline(lines, line)) {
+        const std::wstring trimmed = Trim(line);
+        const std::wstring lowered = ToLower(trimmed);
+        const std::wstring repoRootPrefix = L"repo root:";
+        if (lowered.rfind(repoRootPrefix, 0) == 0) {
+            return RepoRootIfValid(trimmed.substr(repoRootPrefix.size()));
+        }
+    }
+
+    return {};
+}
+
+std::wstring ReadCurrentDirectoryPath() {
+    const DWORD required = GetCurrentDirectoryW(0, nullptr);
+    if (required == 0) {
+        return {};
+    }
+
+    std::wstring value(static_cast<std::size_t>(required), L'\0');
+    const DWORD written = GetCurrentDirectoryW(required, value.data());
+    if (written == 0 || written >= required) {
+        return {};
+    }
+
+    value.resize(written);
+    return value;
+}
+
+std::wstring FindRepoRoot(const std::wstring& moduleFilePath) {
+    const std::filesystem::path moduleFolder = std::filesystem::path(moduleFilePath).parent_path();
+
+    if (const std::wstring walkedFromExe = FindRepoRootByWalking(moduleFolder); !walkedFromExe.empty()) {
+        return walkedFromExe;
+    }
+
+    const std::map<std::wstring, std::wstring> emptyEnvFileValues;
+    const std::vector<std::wstring> directCandidates = {
+        ReadEnv(emptyEnvFileValues, L"HL_SERVER_REPO_ROOT"),
+        ReadEnv(emptyEnvFileValues, L"HL_SERVER_REPO"),
+        ReadRepoRootFromLiveModMarker(moduleFolder),
+    };
+
+    for (const std::wstring& candidate : directCandidates) {
+        if (const std::wstring repoRoot = RepoRootIfValid(candidate); !repoRoot.empty()) {
+            return repoRoot;
+        }
+    }
+
+    if (const std::wstring currentDirectory = ReadCurrentDirectoryPath(); !currentDirectory.empty()) {
+        if (const std::wstring walkedFromCurrentDirectory = FindRepoRootByWalking(std::filesystem::path(currentDirectory));
+            !walkedFromCurrentDirectory.empty()) {
+            return walkedFromCurrentDirectory;
+        }
+    }
+
+    return RepoRootIfValid(L"D:\\DEV\\CPP\\HL-Server");
 }
 
 std::wstring RootFromExePath(const std::wstring& exePath) {

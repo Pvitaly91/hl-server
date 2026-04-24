@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 
+#include <algorithm>
 #include <commctrl.h>
 #include <commdlg.h>
 #include <cctype>
@@ -303,6 +304,19 @@ enum ControlId : int {
     IDC_LIVE_SEND_CUSTOM,
     IDC_LIVE_COPY_FALLBACK,
 
+    IDC_TELEMETRY_LATEST_LOG = 1800,
+    IDC_TELEMETRY_SELECTED_LOG,
+    IDC_TELEMETRY_WEAPON_FILTER,
+    IDC_TELEMETRY_ANALYSIS_TEXT,
+    IDC_TELEMETRY_STATUS,
+    IDC_TELEMETRY_FIND_LATEST,
+    IDC_TELEMETRY_BROWSE_LOG,
+    IDC_TELEMETRY_ANALYZE_LATEST,
+    IDC_TELEMETRY_ANALYZE_SELECTED,
+    IDC_TELEMETRY_OPEN_LOG_FOLDER,
+    IDC_TELEMETRY_COPY_LOG_PATH,
+    IDC_TELEMETRY_COPY_ANALYSIS,
+
     IDC_LIVE_MOD_FOLDER_PREVIEW = 1400,
     IDC_EXPORT_FOLDER,
     IDC_BROWSE_EXPORT_FOLDER,
@@ -324,13 +338,14 @@ enum ControlId : int {
     IDC_EXPORT_STATUS,
 };
 
-constexpr int kPageCount = 12;
+constexpr int kPageCount = 13;
 constexpr int kRoundPageIndex = 6;
 constexpr int kTeamRoundPageIndex = 7;
 constexpr int kBuyEquipmentPageIndex = 8;
 constexpr int kBrowserPageIndex = 9;
 constexpr int kLiveServerPageIndex = 10;
-constexpr int kExportPageIndex = 11;
+constexpr int kTelemetryPageIndex = 11;
+constexpr int kExportPageIndex = 12;
 
 HFONT GetUiFont() {
     return static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
@@ -537,6 +552,29 @@ std::wstring ShowSaveProjectDialog(HWND owner, const std::wstring& initialPath) 
     dialog.lpstrDefExt = L"json";
 
     if (!GetSaveFileNameW(&dialog)) {
+        return {};
+    }
+
+    return buffer.c_str();
+}
+
+std::wstring ShowOpenLogDialog(HWND owner, const std::wstring& initialFolder) {
+    std::wstring buffer(32768, L'\0');
+    OPENFILENAMEW dialog{};
+    dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = owner;
+    dialog.lpstrFilter = L"Weapon Debug Logs (weapon-debug-*.log)\0weapon-debug-*.log\0Log Files (*.log)\0*.log\0All Files (*.*)\0*.*\0";
+    dialog.lpstrFile = buffer.data();
+    dialog.nMaxFile = static_cast<DWORD>(buffer.size());
+    dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY;
+    dialog.lpstrDefExt = L"log";
+
+    std::wstring initial = initialFolder;
+    if (!initial.empty()) {
+        dialog.lpstrInitialDir = initial.c_str();
+    }
+
+    if (!GetOpenFileNameW(&dialog)) {
         return {};
     }
 
@@ -967,6 +1005,80 @@ bool SendGoldSrcRconCommands(
     return true;
 }
 
+std::wstring QuoteWindowsCommandLineArgument(const std::wstring& value) {
+    if (value.empty()) {
+        return L"\"\"";
+    }
+
+    bool needsQuotes = false;
+    for (const wchar_t ch : value) {
+        if (std::iswspace(ch) || ch == L'"') {
+            needsQuotes = true;
+            break;
+        }
+    }
+
+    if (!needsQuotes) {
+        return value;
+    }
+
+    std::wstring quoted = L"\"";
+    std::size_t backslashes = 0;
+    for (const wchar_t ch : value) {
+        if (ch == L'\\') {
+            ++backslashes;
+            continue;
+        }
+
+        if (ch == L'"') {
+            quoted.append(backslashes * 2 + 1, L'\\');
+            quoted.push_back(ch);
+            backslashes = 0;
+            continue;
+        }
+
+        quoted.append(backslashes, L'\\');
+        backslashes = 0;
+        quoted.push_back(ch);
+    }
+
+    quoted.append(backslashes * 2, L'\\');
+    quoted.push_back(L'"');
+    return quoted;
+}
+
+std::wstring QuotePowerShellLiteral(const std::wstring& value) {
+    std::wstring quoted = L"'";
+    for (const wchar_t ch : value) {
+        if (ch == L'\'') {
+            quoted += L"''";
+        } else {
+            quoted.push_back(ch);
+        }
+    }
+    quoted.push_back(L'\'');
+    return quoted;
+}
+
+bool CreateTemporaryTextFilePath(std::wstring& path, std::wstring& errorMessage) {
+    std::wstring tempFolder(MAX_PATH + 1, L'\0');
+    const DWORD tempLength = GetTempPathW(static_cast<DWORD>(tempFolder.size()), tempFolder.data());
+    if (tempLength == 0 || tempLength >= tempFolder.size()) {
+        errorMessage = L"Unable to resolve a temporary folder for analyzer output.";
+        return false;
+    }
+    tempFolder.resize(tempLength);
+
+    std::wstring tempFile(MAX_PATH + 1, L'\0');
+    if (GetTempFileNameW(tempFolder.c_str(), L"hla", 0, tempFile.data()) == 0) {
+        errorMessage = L"Unable to create a temporary analyzer output file.";
+        return false;
+    }
+
+    path = tempFile.c_str();
+    return true;
+}
+
 bool ReadUtf8TextFile(const std::filesystem::path& path, std::wstring& text, std::wstring& errorMessage) {
     std::ifstream stream(path, std::ios::binary);
     if (!stream) {
@@ -976,6 +1088,9 @@ bool ReadUtf8TextFile(const std::filesystem::path& path, std::wstring& text, std
 
     const std::string bytes((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
     text = Utf8ToWide(bytes);
+    if (!text.empty() && text.front() == 0xFEFF) {
+        text.erase(text.begin());
+    }
     return true;
 }
 
@@ -1488,6 +1603,27 @@ private:
         case IDC_LIVE_COPY_FALLBACK:
             CopyLastLiveFallbackCommands();
             return 0;
+        case IDC_TELEMETRY_FIND_LATEST:
+            FindLatestTelemetryLog(true);
+            return 0;
+        case IDC_TELEMETRY_BROWSE_LOG:
+            BrowseTelemetryLog();
+            return 0;
+        case IDC_TELEMETRY_ANALYZE_LATEST:
+            AnalyzeLatestTelemetryLog();
+            return 0;
+        case IDC_TELEMETRY_ANALYZE_SELECTED:
+            AnalyzeSelectedTelemetryLog();
+            return 0;
+        case IDC_TELEMETRY_OPEN_LOG_FOLDER:
+            OpenTelemetryLogFolder();
+            return 0;
+        case IDC_TELEMETRY_COPY_LOG_PATH:
+            CopyTelemetryLogPath();
+            return 0;
+        case IDC_TELEMETRY_COPY_ANALYSIS:
+            CopyTelemetryAnalysisText();
+            return 0;
         case IDC_BROWSE_EXPORT_FOLDER:
             BrowseExportFolder();
             return 0;
@@ -1531,12 +1667,17 @@ private:
             return 0;
         }
 
+        if ((notifyCode == EN_CHANGE || notifyCode == CBN_SELCHANGE) && IsTelemetryControl(controlId)) {
+            RefreshTelemetryStatusPreview(false);
+            return 0;
+        }
+
         if (notifyCode == EN_CHANGE || notifyCode == BN_CLICKED || notifyCode == CBN_SELCHANGE) {
             if (controlId != IDC_LIVE_MOD_FOLDER_PREVIEW && controlId != IDC_LAUNCHER_PREVIEW &&
                 controlId != IDC_EXEC_PREVIEW && controlId != IDC_CFG_PREVIEW &&
                 controlId != IDC_HALF_LIFE_ROOT_PREVIEW && controlId != IDC_QUICK_EXPORT_TARGET_PREVIEW &&
                 controlId != IDC_EDITOR_EXE_PATH_PREVIEW && controlId != IDC_EXPORT_STATUS &&
-                !IsLiveServerControl(controlId)) {
+                !IsLiveServerControl(controlId) && !IsTelemetryControl(controlId)) {
                 MaybeRefreshSuggestedCfgFileName(controlId);
                 dirty_ = true;
                 UpdateWindowTitle();
@@ -1589,6 +1730,7 @@ private:
             L"Buy & Equipment",
             L"Browser",
             L"Live Server",
+            L"Telemetry",
             L"Export",
         };
         for (int index = 0; index < kPageCount; ++index) {
@@ -1612,6 +1754,7 @@ private:
         CreateBuyEquipmentPage();
         CreateBrowserPage();
         CreateLiveServerPage();
+        CreateTelemetryPage();
         CreateExportPage();
         ShowActivePage(0);
     }
@@ -2175,6 +2318,38 @@ private:
         CreateMultiLineEdit(page, IDC_LIVE_STATUS, 40, 450, 990, 190, true);
     }
 
+    void CreateTelemetryPage() {
+        HWND page = pages_[kTelemetryPageIndex];
+
+        CreateGroupBox(page, L"Weapon Log Selection", 20, 20, 1040, 165);
+        CreateLabel(page, L"Latest log", 40, 55, 100, 20);
+        CreateEdit(page, IDC_TELEMETRY_LATEST_LOG, 150, 50, 740, 24, ES_READONLY);
+        CreateButton(page, L"Find Latest Log", IDC_TELEMETRY_FIND_LATEST, 910, 50, 130, 24);
+        CreateLabel(page, L"Selected log", 40, 90, 100, 20);
+        CreateEdit(page, IDC_TELEMETRY_SELECTED_LOG, 150, 85, 740, 24);
+        CreateButton(page, L"Browse...", IDC_TELEMETRY_BROWSE_LOG, 910, 85, 130, 24);
+        CreateLabel(page, L"Weapon filter", 40, 125, 100, 20);
+        HWND filterCombo = CreateCombo(page, IDC_TELEMETRY_WEAPON_FILTER, 150, 120, 180, 180);
+        ComboBox_AddString(filterCombo, L"all");
+        ComboBox_AddString(filterCombo, L"glock");
+        ComboBox_AddString(filterCombo, L"mp5");
+        ComboBox_AddString(filterCombo, L"357");
+        ComboBox_AddString(filterCombo, L"shotgun");
+        ComboBox_SetCurSel(filterCombo, 0);
+        CreateButton(page, L"Analyze Latest", IDC_TELEMETRY_ANALYZE_LATEST, 360, 120, 130, 24);
+        CreateButton(page, L"Analyze Selected", IDC_TELEMETRY_ANALYZE_SELECTED, 505, 120, 140, 24);
+        CreateButton(page, L"Open Log Folder", IDC_TELEMETRY_OPEN_LOG_FOLDER, 660, 120, 140, 24);
+        CreateButton(page, L"Copy Log Path", IDC_TELEMETRY_COPY_LOG_PATH, 815, 120, 120, 24);
+        CreateButton(page, L"Copy Analysis", IDC_TELEMETRY_COPY_ANALYSIS, 945, 120, 105, 24);
+        CreateLabel(page, L"Search order: Half-Life logs, live mod logs, then repo testbed logs.", 40, 155, 700, 20);
+
+        CreateGroupBox(page, L"Telemetry Status", 20, 205, 1040, 85);
+        CreateMultiLineEdit(page, IDC_TELEMETRY_STATUS, 40, 230, 990, 35, true);
+
+        CreateGroupBox(page, L"Analyzer Output", 20, 315, 1040, 360);
+        CreateMultiLineEdit(page, IDC_TELEMETRY_ANALYSIS_TEXT, 40, 345, 990, 295, true);
+    }
+
     void CreateExportPage() {
         HWND page = pages_[kExportPageIndex];
         CreateGroupBox(page, L"Resolved Paths And Targets", 20, 20, 1040, 255);
@@ -2243,6 +2418,8 @@ private:
             RefreshBrowserPanels();
         } else if (pageIndex == kLiveServerPageIndex) {
             RefreshLiveServerCommandPreview(false);
+        } else if (pageIndex == kTelemetryPageIndex) {
+            RefreshTelemetryStatusPreview(false);
         }
     }
 
@@ -2253,6 +2430,8 @@ private:
         lastBrowserStatus_.clear();
         lastLiveStatus_.clear();
         lastLiveFallbackCommands_.clear();
+        lastTelemetryStatus_.clear();
+        lastTelemetryAnalysisText_.clear();
         dirty_ = false;
     }
 
@@ -3578,6 +3757,7 @@ private:
         RefreshMatchSummary();
         RefreshBrowserControls();
         RefreshLiveServerCommandPreview(true);
+        RefreshTelemetryStatusPreview(true);
 
         if (lastActionStatus_.empty()) {
             lastActionStatus_ = L"Ready.\n\nQuick export target:\n" + BuildQuickExportTargetPathPreview();
@@ -4373,6 +4553,381 @@ private:
         SendLiveCommandSequence(commands, L"Send custom command");
     }
 
+    bool IsTelemetryControl(int controlId) const {
+        return controlId >= IDC_TELEMETRY_LATEST_LOG && controlId <= IDC_TELEMETRY_COPY_ANALYSIS;
+    }
+
+    void SetTelemetryStatus(const std::wstring& value) {
+        lastTelemetryStatus_ = value;
+        const bool wasLoadingControls = loadingControls_;
+        loadingControls_ = true;
+        SetTextValue(IDC_TELEMETRY_STATUS, value);
+        loadingControls_ = wasLoadingControls;
+    }
+
+    std::wstring GetTelemetryWeaponFilter() const {
+        std::wstring filter = GetComboSelectionValue(IDC_TELEMETRY_WEAPON_FILTER);
+        return filter.empty() ? L"all" : filter;
+    }
+
+    std::vector<std::filesystem::path> GetTelemetrySearchFolders() const {
+        std::vector<std::filesystem::path> folders;
+        auto addFolder = [&](const std::filesystem::path& folder) {
+            if (folder.empty()) {
+                return;
+            }
+
+            for (const std::filesystem::path& existing : folders) {
+                if (_wcsicmp(existing.wstring().c_str(), folder.wstring().c_str()) == 0) {
+                    return;
+                }
+            }
+            folders.push_back(folder);
+        };
+
+        const std::wstring halfLifeRoot = GetHalfLifeRootFolder();
+        if (!halfLifeRoot.empty()) {
+            addFolder(std::filesystem::path(halfLifeRoot) / L"logs");
+        }
+        if (!environment_.liveModRoot.empty()) {
+            addFolder(std::filesystem::path(environment_.liveModRoot) / L"logs");
+        }
+        if (!environment_.logsRoot.empty()) {
+            addFolder(std::filesystem::path(environment_.logsRoot));
+        }
+        if (!environment_.stagedLiveModRoot.empty()) {
+            addFolder(std::filesystem::path(environment_.stagedLiveModRoot) / L"logs");
+        }
+        if (!environment_.repoRoot.empty()) {
+            addFolder(std::filesystem::path(environment_.repoRoot) / L"logs");
+        }
+
+        return folders;
+    }
+
+    bool TryFindLatestWeaponLog(std::filesystem::path& latestPath, std::wstring& details) const {
+        latestPath.clear();
+        std::filesystem::file_time_type latestWriteTime{};
+        bool found = false;
+
+        std::wstring searched;
+        for (const std::filesystem::path& folder : GetTelemetrySearchFolders()) {
+            searched += folder.wstring() + L"\r\n";
+
+            std::error_code error;
+            if (!std::filesystem::exists(folder, error) || error) {
+                continue;
+            }
+
+            for (const auto& entry : std::filesystem::directory_iterator(folder, error)) {
+                if (error || !entry.is_regular_file()) {
+                    continue;
+                }
+
+                const std::filesystem::path path = entry.path();
+                const std::wstring fileName = path.filename().wstring();
+                if (path.extension() != L".log" || fileName.rfind(L"weapon-debug-", 0) != 0) {
+                    continue;
+                }
+
+                const std::filesystem::file_time_type writeTime = entry.last_write_time(error);
+                if (error) {
+                    continue;
+                }
+
+                if (!found || writeTime > latestWriteTime) {
+                    found = true;
+                    latestWriteTime = writeTime;
+                    latestPath = path;
+                }
+            }
+        }
+
+        if (!found) {
+            details = L"No weapon-debug log was found. Searched:\r\n" + searched;
+            return false;
+        }
+
+        details = L"Latest weapon log:\r\n" + latestPath.wstring();
+        return true;
+    }
+
+    bool FindLatestTelemetryLog(bool showStatus) {
+        std::filesystem::path latestPath;
+        std::wstring details;
+        if (!TryFindLatestWeaponLog(latestPath, details)) {
+            const bool wasLoadingControls = loadingControls_;
+            loadingControls_ = true;
+            SetTextValue(IDC_TELEMETRY_LATEST_LOG, L"");
+            loadingControls_ = wasLoadingControls;
+            if (showStatus) {
+                SetTelemetryStatus(details);
+            }
+            return false;
+        }
+
+        const bool wasLoadingControls = loadingControls_;
+        loadingControls_ = true;
+        SetTextValue(IDC_TELEMETRY_LATEST_LOG, latestPath.wstring());
+        SetTextValue(IDC_TELEMETRY_SELECTED_LOG, latestPath.wstring());
+        loadingControls_ = wasLoadingControls;
+
+        if (showStatus) {
+            SetTelemetryStatus(details);
+        }
+        return true;
+    }
+
+    std::wstring GetSelectedTelemetryLogPath() const {
+        std::wstring selected = hlcfg::Trimmed(GetTextValue(IDC_TELEMETRY_SELECTED_LOG));
+        if (!selected.empty()) {
+            return selected;
+        }
+        return hlcfg::Trimmed(GetTextValue(IDC_TELEMETRY_LATEST_LOG));
+    }
+
+    void RefreshTelemetryStatusPreview(bool overwriteFields) {
+        const bool wasLoadingControls = loadingControls_;
+        loadingControls_ = true;
+
+        if (overwriteFields || GetComboSelectionValue(IDC_TELEMETRY_WEAPON_FILTER).empty()) {
+            SetComboSelectionValue(IDC_TELEMETRY_WEAPON_FILTER, L"all");
+        }
+
+        loadingControls_ = wasLoadingControls;
+
+        if (overwriteFields || GetTextValue(IDC_TELEMETRY_LATEST_LOG).empty()) {
+            FindLatestTelemetryLog(false);
+        }
+
+        if (lastTelemetryStatus_.empty()) {
+            std::wstring status = L"Ready. Click Find Latest Log or Analyze Latest after shooting in a live session.\r\n";
+            status += L"Analyzer script: ";
+            status += GetAnalyzerScriptPath().wstring();
+            SetTelemetryStatus(status);
+        } else {
+            SetTelemetryStatus(lastTelemetryStatus_);
+        }
+
+        if (!lastTelemetryAnalysisText_.empty()) {
+            SetTextValue(IDC_TELEMETRY_ANALYSIS_TEXT, lastTelemetryAnalysisText_);
+        }
+    }
+
+    std::filesystem::path GetAnalyzerScriptPath() const {
+        if (environment_.repoRoot.empty()) {
+            return {};
+        }
+        return std::filesystem::path(environment_.repoRoot) / L"scripts" / L"analyze-weapon-log.ps1";
+    }
+
+    bool RunAnalyzerProcess(const std::filesystem::path& logPath, const std::wstring& weaponFilter, std::wstring& output, std::wstring& errorMessage) const {
+        const std::filesystem::path analyzerPath = GetAnalyzerScriptPath();
+        std::error_code filesystemError;
+        if (analyzerPath.empty() || !std::filesystem::exists(analyzerPath, filesystemError) || filesystemError) {
+            errorMessage = L"Analyzer script could not be resolved: " + analyzerPath.wstring();
+            return false;
+        }
+        if (!std::filesystem::exists(logPath, filesystemError) || filesystemError) {
+            errorMessage = L"Selected weapon log was not found: " + logPath.wstring();
+            return false;
+        }
+
+        std::wstring outputPath;
+        if (!CreateTemporaryTextFilePath(outputPath, errorMessage)) {
+            return false;
+        }
+
+        const std::wstring script =
+            L"& { try { & " + QuotePowerShellLiteral(analyzerPath.wstring()) +
+            L" -Path " + QuotePowerShellLiteral(logPath.wstring()) +
+            L" -Weapon " + QuotePowerShellLiteral(weaponFilter.empty() ? L"all" : weaponFilter) +
+            L" *>&1 | Out-String -Width 4096 | Set-Content -LiteralPath " + QuotePowerShellLiteral(outputPath) +
+            L" -Encoding UTF8; exit $LASTEXITCODE } catch { $_ | Out-String -Width 4096 | Set-Content -LiteralPath " +
+            QuotePowerShellLiteral(outputPath) + L" -Encoding UTF8; exit 1 } }";
+
+        std::wstring commandLine = L"powershell.exe -NoProfile -ExecutionPolicy Bypass -Command " + QuoteWindowsCommandLineArgument(script);
+
+        STARTUPINFOW startupInfo{};
+        startupInfo.cb = sizeof(startupInfo);
+        PROCESS_INFORMATION processInfo{};
+        std::wstring mutableCommandLine = commandLine;
+        if (!CreateProcessW(
+                nullptr,
+                mutableCommandLine.data(),
+                nullptr,
+                nullptr,
+                FALSE,
+                CREATE_NO_WINDOW,
+                nullptr,
+                environment_.repoRoot.empty() ? nullptr : environment_.repoRoot.c_str(),
+                &startupInfo,
+                &processInfo)) {
+            DeleteFileW(outputPath.c_str());
+            errorMessage = L"Unable to launch powershell.exe. Win32 error " + std::to_wstring(GetLastError()) + L".";
+            return false;
+        }
+
+        const DWORD waitResult = WaitForSingleObject(processInfo.hProcess, 60000);
+        if (waitResult == WAIT_TIMEOUT) {
+            TerminateProcess(processInfo.hProcess, 1);
+            CloseHandle(processInfo.hThread);
+            CloseHandle(processInfo.hProcess);
+            DeleteFileW(outputPath.c_str());
+            errorMessage = L"Analyzer timed out after 60 seconds.";
+            return false;
+        }
+
+        DWORD exitCode = 1;
+        GetExitCodeProcess(processInfo.hProcess, &exitCode);
+        CloseHandle(processInfo.hThread);
+        CloseHandle(processInfo.hProcess);
+
+        std::wstring readError;
+        if (!ReadUtf8TextFile(outputPath, output, readError)) {
+            DeleteFileW(outputPath.c_str());
+            errorMessage = L"Analyzer finished, but its output could not be read. " + readError;
+            return false;
+        }
+
+        DeleteFileW(outputPath.c_str());
+        if (exitCode != 0) {
+            errorMessage = L"Analyzer exited with code " + std::to_wstring(exitCode) + L".";
+            if (!output.empty()) {
+                errorMessage += L"\r\n\r\n" + output;
+            }
+            return false;
+        }
+
+        return true;
+    }
+
+    std::wstring BuildQuickTelemetrySummary(const std::wstring& analyzerOutput) const {
+        std::wstring summary;
+        std::wstringstream stream(analyzerOutput);
+        std::wstring line;
+        int matched = 0;
+        const wchar_t* interesting[] = {
+            L"accepted shots",
+            L"hit events",
+            L"kill events",
+            L"headshot",
+            L"pattern evidence",
+            L"cadence evidence",
+            L"consistent dummy",
+            L"warnings",
+        };
+
+        while (std::getline(stream, line) && matched < 8) {
+            std::wstring lower = line;
+            std::transform(lower.begin(), lower.end(), lower.begin(), [](wchar_t ch) {
+                return static_cast<wchar_t>(std::towlower(ch));
+            });
+            for (const wchar_t* marker : interesting) {
+                if (lower.find(marker) != std::wstring::npos) {
+                    summary += hlcfg::Trimmed(line) + L"\r\n";
+                    ++matched;
+                    break;
+                }
+            }
+        }
+
+        return summary;
+    }
+
+    void AnalyzeTelemetryLog(const std::filesystem::path& logPath) {
+        const std::wstring weaponFilter = GetTelemetryWeaponFilter();
+        std::wstring output;
+        std::wstring errorMessage;
+        if (!RunAnalyzerProcess(logPath, weaponFilter, output, errorMessage)) {
+            lastTelemetryAnalysisText_ = output.empty() ? errorMessage : output;
+            SetTextValue(IDC_TELEMETRY_ANALYSIS_TEXT, lastTelemetryAnalysisText_);
+            SetTelemetryStatus(L"Analyzer failed for:\r\n" + logPath.wstring() + L"\r\n\r\n" + errorMessage);
+            return;
+        }
+
+        const std::wstring quickSummary = BuildQuickTelemetrySummary(output);
+        lastTelemetryAnalysisText_ = quickSummary.empty() ? output : (L"Quick evidence summary\r\n" + quickSummary + L"\r\nAnalyzer output\r\n" + output);
+        SetTextValue(IDC_TELEMETRY_ANALYSIS_TEXT, lastTelemetryAnalysisText_);
+        SetTelemetryStatus(L"Analyzer succeeded.\r\nLog: " + logPath.wstring() + L"\r\nWeapon filter: " + weaponFilter);
+    }
+
+    void BrowseTelemetryLog() {
+        std::wstring initialFolder;
+        const std::wstring selected = GetSelectedTelemetryLogPath();
+        if (!selected.empty()) {
+            initialFolder = std::filesystem::path(selected).parent_path().wstring();
+        } else if (!environment_.logsRoot.empty()) {
+            initialFolder = environment_.logsRoot;
+        }
+
+        const std::wstring path = ShowOpenLogDialog(hwnd_, initialFolder);
+        if (path.empty()) {
+            return;
+        }
+
+        const bool wasLoadingControls = loadingControls_;
+        loadingControls_ = true;
+        SetTextValue(IDC_TELEMETRY_SELECTED_LOG, path);
+        loadingControls_ = wasLoadingControls;
+        SetTelemetryStatus(L"Selected weapon log:\r\n" + path);
+    }
+
+    void AnalyzeLatestTelemetryLog() {
+        if (!FindLatestTelemetryLog(true)) {
+            return;
+        }
+        AnalyzeTelemetryLog(std::filesystem::path(GetSelectedTelemetryLogPath()));
+    }
+
+    void AnalyzeSelectedTelemetryLog() {
+        const std::wstring selected = GetSelectedTelemetryLogPath();
+        if (selected.empty()) {
+            SetTelemetryStatus(L"No selected weapon log. Click Find Latest Log or Browse first.");
+            return;
+        }
+        AnalyzeTelemetryLog(std::filesystem::path(selected));
+    }
+
+    void OpenTelemetryLogFolder() {
+        const std::wstring selected = GetSelectedTelemetryLogPath();
+        if (!selected.empty()) {
+            OpenResolvedFolder(std::filesystem::path(selected).parent_path().wstring(), L"The log folder could not be resolved.", L"Opened telemetry log folder");
+            return;
+        }
+        OpenResolvedFolder(environment_.logsRoot, L"The repo logs folder could not be resolved.", L"Opened telemetry log folder");
+    }
+
+    void CopyTelemetryLogPath() {
+        const std::wstring selected = GetSelectedTelemetryLogPath();
+        if (selected.empty()) {
+            SetTelemetryStatus(L"No weapon log path is selected.");
+            return;
+        }
+
+        if (!CopyTextToClipboard(hwnd_, selected)) {
+            SetTelemetryStatus(L"Unable to copy weapon log path.");
+            return;
+        }
+
+        SetTelemetryStatus(L"Copied weapon log path:\r\n" + selected);
+    }
+
+    void CopyTelemetryAnalysisText() {
+        const std::wstring text = GetTextValue(IDC_TELEMETRY_ANALYSIS_TEXT);
+        if (hlcfg::Trimmed(text).empty()) {
+            SetTelemetryStatus(L"No analyzer output is available to copy.");
+            return;
+        }
+
+        if (!CopyTextToClipboard(hwnd_, text)) {
+            SetTelemetryStatus(L"Unable to copy analyzer output.");
+            return;
+        }
+
+        SetTelemetryStatus(L"Copied analyzer output.");
+    }
+
     HINSTANCE instance_ = nullptr;
     std::wstring moduleFilePath_;
     hlcfg::EnvironmentPaths environment_;
@@ -4385,6 +4940,8 @@ private:
     std::wstring lastActionStatus_;
     std::wstring lastBrowserStatus_;
     std::wstring lastLiveStatus_;
+    std::wstring lastTelemetryStatus_;
+    std::wstring lastTelemetryAnalysisText_;
     std::vector<std::wstring> lastLiveFallbackCommands_;
     std::vector<BrowserEntry> presetBrowserEntries_;
     std::vector<BrowserEntry> matchPackBrowserEntries_;

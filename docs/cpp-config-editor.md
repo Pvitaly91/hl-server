@@ -166,6 +166,34 @@ Live Server actions:
 
 If RCON is unavailable, the password is missing, or HLDS rejects the command, the editor shows the failure and copies the exact fallback commands for manual paste into the HLDS console. This is not full automatic server orchestration; it is a practical command sender over the existing cfg, match-pack, and sandbox command paths.
 
+## Telemetry tab
+
+The editor now includes a `Telemetry` tab for the simple post-shooting analysis loop. It does not replace the PowerShell analyzer or make balance decisions; it only finds logs and runs the existing analyzer from inside the editor.
+
+Telemetry fields and actions:
+
+- `Latest log` shows the newest `weapon-debug-*.log` discovered by `Find Latest Log`.
+- `Selected log` can be filled manually or through `Browse...`.
+- `Weapon filter` passes `all`, `glock`, `mp5`, `357`, or `shotgun` to the analyzer.
+- `Analyze Latest` finds the newest log and runs `scripts\analyze-weapon-log.ps1 -Path <log> -Weapon <filter>`.
+- `Analyze Selected` runs the analyzer against the selected path.
+- `Open Log Folder`, `Copy Log Path`, and `Copy Analysis` keep the manual workflow available.
+
+The log search order is:
+
+- `<HalfLifeRoot>\logs\weapon-debug-*.log`
+- `<HalfLifeRoot>\hlserver_testbed\logs\weapon-debug-*.log`
+- `<repo-root>\testbed\logs\weapon-debug-*.log`
+
+When the editor is launched from `<HalfLifeRoot>\hlserver_testbed\HlConfigEditorCpp.exe`, it resolves the repo root by walking parents first, then checking `HL_SERVER_REPO_ROOT` / `HL_SERVER_REPO`, the live-mod marker `.hl-server-live-mod.txt`, and known local repo fallback paths. If the analyzer script or selected log cannot be resolved, the tab shows the failure instead of silently doing nothing.
+
+Manual fallback commands remain:
+
+```powershell
+.\scripts\analyze-weapon-log.ps1 -Latest -Weapon glock
+.\scripts\analyze-weapon-log.ps1 -Path <log> -Weapon mp5
+```
+
 For repeatable weapon-lab sessions, either send the generated sandbox setup from the `Live Server` tab or paste the equivalent commands manually:
 
 ```text
