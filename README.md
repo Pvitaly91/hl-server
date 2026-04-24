@@ -205,6 +205,8 @@ If RCON is unavailable or rejected, the editor keeps the workflow usable by copy
 
 The editor also has a `Telemetry` tab for the post-shooting feedback loop. It finds the latest `weapon-debug-*.log` from the Half-Life root, the live `hlserver_testbed\logs\` folder, or the repo `testbed\logs\` folder, then runs `scripts\analyze-weapon-log.ps1` with a selected weapon filter (`all`, `glock`, `mp5`, `357`, or `shotgun`). This keeps the manual analyzer available while making the common "shoot, analyze latest, adjust config" loop visible inside the editor.
 
+The editor also has a `Guided Tests` tab for repeatable manual weapon-feel checks. Choose a weapon, source config or match pack, target profile, saved target spot, and test scenario, then click `Start Test` to send the existing `exp_sandbox_*` / `exp_matchcfg_apply` setup commands through the Live Server RCON helper. If RCON is missing or rejected, the editor copies the exact fallback command sequence for manual HLDS paste. After shooting in the stock client, click `Finish & Analyze` to run the analyzer against the latest weapon log and use `Save Test Report` to write a text report under `<repo-root>\testbed\logs\reports\guided-tests\`.
+
 For the current Glock and MP5 feel pass, the most important editor fields are now labeled more directly:
 
 - `Shot growth (cadence bloom per shot)` or `Burst growth (cadence bloom per shot)`

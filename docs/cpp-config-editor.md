@@ -166,6 +166,42 @@ Live Server actions:
 
 If RCON is unavailable, the password is missing, or HLDS rejects the command, the editor shows the failure and copies the exact fallback commands for manual paste into the HLDS console. This is not full automatic server orchestration; it is a practical command sender over the existing cfg, match-pack, and sandbox command paths.
 
+## Guided Tests tab
+
+The `Guided Tests` tab is a thin workflow helper for manual weapon-feel testing. It does not shoot for you, validate balance, or add a new server mode; it builds and optionally sends the same sandbox, cfg, and match-pack commands you can already run from the HLDS console.
+
+Guided test fields:
+
+- `Weapon` selects `glock`, `mp5`, `357`, or `shotgun`.
+- `Source` selects the setup source: the current editor cfg, an exported preset cfg name, a match pack, or a manual cfg filename.
+- `Source value` is used for preset, match-pack, and manual cfg sources; for the current editor cfg path, the editor quick-exports first.
+- `Target profile` selects `unarmored`, `vest`, or `vest_headprotected`.
+- `Target spot` names the saved dummy spot, with `default` as the normal quick path.
+- `Scenario` selects concise shooting instructions for single-shot precision, burst/spam control, movement, headshot/armor, or shotgun pellet checks.
+
+`Start Test` records the current latest weapon log, builds the setup sequence, and sends it through the Live Server tab's RCON settings. Typical generated commands look like:
+
+```text
+exp_sandbox_start
+exp_sandbox_weapon mp5
+exp_sandbox_cfg editor_mp5_simple.cfg
+exp_sandbox_target vest_headprotected
+exp_sandbox_spot default
+exp_sandbox_reset
+```
+
+For match-pack sources, the sequence starts with `exp_matchcfg_apply <pack>` and then uses `exp_sandbox_pack <pack>` before reset. If RCON is unavailable, the command sequence is copied for manual paste and shown in the tab.
+
+After the user shoots in-game, `Finish & Analyze` locates the newest weapon log and runs the same analyzer used by the `Telemetry` tab with the selected weapon filter. The top of the output shows a compact evidence summary, followed by the full analyzer output. If precise log-session matching is not possible, the editor explicitly says it used the newest log.
+
+`Save Test Report` writes a UTF-8 text report to:
+
+```text
+<repo-root>\testbed\logs\reports\guided-tests\
+```
+
+The report includes timestamp, weapon, source, target profile, target spot, scenario, generated command sequence, shooting instructions, analyzed log path, and analyzer output.
+
 ## Telemetry tab
 
 The editor now includes a `Telemetry` tab for the simple post-shooting analysis loop. It does not replace the PowerShell analyzer or make balance decisions; it only finds logs and runs the existing analyzer from inside the editor.
@@ -368,6 +404,10 @@ Recommended tab layout:
 - `Round Mode`
 - `Team Round`
 - `Buy & Equipment`
+- `Browser`
+- `Live Server`
+- `Guided Tests`
+- `Telemetry`
 - `Export`
 
 Round-mode coverage now includes:

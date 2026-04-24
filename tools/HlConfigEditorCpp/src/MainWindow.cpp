@@ -317,6 +317,22 @@ enum ControlId : int {
     IDC_TELEMETRY_COPY_LOG_PATH,
     IDC_TELEMETRY_COPY_ANALYSIS,
 
+    IDC_GUIDED_WEAPON = 1900,
+    IDC_GUIDED_SOURCE_TYPE,
+    IDC_GUIDED_SOURCE_VALUE,
+    IDC_GUIDED_TARGET_PROFILE,
+    IDC_GUIDED_TARGET_SPOT,
+    IDC_GUIDED_SCENARIO,
+    IDC_GUIDED_COMMAND_SEQUENCE,
+    IDC_GUIDED_INSTRUCTIONS,
+    IDC_GUIDED_STATUS,
+    IDC_GUIDED_ANALYSIS,
+    IDC_GUIDED_START_TEST,
+    IDC_GUIDED_FINISH_ANALYZE,
+    IDC_GUIDED_COPY_COMMANDS,
+    IDC_GUIDED_SAVE_REPORT,
+    IDC_GUIDED_REFRESH_PREVIEW,
+
     IDC_LIVE_MOD_FOLDER_PREVIEW = 1400,
     IDC_EXPORT_FOLDER,
     IDC_BROWSE_EXPORT_FOLDER,
@@ -338,14 +354,15 @@ enum ControlId : int {
     IDC_EXPORT_STATUS,
 };
 
-constexpr int kPageCount = 13;
+constexpr int kPageCount = 14;
 constexpr int kRoundPageIndex = 6;
 constexpr int kTeamRoundPageIndex = 7;
 constexpr int kBuyEquipmentPageIndex = 8;
 constexpr int kBrowserPageIndex = 9;
 constexpr int kLiveServerPageIndex = 10;
-constexpr int kTelemetryPageIndex = 11;
-constexpr int kExportPageIndex = 12;
+constexpr int kGuidedTestsPageIndex = 11;
+constexpr int kTelemetryPageIndex = 12;
+constexpr int kExportPageIndex = 13;
 
 HFONT GetUiFont() {
     return static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
@@ -1094,6 +1111,76 @@ bool ReadUtf8TextFile(const std::filesystem::path& path, std::wstring& text, std
     return true;
 }
 
+bool WriteUtf8TextFile(const std::filesystem::path& path, const std::wstring& text, std::wstring& errorMessage) {
+    std::error_code directoryError;
+    std::filesystem::create_directories(path.parent_path(), directoryError);
+    if (directoryError) {
+        errorMessage = L"Unable to create folder: " + path.parent_path().wstring();
+        return false;
+    }
+
+    std::ofstream stream(path, std::ios::binary | std::ios::trunc);
+    if (!stream) {
+        errorMessage = L"Unable to write file: " + path.wstring();
+        return false;
+    }
+
+    const std::string bytes = WideToUtf8(text);
+    stream.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    if (!stream.good()) {
+        errorMessage = L"Unable to finish writing file: " + path.wstring();
+        return false;
+    }
+
+    return true;
+}
+
+std::wstring BuildLocalTimestampText(bool safeForFileName) {
+    SYSTEMTIME time{};
+    GetLocalTime(&time);
+
+    wchar_t buffer[64]{};
+    if (safeForFileName) {
+        swprintf_s(
+            buffer,
+            L"%04hu%02hu%02hu-%02hu%02hu%02hu",
+            time.wYear,
+            time.wMonth,
+            time.wDay,
+            time.wHour,
+            time.wMinute,
+            time.wSecond);
+    } else {
+        swprintf_s(
+            buffer,
+            L"%04hu-%02hu-%02hu %02hu:%02hu:%02hu",
+            time.wYear,
+            time.wMonth,
+            time.wDay,
+            time.wHour,
+            time.wMinute,
+            time.wSecond);
+    }
+
+    return buffer;
+}
+
+std::wstring SanitizeFileNamePart(std::wstring value) {
+    value = hlcfg::Trimmed(value);
+    if (value.empty()) {
+        return L"guided-test";
+    }
+
+    for (wchar_t& ch : value) {
+        if (ch == L'<' || ch == L'>' || ch == L':' || ch == L'"' || ch == L'/' || ch == L'\\' ||
+            ch == L'|' || ch == L'?' || ch == L'*' || std::iswspace(ch)) {
+            ch = L'_';
+        }
+    }
+
+    return value;
+}
+
 const hlcfg::JsonValue* FindJsonMember(const hlcfg::JsonValue::Object& object, const std::wstring& key) {
     const auto it = object.find(key);
     return it == object.end() ? nullptr : &it->second;
@@ -1603,6 +1690,21 @@ private:
         case IDC_LIVE_COPY_FALLBACK:
             CopyLastLiveFallbackCommands();
             return 0;
+        case IDC_GUIDED_START_TEST:
+            StartGuidedWeaponTest();
+            return 0;
+        case IDC_GUIDED_FINISH_ANALYZE:
+            FinishAndAnalyzeGuidedWeaponTest();
+            return 0;
+        case IDC_GUIDED_COPY_COMMANDS:
+            CopyGuidedTestCommands();
+            return 0;
+        case IDC_GUIDED_SAVE_REPORT:
+            SaveGuidedTestReport();
+            return 0;
+        case IDC_GUIDED_REFRESH_PREVIEW:
+            RefreshGuidedTestPreview(false);
+            return 0;
         case IDC_TELEMETRY_FIND_LATEST:
             FindLatestTelemetryLog(true);
             return 0;
@@ -1672,12 +1774,17 @@ private:
             return 0;
         }
 
+        if ((notifyCode == EN_CHANGE || notifyCode == CBN_SELCHANGE) && IsGuidedTestControl(controlId)) {
+            RefreshGuidedTestPreview(false);
+            return 0;
+        }
+
         if (notifyCode == EN_CHANGE || notifyCode == BN_CLICKED || notifyCode == CBN_SELCHANGE) {
             if (controlId != IDC_LIVE_MOD_FOLDER_PREVIEW && controlId != IDC_LAUNCHER_PREVIEW &&
                 controlId != IDC_EXEC_PREVIEW && controlId != IDC_CFG_PREVIEW &&
                 controlId != IDC_HALF_LIFE_ROOT_PREVIEW && controlId != IDC_QUICK_EXPORT_TARGET_PREVIEW &&
                 controlId != IDC_EDITOR_EXE_PATH_PREVIEW && controlId != IDC_EXPORT_STATUS &&
-                !IsLiveServerControl(controlId) && !IsTelemetryControl(controlId)) {
+                !IsLiveServerControl(controlId) && !IsTelemetryControl(controlId) && !IsGuidedTestControl(controlId)) {
                 MaybeRefreshSuggestedCfgFileName(controlId);
                 dirty_ = true;
                 UpdateWindowTitle();
@@ -1730,6 +1837,7 @@ private:
             L"Buy & Equipment",
             L"Browser",
             L"Live Server",
+            L"Guided Tests",
             L"Telemetry",
             L"Export",
         };
@@ -1754,6 +1862,7 @@ private:
         CreateBuyEquipmentPage();
         CreateBrowserPage();
         CreateLiveServerPage();
+        CreateGuidedTestsPage();
         CreateTelemetryPage();
         CreateExportPage();
         ShowActivePage(0);
@@ -2318,6 +2427,66 @@ private:
         CreateMultiLineEdit(page, IDC_LIVE_STATUS, 40, 450, 990, 190, true);
     }
 
+    void CreateGuidedTestsPage() {
+        HWND page = pages_[kGuidedTestsPageIndex];
+
+        CreateGroupBox(page, L"Guided Weapon Test Setup", 20, 20, 1040, 185);
+        CreateLabel(page, L"Weapon", 40, 55, 80, 20);
+        HWND weaponCombo = CreateCombo(page, IDC_GUIDED_WEAPON, 120, 50, 140, 160);
+        ComboBox_AddString(weaponCombo, L"glock");
+        ComboBox_AddString(weaponCombo, L"mp5");
+        ComboBox_AddString(weaponCombo, L"357");
+        ComboBox_AddString(weaponCombo, L"shotgun");
+        ComboBox_SetCurSel(weaponCombo, 0);
+
+        CreateLabel(page, L"Source", 285, 55, 80, 20);
+        HWND sourceCombo = CreateCombo(page, IDC_GUIDED_SOURCE_TYPE, 365, 50, 190, 180);
+        ComboBox_AddString(sourceCombo, L"current editor cfg");
+        ComboBox_AddString(sourceCombo, L"preset");
+        ComboBox_AddString(sourceCombo, L"match pack");
+        ComboBox_AddString(sourceCombo, L"manual cfg filename");
+        ComboBox_SetCurSel(sourceCombo, 0);
+        CreateLabel(page, L"Source value", 585, 55, 95, 20);
+        CreateEdit(page, IDC_GUIDED_SOURCE_VALUE, 690, 50, 310, 24);
+
+        CreateLabel(page, L"Target profile", 40, 95, 100, 20);
+        HWND targetCombo = CreateCombo(page, IDC_GUIDED_TARGET_PROFILE, 150, 90, 190, 160);
+        ComboBox_AddString(targetCombo, L"unarmored");
+        ComboBox_AddString(targetCombo, L"vest");
+        ComboBox_AddString(targetCombo, L"vest_headprotected");
+        ComboBox_SetCurSel(targetCombo, 0);
+        CreateLabel(page, L"Target spot", 365, 95, 90, 20);
+        CreateEdit(page, IDC_GUIDED_TARGET_SPOT, 455, 90, 150, 24);
+
+        CreateLabel(page, L"Scenario", 630, 95, 75, 20);
+        HWND scenarioCombo = CreateCombo(page, IDC_GUIDED_SCENARIO, 710, 90, 290, 180);
+        ComboBox_AddString(scenarioCombo, L"single-shot precision");
+        ComboBox_AddString(scenarioCombo, L"burst/spam control");
+        ComboBox_AddString(scenarioCombo, L"movement test");
+        ComboBox_AddString(scenarioCombo, L"headshot/armor test");
+        ComboBox_AddString(scenarioCombo, L"shotgun pellet test");
+        ComboBox_SetCurSel(scenarioCombo, 0);
+
+        CreateButton(page, L"Start Test", IDC_GUIDED_START_TEST, 40, 145, 130, 24);
+        CreateButton(page, L"Finish && Analyze", IDC_GUIDED_FINISH_ANALYZE, 190, 145, 155, 24);
+        CreateButton(page, L"Copy Commands", IDC_GUIDED_COPY_COMMANDS, 365, 145, 140, 24);
+        CreateButton(page, L"Save Test Report", IDC_GUIDED_SAVE_REPORT, 525, 145, 150, 24);
+        CreateButton(page, L"Refresh Preview", IDC_GUIDED_REFRESH_PREVIEW, 695, 145, 145, 24);
+        CreateLabel(page, L"Uses host, port, and RCON password from the Live Server tab.", 855, 149, 190, 20);
+
+        CreateGroupBox(page, L"Shooting Instructions", 20, 225, 500, 180);
+        CreateMultiLineEdit(page, IDC_GUIDED_INSTRUCTIONS, 40, 255, 440, 110, true);
+
+        CreateGroupBox(page, L"Command Sequence", 540, 225, 520, 180);
+        CreateMultiLineEdit(page, IDC_GUIDED_COMMAND_SEQUENCE, 560, 255, 460, 110, false);
+
+        CreateGroupBox(page, L"Guided Test Status", 20, 425, 1040, 90);
+        CreateMultiLineEdit(page, IDC_GUIDED_STATUS, 40, 455, 990, 35, true);
+
+        CreateGroupBox(page, L"Compact Result And Analyzer Output", 20, 540, 1040, 165);
+        CreateMultiLineEdit(page, IDC_GUIDED_ANALYSIS, 40, 570, 990, 100, true);
+    }
+
     void CreateTelemetryPage() {
         HWND page = pages_[kTelemetryPageIndex];
 
@@ -2418,6 +2587,8 @@ private:
             RefreshBrowserPanels();
         } else if (pageIndex == kLiveServerPageIndex) {
             RefreshLiveServerCommandPreview(false);
+        } else if (pageIndex == kGuidedTestsPageIndex) {
+            RefreshGuidedTestPreview(false);
         } else if (pageIndex == kTelemetryPageIndex) {
             RefreshTelemetryStatusPreview(false);
         }
@@ -2430,6 +2601,13 @@ private:
         lastBrowserStatus_.clear();
         lastLiveStatus_.clear();
         lastLiveFallbackCommands_.clear();
+        lastGuidedStatus_.clear();
+        lastGuidedAnalysisText_.clear();
+        lastGuidedCommandSequence_.clear();
+        lastGuidedInstructions_.clear();
+        lastGuidedBaselineLogPath_.clear();
+        lastGuidedAnalyzedLogPath_.clear();
+        lastGuidedBaselineLogWriteTime_ = {};
         lastTelemetryStatus_.clear();
         lastTelemetryAnalysisText_.clear();
         dirty_ = false;
@@ -3757,6 +3935,7 @@ private:
         RefreshMatchSummary();
         RefreshBrowserControls();
         RefreshLiveServerCommandPreview(true);
+        RefreshGuidedTestPreview(true);
         RefreshTelemetryStatusPreview(true);
 
         if (lastActionStatus_.empty()) {
@@ -4501,6 +4680,7 @@ private:
         ReloadBrowserEntries();
         RefreshBrowserControls();
         RefreshLiveServerCommandPreview(false);
+        RefreshGuidedTestPreview(false);
         return true;
     }
 
@@ -4551,6 +4731,374 @@ private:
             commands.push_back(hlcfg::Trimmed(GetTextValue(IDC_LIVE_CUSTOM_COMMAND)));
         }
         SendLiveCommandSequence(commands, L"Send custom command");
+    }
+
+    bool IsGuidedTestControl(int controlId) const {
+        return controlId >= IDC_GUIDED_WEAPON && controlId <= IDC_GUIDED_REFRESH_PREVIEW;
+    }
+
+    void SetGuidedStatus(const std::wstring& value) {
+        lastGuidedStatus_ = value;
+        const bool wasLoadingControls = loadingControls_;
+        loadingControls_ = true;
+        SetTextValue(IDC_GUIDED_STATUS, value);
+        loadingControls_ = wasLoadingControls;
+    }
+
+    std::wstring GetGuidedWeapon() const {
+        std::wstring weapon = GetComboSelectionValue(IDC_GUIDED_WEAPON);
+        if (weapon.empty()) {
+            weapon = GetWeaponSelection();
+        }
+        return weapon.empty() ? L"glock" : weapon;
+    }
+
+    std::wstring GetGuidedSourceType() const {
+        std::wstring sourceType = GetComboSelectionValue(IDC_GUIDED_SOURCE_TYPE);
+        return sourceType.empty() ? L"current editor cfg" : sourceType;
+    }
+
+    std::wstring GetGuidedSourceValue() const {
+        return hlcfg::Trimmed(GetTextValue(IDC_GUIDED_SOURCE_VALUE));
+    }
+
+    std::wstring GetGuidedTargetProfile() const {
+        std::wstring profile = GetComboSelectionValue(IDC_GUIDED_TARGET_PROFILE);
+        if (profile.empty()) {
+            profile = hlcfg::Trimmed(GetTextValue(IDC_DUMMY_TARGET_PROFILE_NAME));
+        }
+        return profile.empty() ? L"unarmored" : profile;
+    }
+
+    std::wstring GetGuidedTargetSpot() const {
+        const std::wstring spot = hlcfg::Trimmed(GetTextValue(IDC_GUIDED_TARGET_SPOT));
+        return spot.empty() ? L"default" : spot;
+    }
+
+    std::wstring GetGuidedScenario() const {
+        std::wstring scenario = GetComboSelectionValue(IDC_GUIDED_SCENARIO);
+        return scenario.empty() ? L"single-shot precision" : scenario;
+    }
+
+    std::wstring BuildGuidedScenarioInstructions(const std::wstring& weapon, const std::wstring& scenario) const {
+        std::wstring instructions;
+        if (scenario == L"burst/spam control") {
+            instructions += L"1. Stand still and fire a 3-5 shot burst.\r\n";
+            instructions += L"2. Pause long enough for recovery/reset.\r\n";
+            instructions += L"3. Fire a longer held spray.\r\n";
+            instructions += L"4. Finish & Analyze and compare burst growth, pattern index, and reset evidence.";
+        } else if (scenario == L"movement test") {
+            instructions += L"1. Fire a controlled shot or short burst while standing still.\r\n";
+            instructions += L"2. Repeat while moving.\r\n";
+            instructions += L"3. Repeat crouched if useful.\r\n";
+            instructions += L"4. Finish & Analyze and compare movement/air/crouch contribution fields.";
+        } else if (scenario == L"headshot/armor test") {
+            instructions += L"1. Use vest_headprotected when testing helmet/protected-head evidence.\r\n";
+            instructions += L"2. Fire one body hit, then one head hit.\r\n";
+            instructions += L"3. If needed, respawn/reset the dummy and repeat.\r\n";
+            instructions += L"4. Finish & Analyze and inspect armor/head-protection consistency.";
+        } else if (scenario == L"shotgun pellet test") {
+            instructions += L"1. Select shotgun and stand at close range.\r\n";
+            instructions += L"2. Fire one shell, wait for pattern reset, then fire another.\r\n";
+            instructions += L"3. Try the same target profile again after sandbox reset.\r\n";
+            instructions += L"4. Finish & Analyze and inspect pellet/pattern evidence.";
+        } else if (weapon == L"357") {
+            instructions += L"1. Fire one careful shot while still.\r\n";
+            instructions += L"2. Fire fast follow-up clicks.\r\n";
+            instructions += L"3. Wait for cadence/pattern reset, then fire again.\r\n";
+            instructions += L"4. Finish & Analyze and inspect cadence plus pattern fields.";
+        } else {
+            instructions += L"1. Stand still and fire one deliberate shot.\r\n";
+            instructions += L"2. Wait for recovery/reset, then fire again.\r\n";
+            instructions += L"3. Fire a quicker follow-up string.\r\n";
+            instructions += L"4. Finish & Analyze and compare accepted shots, cadence/pattern evidence, and hits.";
+        }
+
+        return instructions;
+    }
+
+    std::vector<std::wstring> BuildGuidedTestCommands(bool quickExportCurrentCfg, std::wstring& resolvedSourceDescription) {
+        std::vector<std::wstring> commands;
+        const std::wstring weapon = GetGuidedWeapon();
+        const std::wstring sourceType = GetGuidedSourceType();
+        const std::wstring sourceValue = GetGuidedSourceValue();
+        const std::wstring targetProfile = GetGuidedTargetProfile();
+        const std::wstring targetSpot = GetGuidedTargetSpot();
+
+        std::wstring cfgFileName;
+        std::wstring matchPackName;
+
+        if (sourceType == L"match pack") {
+            matchPackName = sourceValue.empty() ? GetLiveMatchPackName() : sourceValue;
+            resolvedSourceDescription = matchPackName.empty() ? L"match pack: <not selected>" : L"match pack: " + matchPackName;
+        } else if (sourceType == L"current editor cfg") {
+            if (quickExportCurrentCfg) {
+                hlcfg::ExportResult exportResult;
+                if (!QuickExportForLiveApply(exportResult)) {
+                    resolvedSourceDescription = L"current editor cfg export failed";
+                    return {};
+                }
+                cfgFileName = std::filesystem::path(exportResult.exportPath).filename().wstring();
+            } else {
+                cfgFileName = GetLiveCfgFileName();
+            }
+            resolvedSourceDescription = L"current editor cfg: " + cfgFileName;
+        } else {
+            cfgFileName = hlcfg::EnsureCfgFileName(sourceValue.empty() ? GetLiveCfgFileName() : sourceValue);
+            resolvedSourceDescription = sourceType + L": " + cfgFileName;
+        }
+
+        if (!matchPackName.empty()) {
+            commands.push_back(L"exp_matchcfg_apply " + matchPackName);
+        }
+
+        commands.push_back(L"exp_sandbox_start");
+        commands.push_back(L"exp_sandbox_weapon " + weapon);
+
+        if (!matchPackName.empty()) {
+            commands.push_back(L"exp_sandbox_pack " + matchPackName);
+        } else if (!cfgFileName.empty()) {
+            commands.push_back(L"exp_sandbox_cfg " + cfgFileName);
+        }
+
+        if (!targetProfile.empty()) {
+            commands.push_back(L"exp_sandbox_target " + targetProfile);
+        }
+        if (!targetSpot.empty()) {
+            commands.push_back(L"exp_sandbox_spot " + targetSpot);
+        }
+
+        commands.push_back(L"exp_sandbox_reset");
+        return commands;
+    }
+
+    bool GetFileWriteTime(const std::filesystem::path& path, std::filesystem::file_time_type& writeTime) const {
+        if (path.empty()) {
+            return false;
+        }
+
+        std::error_code error;
+        writeTime = std::filesystem::last_write_time(path, error);
+        return !error;
+    }
+
+    void RefreshGuidedTestPreview(bool overwriteFields) {
+        const bool wasLoadingControls = loadingControls_;
+        loadingControls_ = true;
+
+        const std::wstring documentWeapon = GetWeaponSelection().empty() ? document_.general.weaponUnderTest : GetWeaponSelection();
+        if (overwriteFields || GetComboSelectionValue(IDC_GUIDED_WEAPON).empty()) {
+            SetComboSelectionValue(IDC_GUIDED_WEAPON, documentWeapon.empty() ? L"glock" : documentWeapon);
+        }
+        if (overwriteFields || GetComboSelectionValue(IDC_GUIDED_SOURCE_TYPE).empty()) {
+            SetComboSelectionValue(IDC_GUIDED_SOURCE_TYPE, L"current editor cfg");
+        }
+        if (overwriteFields || GetTextValue(IDC_GUIDED_SOURCE_VALUE).empty()) {
+            SetTextValue(IDC_GUIDED_SOURCE_VALUE, GetEffectiveCfgFileNameForQuickExport());
+        }
+        if (overwriteFields || GetComboSelectionValue(IDC_GUIDED_TARGET_PROFILE).empty()) {
+            const std::wstring profile = document_.targetDummy.targetProfileName.empty() ? L"unarmored" : document_.targetDummy.targetProfileName;
+            SetComboSelectionValue(IDC_GUIDED_TARGET_PROFILE, profile);
+        }
+        if (overwriteFields || GetTextValue(IDC_GUIDED_TARGET_SPOT).empty()) {
+            SetTextValue(IDC_GUIDED_TARGET_SPOT, L"default");
+        }
+        if (overwriteFields || GetComboSelectionValue(IDC_GUIDED_SCENARIO).empty()) {
+            const std::wstring weapon = GetGuidedWeapon();
+            if (weapon == L"mp5") {
+                SetComboSelectionValue(IDC_GUIDED_SCENARIO, L"burst/spam control");
+            } else if (weapon == L"shotgun") {
+                SetComboSelectionValue(IDC_GUIDED_SCENARIO, L"shotgun pellet test");
+            } else {
+                SetComboSelectionValue(IDC_GUIDED_SCENARIO, L"single-shot precision");
+            }
+        }
+
+        loadingControls_ = wasLoadingControls;
+
+        std::wstring sourceDescription;
+        const std::vector<std::wstring> commands = BuildGuidedTestCommands(false, sourceDescription);
+        lastGuidedCommandSequence_ = commands;
+        lastGuidedInstructions_ = BuildGuidedScenarioInstructions(GetGuidedWeapon(), GetGuidedScenario());
+
+        const bool wasLoadingOutput = loadingControls_;
+        loadingControls_ = true;
+        SetTextValue(IDC_GUIDED_COMMAND_SEQUENCE, JoinCommandsForClipboard(commands));
+        SetTextValue(IDC_GUIDED_INSTRUCTIONS, lastGuidedInstructions_);
+        if (!lastGuidedAnalysisText_.empty()) {
+            SetTextValue(IDC_GUIDED_ANALYSIS, lastGuidedAnalysisText_);
+        }
+        loadingControls_ = wasLoadingOutput;
+
+        if (lastGuidedStatus_.empty()) {
+            SetGuidedStatus(L"Ready. Review the command sequence, configure RCON on the Live Server tab, then click Start Test.\r\nSource: " + sourceDescription);
+        } else {
+            SetGuidedStatus(lastGuidedStatus_);
+        }
+    }
+
+    void RecordGuidedBaselineLog() {
+        lastGuidedBaselineLogPath_.clear();
+        lastGuidedBaselineLogWriteTime_ = {};
+
+        std::filesystem::path latestPath;
+        std::wstring details;
+        if (!TryFindLatestWeaponLog(latestPath, details)) {
+            return;
+        }
+
+        lastGuidedBaselineLogPath_ = latestPath.wstring();
+        GetFileWriteTime(latestPath, lastGuidedBaselineLogWriteTime_);
+    }
+
+    void StartGuidedWeaponTest() {
+        SyncDocumentFromControls();
+        RefreshLiveServerCommandPreview(false);
+        RecordGuidedBaselineLog();
+
+        std::wstring sourceDescription;
+        std::vector<std::wstring> commands = BuildGuidedTestCommands(true, sourceDescription);
+        if (commands.empty()) {
+            SetGuidedStatus(L"Start Test could not build a command sequence. Check the selected cfg, preset, or match pack.");
+            return;
+        }
+
+        lastGuidedCommandSequence_ = commands;
+        lastGuidedInstructions_ = BuildGuidedScenarioInstructions(GetGuidedWeapon(), GetGuidedScenario());
+
+        const bool wasLoadingControls = loadingControls_;
+        loadingControls_ = true;
+        SetTextValue(IDC_GUIDED_COMMAND_SEQUENCE, JoinCommandsForClipboard(commands));
+        SetTextValue(IDC_GUIDED_INSTRUCTIONS, lastGuidedInstructions_);
+        SetTextValue(IDC_GUIDED_ANALYSIS, L"");
+        loadingControls_ = wasLoadingControls;
+        lastGuidedAnalysisText_.clear();
+        lastGuidedAnalyzedLogPath_.clear();
+
+        const bool sent = SendLiveCommandSequence(commands, L"Start guided weapon test");
+        std::wstring status = sent ? L"Guided setup commands were sent through RCON.\r\n"
+                                   : L"Guided setup was not sent through RCON. Fallback commands were copied for manual HLDS paste.\r\n";
+        status += L"Source: " + sourceDescription + L"\r\n";
+        status += lastGuidedBaselineLogPath_.empty()
+                      ? L"No baseline weapon log was found before start."
+                      : L"Baseline log before start:\r\n" + lastGuidedBaselineLogPath_;
+        SetGuidedStatus(status);
+    }
+
+    void FinishAndAnalyzeGuidedWeaponTest() {
+        std::filesystem::path latestPath;
+        std::wstring details;
+        if (!TryFindLatestWeaponLog(latestPath, details)) {
+            SetGuidedStatus(details);
+            return;
+        }
+
+        std::filesystem::file_time_type latestWriteTime{};
+        const bool hasLatestWriteTime = GetFileWriteTime(latestPath, latestWriteTime);
+        bool newerThanBaseline = lastGuidedBaselineLogPath_.empty();
+        if (!newerThanBaseline && hasLatestWriteTime) {
+            newerThanBaseline = latestPath.wstring() != lastGuidedBaselineLogPath_ || latestWriteTime > lastGuidedBaselineLogWriteTime_;
+        }
+
+        const std::wstring weaponFilter = GetGuidedWeapon();
+        std::wstring output;
+        std::wstring errorMessage;
+        if (!RunAnalyzerProcess(latestPath, weaponFilter, output, errorMessage)) {
+            lastGuidedAnalysisText_ = output.empty() ? errorMessage : output;
+            SetTextValue(IDC_GUIDED_ANALYSIS, lastGuidedAnalysisText_);
+            SetGuidedStatus(L"Finish & Analyze failed for:\r\n" + latestPath.wstring() + L"\r\n\r\n" + errorMessage);
+            return;
+        }
+
+        const std::wstring quickSummary = BuildQuickTelemetrySummary(output);
+        lastGuidedAnalyzedLogPath_ = latestPath.wstring();
+        lastGuidedAnalysisText_ =
+            L"Compact guided result\r\n" +
+            (quickSummary.empty() ? L"No compact evidence summary was derived.\r\n" : quickSummary) +
+            L"\r\nAnalyzer output\r\n" + output;
+
+        const bool wasLoadingControls = loadingControls_;
+        loadingControls_ = true;
+        SetTextValue(IDC_GUIDED_ANALYSIS, lastGuidedAnalysisText_);
+        SetTextValue(IDC_TELEMETRY_SELECTED_LOG, latestPath.wstring());
+        SetComboSelectionValue(IDC_TELEMETRY_WEAPON_FILTER, weaponFilter);
+        SetTextValue(IDC_TELEMETRY_ANALYSIS_TEXT, lastGuidedAnalysisText_);
+        loadingControls_ = wasLoadingControls;
+        lastTelemetryAnalysisText_ = lastGuidedAnalysisText_;
+
+        std::wstring status = L"Finish & Analyze used ";
+        status += newerThanBaseline ? L"a new or updated weapon log.\r\n" : L"the newest log; no newer timestamp was detected after Start Test.\r\n";
+        status += L"Log: " + latestPath.wstring() + L"\r\nWeapon filter: " + weaponFilter;
+        SetGuidedStatus(status);
+    }
+
+    void CopyGuidedTestCommands() {
+        std::wstring sourceDescription;
+        std::vector<std::wstring> commands = BuildGuidedTestCommands(false, sourceDescription);
+        if (commands.empty()) {
+            SetGuidedStatus(L"No guided command sequence is available to copy.");
+            return;
+        }
+
+        lastGuidedCommandSequence_ = commands;
+        if (!CopyTextToClipboard(hwnd_, JoinCommandsForClipboard(commands))) {
+            SetGuidedStatus(L"Unable to copy guided command sequence.");
+            return;
+        }
+
+        SetGuidedStatus(L"Copied guided command sequence.\r\nSource: " + sourceDescription);
+    }
+
+    std::filesystem::path GetGuidedReportFolder() const {
+        if (!environment_.repoRoot.empty()) {
+            return std::filesystem::path(environment_.repoRoot) / L"testbed" / L"logs" / L"reports" / L"guided-tests";
+        }
+        if (!environment_.liveModRoot.empty()) {
+            return std::filesystem::path(environment_.liveModRoot) / L"reports" / L"guided-tests";
+        }
+        return std::filesystem::path(L".") / L"guided-tests";
+    }
+
+    std::wstring BuildGuidedReportText() const {
+        std::wstring report;
+        report += L"Guided weapon test report\r\n";
+        report += L"timestamp: " + BuildLocalTimestampText(false) + L"\r\n";
+        report += L"weapon: " + GetGuidedWeapon() + L"\r\n";
+        report += L"source_type: " + GetGuidedSourceType() + L"\r\n";
+        report += L"source_value: " + GetGuidedSourceValue() + L"\r\n";
+        report += L"target_profile: " + GetGuidedTargetProfile() + L"\r\n";
+        report += L"target_spot: " + GetGuidedTargetSpot() + L"\r\n";
+        report += L"scenario: " + GetGuidedScenario() + L"\r\n";
+        report += L"baseline_log: " + lastGuidedBaselineLogPath_ + L"\r\n";
+        report += L"analyzed_log: " + lastGuidedAnalyzedLogPath_ + L"\r\n\r\n";
+        report += L"command_sequence:\r\n" + JoinCommandsForClipboard(lastGuidedCommandSequence_) + L"\r\n\r\n";
+        report += L"shooting_instructions:\r\n" + lastGuidedInstructions_ + L"\r\n\r\n";
+        report += L"status:\r\n" + lastGuidedStatus_ + L"\r\n\r\n";
+        report += L"analysis:\r\n" + (lastGuidedAnalysisText_.empty() ? GetTextValue(IDC_GUIDED_ANALYSIS) : lastGuidedAnalysisText_) + L"\r\n";
+        return report;
+    }
+
+    void SaveGuidedTestReport() {
+        if (lastGuidedCommandSequence_.empty()) {
+            std::wstring sourceDescription;
+            lastGuidedCommandSequence_ = BuildGuidedTestCommands(false, sourceDescription);
+        }
+        if (lastGuidedInstructions_.empty()) {
+            lastGuidedInstructions_ = BuildGuidedScenarioInstructions(GetGuidedWeapon(), GetGuidedScenario());
+        }
+
+        const std::filesystem::path reportFolder = GetGuidedReportFolder();
+        const std::wstring fileName =
+            L"guided-test-" + BuildLocalTimestampText(true) + L"-" + SanitizeFileNamePart(GetGuidedWeapon()) + L".txt";
+        const std::filesystem::path reportPath = reportFolder / fileName;
+
+        std::wstring errorMessage;
+        if (!WriteUtf8TextFile(reportPath, BuildGuidedReportText(), errorMessage)) {
+            SetGuidedStatus(L"Unable to save guided test report.\r\n\r\n" + errorMessage);
+            return;
+        }
+
+        SetGuidedStatus(L"Saved guided test report:\r\n" + reportPath.wstring());
     }
 
     bool IsTelemetryControl(int controlId) const {
@@ -4940,6 +5488,13 @@ private:
     std::wstring lastActionStatus_;
     std::wstring lastBrowserStatus_;
     std::wstring lastLiveStatus_;
+    std::wstring lastGuidedStatus_;
+    std::wstring lastGuidedAnalysisText_;
+    std::wstring lastGuidedInstructions_;
+    std::wstring lastGuidedBaselineLogPath_;
+    std::wstring lastGuidedAnalyzedLogPath_;
+    std::filesystem::file_time_type lastGuidedBaselineLogWriteTime_{};
+    std::vector<std::wstring> lastGuidedCommandSequence_;
     std::wstring lastTelemetryStatus_;
     std::wstring lastTelemetryAnalysisText_;
     std::vector<std::wstring> lastLiveFallbackCommands_;
