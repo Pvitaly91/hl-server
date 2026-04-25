@@ -4,13 +4,13 @@ This workflow packages the current improved-HLDM prototype into one repeatable p
 
 ## Branch
 
-Use the packaged release workflow branch:
+Use the complete release workflow branch:
 
 ```powershell
-git checkout release/improved-hldm-stable-package
+git checkout release/improved-hldm-complete-workflow
 ```
 
-This branch is based on `integration/stable-improved-hldm`, which remains the integrated runtime base for future feature work.
+This branch includes the stable package workflow from `release/improved-hldm-stable-package` plus stock-client validation, scorecard capture, scorecard diagnostics, and editor report comparison from the later playtest/editor branches.
 
 ## One-Time Setup
 

@@ -23,16 +23,23 @@ It is not yet a gameplay conversion and it does not ship any proprietary game as
 
 ## Start here: Improved HLDM stable workflow
 
-Use `release/improved-hldm-stable-package` when you want the user-ready setup, launch, editor, sandbox, telemetry, and report workflow. It is based on `integration/stable-improved-hldm`, which remains the integrated runtime base for future feature work.
+Use `release/improved-hldm-complete-workflow` when you want the final recommended user-ready setup, launch, editor, sandbox, telemetry, stock-client validation, scorecard, diagnostics, and report-comparison workflow. It is based on the stable package and stock-client playtest branches, then adds scorecard capture plus editor-side scorecard report comparison.
 
-Fast path from a clean checkout:
+Recommended branch:
 
 ```powershell
-git checkout release/improved-hldm-stable-package
+git checkout release/improved-hldm-complete-workflow
+```
+
+Minimal daily flow:
+
+```powershell
 .\scripts\setup-improved-hldm.ps1
 .\scripts\check-improved-hldm.ps1
 .\scripts\play-improved-hldm.bat
 .\scripts\open-hldm-editor.bat
+.\scripts\run-stock-client-playtest.ps1 -StartServer -RconPassword "<password>" -Weapon glock
+.\scripts\collect-improved-hldm-diagnostics.ps1
 ```
 
 First pack to try:
@@ -51,7 +58,7 @@ First guided test flow:
 6. Click `Finish & Analyze`.
 7. Save a report, then compare reports in the `Reports` tab.
 
-See [docs/stable-workflow.md](docs/stable-workflow.md) for the package workflow and [docs/stable-improved-hldm-state.md](docs/stable-improved-hldm-state.md) for the source branch/commit map and exact integrated state.
+See [docs/stable-workflow.md](docs/stable-workflow.md) for the package workflow, [docs/stock-client-playtest.md](docs/stock-client-playtest.md) for scorecard capture, and [docs/cpp-config-editor.md](docs/cpp-config-editor.md) for editor Reports comparison. Subjective scorecards preserve human feedback beside analyzer evidence; they are not automated truth or a final balance verdict.
 
 ## Playtest the stable package
 

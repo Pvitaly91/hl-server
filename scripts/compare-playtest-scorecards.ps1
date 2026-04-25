@@ -28,17 +28,37 @@ if ([string]::IsNullOrWhiteSpace($ReportRoot)) {
     }
 }
 
+function Get-PropertyValue {
+    param(
+        [object]$Object,
+        [string]$Name,
+        [object]$Fallback = ""
+    )
+
+    if (-not $Object) {
+        return $Fallback
+    }
+
+    $property = $Object.PSObject.Properties[$Name]
+    if (-not $property) {
+        return $Fallback
+    }
+
+    return $property.Value
+}
+
 function Get-RatingValue {
     param(
         [object]$Entry,
         [string]$Name
     )
 
-    if (-not $Entry.ratings) {
+    $ratings = Get-PropertyValue -Object $Entry -Name "ratings" -Fallback $null
+    if (-not $ratings) {
         return ""
     }
 
-    $property = $Entry.ratings.PSObject.Properties[$Name]
+    $property = $ratings.PSObject.Properties[$Name]
     if (-not $property) {
         return ""
     }
@@ -69,28 +89,32 @@ foreach ($scorecardFile in $scorecardFiles) {
         continue
     }
 
-    foreach ($entry in @($card.entries)) {
-        if ($Weapon -ne "all" -and $entry.weapon -ne $Weapon) {
+    $entries = Get-PropertyValue -Object $card -Name "entries" -Fallback @()
+    foreach ($entry in @($entries)) {
+        $entryWeapon = Get-PropertyValue -Object $entry -Name "weapon"
+        if ($Weapon -ne "all" -and $entryWeapon -ne $Weapon) {
             continue
         }
 
+        $targetProfile = Get-PropertyValue -Object $card -Name "target_profile"
+        $targetSpot = Get-PropertyValue -Object $card -Name "target_spot"
         $rows += [pscustomobject]@{
-            Timestamp = $card.timestamp
-            Weapon = $entry.weapon
-            MatchPack = $card.match_pack
-            Target = "$($card.target_profile)/$($card.target_spot)"
-            Telemetry = $entry.telemetry_fresh
-            Events = $entry.telemetry_event_count
-            Analyzer = $entry.analyzer_status
+            Timestamp = Get-PropertyValue -Object $card -Name "timestamp"
+            Weapon = $entryWeapon
+            MatchPack = Get-PropertyValue -Object $card -Name "match_pack"
+            Target = "$targetProfile/$targetSpot"
+            Telemetry = Get-PropertyValue -Object $entry -Name "telemetry_fresh"
+            Events = Get-PropertyValue -Object $entry -Name "telemetry_event_count"
+            Analyzer = Get-PropertyValue -Object $entry -Name "analyzer_status"
             Overall = Get-RatingValue -Entry $entry -Name "overall_feel"
             Single = Get-RatingValue -Entry $entry -Name "single_shot_accuracy"
             Spray = Get-RatingValue -Entry $entry -Name "spam_spray_penalty"
             Move = Get-RatingValue -Entry $entry -Name "movement_penalty_feel"
             Headshot = Get-RatingValue -Entry $entry -Name "headshot_feel"
             ClientSync = Get-RatingValue -Entry $entry -Name "client_visual_sync"
-            Skipped = $entry.skipped
-            Notes = $entry.notes
-            Report = $card.report_dir
+            Skipped = Get-PropertyValue -Object $entry -Name "skipped"
+            Notes = Get-PropertyValue -Object $entry -Name "notes"
+            Report = Get-PropertyValue -Object $card -Name "report_dir"
         }
     }
 }
